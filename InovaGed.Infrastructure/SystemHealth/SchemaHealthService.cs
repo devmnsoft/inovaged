@@ -490,13 +490,13 @@ select exists (
             {
                 report.LastMigration = await conn.QueryFirstOrDefaultAsync<SchemaMigrationHistoryDto>(new CommandDefinition(@"
 select script_name as ""ScriptName"",
-       applied_at as ""AppliedAt"",
-       applied_by as ""AppliedBy"",
-       success as ""Success"",
-       notes as ""Notes""
-from ged.schema_migration_history
-where success = true
-order by applied_at desc
+       coalesce((to_jsonb(h)->>'applied_at_utc')::timestamptz, (to_jsonb(h)->>'applied_at')::timestamptz) as ""AppliedAt"",
+       to_jsonb(h)->>'applied_by' as ""AppliedBy"",
+       true as ""Success"",
+       to_jsonb(h)->>'notes' as ""Notes""
+from ged.schema_migration_history h
+where coalesce(to_jsonb(h)->>'status' = 'APPLIED', (to_jsonb(h)->>'success')::boolean, false)
+order by ""AppliedAt"" desc
 limit 1;", cancellationToken: ct));
             }
         }

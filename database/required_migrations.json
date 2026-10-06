@@ -1,75 +1,5 @@
 [
   {
-    "name": "2026_09_02_brand_asset_resize_selector_fix",
-    "path": "database/migrations/2026_09_02_brand_asset_resize_selector_fix.sql",
-    "area": "Identidade de impressao",
-    "required": true,
-    "description": "Adiciona dimensoes em milimetros, encaixe seguro e selecao de logo por contexto."
-  },
-  {
-    "name": "2026_09_02_smart_workflow_schema_fix",
-    "path": "database/migrations/2026_09_02_smart_workflow_schema_fix.sql",
-    "area": "Workflow Inteligente",
-    "required": true,
-    "description": "Hotfix idempotente que garante as quatro tabelas exigidas pelo startup e pelo modulo SmartWorkflow."
-  },
-  {
-    "name": "2026_09_01_brand_logo_upload_print",
-    "path": "database/migrations/2026_09_01_brand_logo_upload_print.sql",
-    "area": "Identidade de impressao",
-    "required": true,
-    "description": "Logos oficiais por tenant e por modelo de etiqueta, preservadas para impressao."
-  },
-  {
-    "name": "2026_08_27_physical_archive_2",
-    "path": "database/migrations/2026_08_27_physical_archive_2.sql",
-    "area": "Acervo Fisico",
-    "required": true,
-    "description": "Acervo Fisico 2.0: caixas, localizacoes, movimentacoes, inventario, emprestimos e cadeia de custodia."
-  },
-  {
-    "name": "2026_08_26_label_template_catalog_seed_fix",
-    "path": "database/migrations/2026_08_26_label_template_catalog_seed_fix.sql",
-    "area": "Etiquetas",
-    "required": true,
-    "description": "Seed de modelos padrao de etiqueta."
-  },
-  {
-    "name": "2026_08_26_label_print_calibration",
-    "path": "database/migrations/2026_08_26_label_print_calibration.sql",
-    "area": "Etiquetas",
-    "required": true,
-    "description": "Adiciona calibracao profissional por tenant, usuario e impressora."
-  },
-  {
-    "name": "2026_08_26_smart_workflow_core",
-    "path": "database/migrations/2026_08_26_smart_workflow_core.sql",
-    "area": "Workflow Inteligente",
-    "required": true,
-    "description": "Cria tarefas, eventos, regras e snapshots com SLA e isolamento por tenant."
-  },
-  {
-    "name": "2026_08_26_smart_ged_assistant",
-    "path": "database/migrations/2026_08_26_smart_ged_assistant.sql",
-    "area": "Assistente Documental",
-    "required": true,
-    "description": "Cria sessoes, mensagens, citacoes e sugestoes de acao rastreaveis do assistente local."
-  },
-  {
-    "name": "2026_08_26_smart_ged_core",
-    "path": "database/migrations/2026_08_26_smart_ged_core.sql",
-    "area": "GED Inteligente",
-    "required": true,
-    "description": "Cria analises locais, sugestoes revisaveis, qualidade documental e log da busca inteligente."
-  },
-  {
-    "name": "2026_08_25_admin_labels_legacy_schema_compat",
-    "path": "database/migrations/2026_08_25_admin_labels_legacy_schema_compat.sql",
-    "area": "Compatibilidade Administracao e Etiquetas",
-    "required": true,
-    "description": "Garante colunas auxiliares e fallbacks para bancos legados."
-  },
-  {
     "name": "2026_08_25_permission_catalog_compat_hotfix",
     "path": "database/migrations/2026_08_25_permission_catalog_compat_hotfix.sql",
     "area": "Administracao",
@@ -77,11 +7,116 @@
     "description": "Garante colunas description e module no catalogo de permissoes."
   },
   {
-    "name": "2026_08_24_observability_incident_center",
-    "path": "database/migrations/2026_08_24_observability_incident_center.sql",
-    "area": "Observabilidade",
+    "name": "2026_08_21_administration_legacy_schema_compat",
+    "path": "database/migrations/2026_08_21_administration_legacy_schema_compat.sql",
+    "area": "Administracao",
     "required": true,
-    "description": "Cria a central de incidentes, eventos agrupados e snapshots de rotas."
+    "description": "Garante colunas administrativas legadas."
+  },
+  {
+    "name": "20260525_document_is_confidential_fix",
+    "path": "database/migrations/20260525_document_is_confidential_fix.sql",
+    "area": "GedSecurity",
+    "required": true,
+    "description": "Dependência do manifesto operacional, na ordem de instalação validada."
+  },
+  {
+    "name": "20260601_upload_batch",
+    "path": "database/migrations/20260601_upload_batch.sql",
+    "area": "Upload",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_06_ged_schema_consolidation",
+    "path": "database/migrations/2026_06_ged_schema_consolidation.sql",
+    "area": "GedCore",
+    "required": true,
+    "description": "Dependência do manifesto operacional, na ordem de instalação validada."
+  },
+  {
+    "name": "2026_06_harden_ged_uploads_schema",
+    "path": "database/migrations/2026_06_harden_ged_uploads_schema.sql",
+    "area": "GedRuntime",
+    "required": true,
+    "description": "Dependência do manifesto operacional, na ordem de instalação validada."
+  },
+  {
+    "name": "2026_06_document_version_reg_status",
+    "path": "database/migrations/2026_06_document_version_reg_status.sql",
+    "area": "GedRuntime",
+    "required": true,
+    "description": "Dependência do manifesto operacional, na ordem de instalação validada."
+  },
+  {
+    "name": "2026_06_ocr_job_diagnostics",
+    "path": "database/migrations/2026_06_ocr_job_diagnostics.sql",
+    "area": "GedRuntime",
+    "required": true,
+    "description": "Dependência do manifesto operacional, na ordem de instalação validada."
+  },
+  {
+    "name": "2026_06_ged_processing_pipeline",
+    "path": "database/migrations/2026_06_ged_processing_pipeline.sql",
+    "area": "GedProcessing",
+    "required": true,
+    "description": "Dependência do manifesto operacional, na ordem de instalação validada."
+  },
+  {
+    "name": "2026_06_code_sequence_and_parameters_fix",
+    "path": "database/migrations/2026_06_code_sequence_and_parameters_fix.sql",
+    "area": "OperationalReadiness",
+    "required": true,
+    "description": "Dependência do manifesto operacional, na ordem de instalação validada."
+  },
+  {
+    "name": "2026_06_document_partial_workflow",
+    "path": "database/migrations/2026_06_document_partial_workflow.sql",
+    "area": "OperationalReadiness",
+    "required": true,
+    "description": "Dependência do manifesto operacional, na ordem de instalação validada."
+  },
+  {
+    "name": "2026_06_upload_duplicate_allow_anyway",
+    "path": "database/migrations/2026_06_upload_duplicate_allow_anyway.sql",
+    "area": "OperationalReadiness",
+    "required": true,
+    "description": "Dependência do manifesto operacional, na ordem de instalação validada."
+  },
+  {
+    "name": "2026_06_ocr_auto_schedule",
+    "path": "database/migrations/2026_06_ocr_auto_schedule.sql",
+    "area": "OperationalReadiness",
+    "required": true,
+    "description": "Dependência do manifesto operacional, na ordem de instalação validada."
+  },
+  {
+    "name": "2026_06_document_quality",
+    "path": "database/migrations/2026_06_document_quality.sql",
+    "area": "OperationalReadiness",
+    "required": true,
+    "description": "Dependência do manifesto operacional, na ordem de instalação validada."
+  },
+  {
+    "name": "20260605_upload_ocr_partial_documents",
+    "path": "database/migrations/20260605_upload_ocr_partial_documents.sql",
+    "area": "OperationalReadiness",
+    "required": true,
+    "description": "Dependência do manifesto operacional, na ordem de instalação validada."
+  },
+  {
+    "name": "2026_06_upload_batch_incomplete_and_resilience",
+    "path": "database/migrations/2026_06_upload_batch_incomplete_and_resilience.sql",
+    "area": "OperationalReadiness",
+    "required": true,
+    "description": "Dependência do manifesto operacional, na ordem de instalação validada."
+  },
+  {
+    "name": "2026_08_24_database_readiness_migration_runner",
+    "path": "database/migrations/2026_08_24_database_readiness_migration_runner.sql",
+    "area": "OperationalReadiness",
+    "required": true,
+    "description": "Dependência do manifesto operacional, na ordem de instalação validada."
   },
   {
     "name": "2026_08_label_template_designer",
@@ -91,18 +126,25 @@
     "description": "Cria modelos de etiqueta, templates LocDesk e tabelas auxiliares."
   },
   {
+    "name": "2026_08_locdesk_labels",
+    "path": "database/migrations/2026_08_locdesk_labels.sql",
+    "area": "Etiquetas",
+    "required": true,
+    "description": "Garante rascunhos e integracao de etiquetas LocDesk."
+  },
+  {
+    "name": "2026_08_classification_plan_compat_hotfix",
+    "path": "database/migrations/2026_08_classification_plan_compat_hotfix.sql",
+    "area": "OperationalReadiness",
+    "required": true,
+    "description": "Dependência do manifesto operacional, na ordem de instalação validada."
+  },
+  {
     "name": "2026_08_21_classification_plan_title_compat_hotfix",
     "path": "database/migrations/2026_08_21_classification_plan_title_compat_hotfix.sql",
     "area": "Classificacao",
     "required": true,
     "description": "Garante title/code/description/final_destination em classification_plan."
-  },
-  {
-    "name": "2026_08_21_administration_legacy_schema_compat",
-    "path": "database/migrations/2026_08_21_administration_legacy_schema_compat.sql",
-    "area": "Administracao",
-    "required": true,
-    "description": "Garante colunas administrativas legadas."
   },
   {
     "name": "2026_08_21_instrument_version_compat_hotfix",
@@ -119,6 +161,139 @@
     "description": "Garante estrutura minima para destinacao documental."
   },
   {
+    "name": "2026_07_identity_role_integrity",
+    "path": "database/migrations/2026_07_identity_role_integrity.sql",
+    "area": "Identity",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_07_administration_security_governance",
+    "path": "database/migrations/2026_07_administration_security_governance.sql",
+    "area": "Administration",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_07_backup_continuity_portability",
+    "path": "database/migrations/2026_07_backup_continuity_portability.sql",
+    "area": "Continuity",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_07_estabilizar_admin_continuity_ci",
+    "path": "database/migrations/2026_07_estabilizar_admin_continuity_ci.sql",
+    "area": "Continuity",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_07_cluster_nodes_and_deployments",
+    "path": "database/migrations/2026_07_cluster_nodes_and_deployments.sql",
+    "area": "HighAvailability",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_07_workspace_productivity",
+    "path": "database/migrations/2026_07_workspace_productivity.sql",
+    "area": "Workspace",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_06_loan_item_identity_preflight",
+    "path": "database/migrations/2026_06_loan_item_identity_preflight.sql",
+    "area": "Core",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_06_loans_manual_items_history",
+    "path": "database/migrations/2026_06_loans_manual_items_history.sql",
+    "area": "Core",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_06_loans_history",
+    "path": "database/migrations/2026_06_loans_history.sql",
+    "area": "Core",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_06_contextual_smart_search_and_loans",
+    "path": "database/migrations/2026_06_contextual_smart_search_and_loans.sql",
+    "area": "Core",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_06_protocol_module",
+    "path": "database/migrations/2026_06_protocol_module.sql",
+    "area": "Core",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_07_signature_runtime_prerequisites",
+    "path": "database/migrations/2026_07_signature_runtime_prerequisites.sql",
+    "area": "Signatures",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_07_signature_cms_agent",
+    "path": "database/migrations/2026_07_signature_cms_agent.sql",
+    "area": "Signatures",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_07_signature_cms_end_to_end",
+    "path": "database/migrations/2026_07_signature_cms_end_to_end.sql",
+    "area": "Signatures",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_07_signature_cms_agent_runtime",
+    "path": "database/migrations/2026_07_signature_cms_agent_runtime.sql",
+    "area": "Signatures",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_07_signature_cms_operational_fix",
+    "path": "database/migrations/2026_07_signature_cms_operational_fix.sql",
+    "area": "Signatures",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_07_signature_cms_rc3_status",
+    "path": "database/migrations/2026_07_signature_cms_rc3_status.sql",
+    "area": "Signatures",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_archival_intelligence_core_v1",
+    "path": "database/migrations/2026_08_archival_intelligence_core_v1.sql",
+    "area": "ArchivalIntelligence",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_label_print_modes_and_templates",
+    "path": "database/migrations/2026_08_label_print_modes_and_templates.sql",
+    "area": "OperationalReadiness",
+    "required": true,
+    "description": "Dependência do manifesto operacional, na ordem de instalação validada."
+  },
+  {
     "name": "2026_08_label_print_queue",
     "path": "database/migrations/2026_08_label_print_queue.sql",
     "area": "Etiquetas",
@@ -126,11 +301,207 @@
     "description": "Garante fila de impressao de etiquetas."
   },
   {
-    "name": "2026_08_locdesk_labels",
-    "path": "database/migrations/2026_08_locdesk_labels.sql",
-    "area": "Etiquetas",
+    "name": "2026_08_document_folder_move_history",
+    "path": "database/migrations/2026_08_document_folder_move_history.sql",
+    "area": "GedDocumentMovement",
     "required": true,
-    "description": "Garante rascunhos e integracao de etiquetas LocDesk."
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_10_classification_plan_hotfix",
+    "path": "database/migrations/2026_08_10_classification_plan_hotfix.sql",
+    "area": "ArchivalClassificationCompatibility",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_10_final_schema_hotfix",
+    "path": "database/migrations/2026_08_10_final_schema_hotfix.sql",
+    "area": "FinalSchemaCompatibility",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_archival_schema_prerequisites",
+    "path": "database/migrations/2026_08_archival_schema_prerequisites.sql",
+    "area": "Arquivo",
+    "required": true,
+    "description": "Preserva classificacoes e a view fisica legada antes da consolidacao."
+  },
+  {
+    "name": "2026_08_archival_schema_consolidation",
+    "path": "database/migrations/2026_08_archival_schema_consolidation.sql",
+    "area": "ArchivalSchema",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_labels_classification_evolution",
+    "path": "database/migrations/2026_08_labels_classification_evolution.sql",
+    "area": "ArchivalClassificationAndLabels",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_physical_map_inventory_prerequisite",
+    "path": "database/migrations/2026_08_physical_map_inventory_prerequisite.sql",
+    "area": "ArchivalIntelligence",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_archival_labels_physical_inventory",
+    "path": "database/migrations/2026_08_archival_labels_physical_inventory.sql",
+    "area": "ArchivalLabelsPhysicalInventory",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_physical_archive_operations",
+    "path": "database/migrations/2026_08_physical_archive_operations.sql",
+    "area": "PhysicalArchive",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_loans_overdue_collections_reports",
+    "path": "database/migrations/2026_08_loans_overdue_collections_reports.sql",
+    "area": "LoansOperationsPremium",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_10_archival_migration_hotfix",
+    "path": "database/migrations/2026_08_10_archival_migration_hotfix.sql",
+    "area": "ArchivalCompatibility",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_11_runtime_schema_hotfix",
+    "path": "database/migrations/2026_08_11_runtime_schema_hotfix.sql",
+    "area": "RuntimeSchemaCompatibility",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_11_loans_overdue_runtime_hotfix",
+    "path": "database/migrations/2026_08_11_loans_overdue_runtime_hotfix.sql",
+    "area": "LoansAndPhysicalRuntimeCompatibility",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_11_billing_extraction",
+    "path": "database/migrations/2026_08_11_billing_extraction.sql",
+    "area": "BillingExtraction",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_11_billing_review_governance",
+    "path": "database/migrations/2026_08_11_billing_review_governance.sql",
+    "area": "BillingExtraction",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_11_billing_extraction_rules",
+    "path": "database/migrations/2026_08_11_billing_extraction_rules.sql",
+    "area": "BillingExtraction",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_11_search_pg_trgm_safe_index",
+    "path": "database/migrations/2026_08_11_search_pg_trgm_safe_index.sql",
+    "area": "SmartSearch",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_12_protocol_tramitation",
+    "path": "database/migrations/2026_08_12_protocol_tramitation.sql",
+    "area": "ProtocolTramitation",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_13_hospital_billing_smart_search",
+    "path": "database/migrations/2026_08_13_hospital_billing_smart_search.sql",
+    "area": "HospitalBillingSmartSearch",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_14_hospital_billing_review_history",
+    "path": "database/migrations/2026_08_14_hospital_billing_review_history.sql",
+    "area": "HospitalBilling",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_17_hospital_billing_workflow_audit",
+    "path": "database/migrations/2026_08_17_hospital_billing_workflow_audit.sql",
+    "area": "HospitalBilling",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_17_smart_search_administration_closure",
+    "path": "database/migrations/2026_08_17_smart_search_administration_closure.sql",
+    "area": "SmartSearchAdministration",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_18_ged_operational_routes_audit",
+    "path": "database/migrations/2026_08_18_ged_operational_routes_audit.sql",
+    "area": "GedOperational",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_18_smart_search_saved_search_evolution",
+    "path": "database/migrations/2026_08_18_smart_search_saved_search_evolution.sql",
+    "area": "SmartSearch",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_18_smart_search_read_models_hardening",
+    "path": "database/migrations/2026_08_18_smart_search_read_models_hardening.sql",
+    "area": "SmartSearch",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_19_executive_reports_performance",
+    "path": "database/migrations/2026_08_19_executive_reports_performance.sql",
+    "area": "ExecutiveReports",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_label_tracking_inventory",
+    "path": "database/migrations/2026_08_label_tracking_inventory.sql",
+    "area": "LabelTracking",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_contract_fiscalization_acceptance",
+    "path": "database/migrations/2026_08_contract_fiscalization_acceptance.sql",
+    "area": "ContractFiscalization",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_24_observability_incident_center",
+    "path": "database/migrations/2026_08_24_observability_incident_center.sql",
+    "area": "Observabilidade",
+    "required": true,
+    "description": "Cria a central de incidentes, eventos agrupados e snapshots de rotas."
   },
   {
     "name": "2026_08_24_uat_go_live_readiness",
@@ -140,11 +511,67 @@
     "description": "Cria planos, casos, execucoes, resultados e evidencias UAT."
   },
   {
+    "name": "2026_08_25_admin_labels_legacy_schema_compat",
+    "path": "database/migrations/2026_08_25_admin_labels_legacy_schema_compat.sql",
+    "area": "Compatibilidade Administracao e Etiquetas",
+    "required": true,
+    "description": "Garante colunas auxiliares e fallbacks para bancos legados."
+  },
+  {
+    "name": "2026_08_26_smart_ged_core",
+    "path": "database/migrations/2026_08_26_smart_ged_core.sql",
+    "area": "GED Inteligente",
+    "required": true,
+    "description": "Cria analises locais, sugestoes revisaveis, qualidade documental e log da busca inteligente."
+  },
+  {
+    "name": "2026_08_26_smart_ged_assistant",
+    "path": "database/migrations/2026_08_26_smart_ged_assistant.sql",
+    "area": "Assistente Documental",
+    "required": true,
+    "description": "Cria sessoes, mensagens, citacoes e sugestoes de acao rastreaveis do assistente local."
+  },
+  {
+    "name": "2026_08_26_smart_workflow_core",
+    "path": "database/migrations/2026_08_26_smart_workflow_core.sql",
+    "area": "Workflow Inteligente",
+    "required": true,
+    "description": "Cria tarefas, eventos, regras e snapshots com SLA e isolamento por tenant."
+  },
+  {
+    "name": "2026_08_26_label_template_catalog_seed_fix",
+    "path": "database/migrations/2026_08_26_label_template_catalog_seed_fix.sql",
+    "area": "Etiquetas",
+    "required": true,
+    "description": "Seed de modelos padrao de etiqueta."
+  },
+  {
+    "name": "2026_08_26_label_print_calibration",
+    "path": "database/migrations/2026_08_26_label_print_calibration.sql",
+    "area": "Etiquetas",
+    "required": true,
+    "description": "Adiciona calibracao profissional por tenant, usuario e impressora."
+  },
+  {
     "name": "2026_08_27_classification_retention_plan_2",
     "path": "database/migrations/2026_08_27_classification_retention_plan_2.sql",
     "area": "Arquivistica",
     "required": true,
     "description": "Plano de classificacao, temporalidade, versoes e revisao 2.0."
+  },
+  {
+    "name": "2026_08_physical_archive_v2_prerequisites",
+    "path": "database/migrations/2026_08_physical_archive_v2_prerequisites.sql",
+    "area": "PhysicalArchive",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_27_physical_archive_2",
+    "path": "database/migrations/2026_08_27_physical_archive_2.sql",
+    "area": "Acervo Fisico",
+    "required": true,
+    "description": "Acervo Fisico 2.0: caixas, localizacoes, movimentacoes, inventario, emprestimos e cadeia de custodia."
   },
   {
     "name": "2026_08_27_document_governance_2",
@@ -182,11 +609,32 @@
     "description": "Identidade rastreavel, token QR seguro, leituras, substituicoes e qualidade visual."
   },
   {
+    "name": "2026_09_01_brand_logo_upload_print",
+    "path": "database/migrations/2026_09_01_brand_logo_upload_print.sql",
+    "area": "Identidade de impressao",
+    "required": true,
+    "description": "Logos oficiais por tenant e por modelo de etiqueta, preservadas para impressao."
+  },
+  {
     "name": "2026_09_01_print_branding_center_2",
     "path": "database/migrations/2026_09_01_print_branding_center_2.sql",
     "area": "Identidade visual de impressao",
     "required": true,
     "description": "Perfis visuais por cliente e contrato, vinculos por template e auditoria."
+  },
+  {
+    "name": "2026_09_02_brand_asset_resize_selector_fix",
+    "path": "database/migrations/2026_09_02_brand_asset_resize_selector_fix.sql",
+    "area": "Identidade de impressao",
+    "required": true,
+    "description": "Adiciona dimensoes em milimetros, encaixe seguro e selecao de logo por contexto."
+  },
+  {
+    "name": "2026_09_02_smart_workflow_schema_fix",
+    "path": "database/migrations/2026_09_02_smart_workflow_schema_fix.sql",
+    "area": "Workflow Inteligente",
+    "required": true,
+    "description": "Hotfix idempotente que garante as quatro tabelas exigidas pelo startup e pelo modulo SmartWorkflow."
   },
   {
     "name": "2026_09_02_logo_layout_studio_print",
@@ -224,13 +672,6 @@
     "description": "Adiciona reg_status de forma idempotente as tabelas do acervo fisico."
   },
   {
-    "name": "2026_09_17_physical_archive_status_compat_fix",
-    "path": "database/migrations/2026_09_17_physical_archive_status_compat_fix.sql",
-    "area": "Acervo fisico",
-    "required": true,
-    "description": "Garante a coluna status e demais campos de ciclo de vida usados pelo /Physical/Dashboard."
-  },
-  {
     "name": "2026_09_08_label_canvas_designer_rc22",
     "path": "database/migrations/2026_09_08_label_canvas_designer_rc22.sql",
     "area": "Etiquetas",
@@ -259,6 +700,34 @@
     "description": "Publica os cinco modelos Canvas neutros com envelope imutavel."
   },
   {
+    "name": "2026_08_label_mobile_offline_evidence",
+    "path": "database/migrations/2026_08_label_mobile_offline_evidence.sql",
+    "area": "LabelMobile",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_08_fiscal_portal_acceptance_signature",
+    "path": "database/migrations/2026_08_fiscal_portal_acceptance_signature.sql",
+    "area": "FiscalPortal",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_09_10_label_studio_pro_rc28",
+    "path": "database/migrations/2026_09_10_label_studio_pro_rc28.sql",
+    "area": "Labels",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_09_10_label_studio_operational_rc29",
+    "path": "database/migrations/2026_09_10_label_studio_operational_rc29.sql",
+    "area": "Labels",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
     "name": "2026_09_11_rc33_collaboration_and_intake",
     "path": "database/migrations/2026_09_11_rc33_collaboration_and_intake.sql",
     "area": "Etiquetas / Governanca documental",
@@ -266,18 +735,53 @@
     "description": "Adiciona concorrencia otimista aos modelos de etiquetas e estrutura de conferencia documental."
   },
   {
-    "name": "2026_09_14_rc34_operational_closure",
-    "path": "database/migrations/2026_09_14_rc34_operational_closure.sql",
-    "area": "Etiquetas / Entrada documental",
-    "required": true,
-    "description": "Adiciona selecao temporaria para impressao em lote e presets reutilizaveis do Label Studio."
-  },
-  {
     "name": "2026_09_14_label_print_governance_rc39",
     "path": "database/migrations/2026_09_14_label_print_governance_rc39.sql",
     "area": "Etiquetas / Governanca de impressao",
     "required": true,
     "description": "Adiciona idempotencia por acao, operacao auditavel e armazenamento imutavel do artefato."
+  },
+  {
+    "name": "20260603_upload_chunk",
+    "path": "database/migrations/20260603_upload_chunk.sql",
+    "area": "GedUploadChunk",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_09_29_ged_upload_chunk_compatibility",
+    "path": "database/migrations/2026_09_29_ged_upload_chunk_compatibility.sql",
+    "area": "GedUploadChunk",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_09_30_ged_physical_transit",
+    "path": "database/migrations/2026_09_30_ged_physical_transit.sql",
+    "area": "GedPhysicalTransit",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_10_01_ged_retention_c2",
+    "path": "database/migrations/2026_10_01_ged_retention_c2.sql",
+    "area": "GedRetentionTemporal",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_09_protocol_custody_index_preflight",
+    "path": "database/migrations/2026_09_protocol_custody_index_preflight.sql",
+    "area": "ProtocolCustody",
+    "required": true,
+    "description": "Compatibilidade operacional transacional anterior à migration publicada."
+  },
+  {
+    "name": "2026_09_30_protocol_custody_center",
+    "path": "database/migrations/2026_09_30_protocol_custody_center.sql",
+    "area": "GedProtocolCustody",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
   },
   {
     "name": "2026_10_02_document_ai_governance",
@@ -308,10 +812,66 @@
     "description": "Registra a revisão da sugestão, a pendência de temporalidade e a reconciliação única do consumo tardio."
   },
   {
+    "name": "2026_10_06_document_ai_review_identity_preflight",
+    "path": "database/migrations/2026_10_06_document_ai_review_identity_preflight.sql",
+    "area": "Inteligencia artificial",
+    "required": true,
+    "description": "Prepara identidades legadas sem alterar migrations publicadas ou excluir revisoes."
+  },
+  {
     "name": "2026_10_06_document_ai_review_recovery",
     "path": "database/migrations/2026_10_06_document_ai_review_recovery.sql",
     "area": "IA documental",
     "required": true,
     "description": "Identifica a revisão de forma estável e torna recuperável o recálculo de temporalidade gravado na mesma transação."
+  },
+  {
+    "name": "2026_10_07_document_ai_retention_retry",
+    "path": "database/migrations/2026_10_07_document_ai_retention_retry.sql",
+    "area": "Inteligencia artificial",
+    "required": true,
+    "description": "Retry limitado para recuperacao transacional de temporalidade."
+  },
+  {
+    "name": "2026_10_07_physical_map_contract",
+    "path": "database/migrations/2026_10_07_physical_map_contract.sql",
+    "area": "ArchivalIntelligence",
+    "required": true,
+    "description": "Dependência operacional; execução transacional pelo manifesto oficial."
+  },
+  {
+    "name": "2026_06_profile_scope_sector_access",
+    "path": "database/migrations/2026_06_profile_scope_sector_access.sql",
+    "area": "OperationalReadiness",
+    "required": true,
+    "description": "Dependência do manifesto operacional, na ordem de instalação validada."
+  },
+  {
+    "name": "2026_06_ged_bulk_actions_and_upload_logs",
+    "path": "database/migrations/2026_06_ged_bulk_actions_and_upload_logs.sql",
+    "area": "OperationalReadiness",
+    "required": true,
+    "description": "Dependência do manifesto operacional, na ordem de instalação validada."
+  },
+  {
+    "name": "2026_09_17_physical_archive_status_compat_fix",
+    "path": "database/migrations/2026_09_17_physical_archive_status_compat_fix.sql",
+    "area": "Acervo fisico",
+    "required": true,
+    "description": "Garante a coluna status e demais campos de ciclo de vida usados pelo /Physical/Dashboard."
+  },
+  {
+    "name": "2026_09_14_rc34_operational_closure",
+    "path": "database/migrations/2026_09_14_rc34_operational_closure.sql",
+    "area": "Etiquetas / Entrada documental",
+    "required": true,
+    "description": "Adiciona selecao temporaria para impressao em lote e presets reutilizaveis do Label Studio."
+  },
+  {
+    "name": "2026_10_07_audit_runtime_actions",
+    "path": "database/migrations/2026_10_07_audit_runtime_actions.sql",
+    "area": "Audit",
+    "required": true,
+    "description": "Compatibilidade operacional validada pelo manifesto."
   }
 ]

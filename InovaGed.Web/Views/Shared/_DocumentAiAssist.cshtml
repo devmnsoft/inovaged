@@ -1,4 +1,9 @@
 @model InovaGed.Web.Models.DocumentAiAssistVm
+@inject Microsoft.Extensions.Options.IOptions<InovaGed.Application.ArtificialIntelligence.DocumentAiOptions> AiOptions
+@if (string.Equals(AiOptions.Value.Provider, "Deterministic", StringComparison.OrdinalIgnoreCase))
+{
+    <div class="alert alert-warning" role="status">Provedor determinístico de homologação. Estes resultados não homologam provedores reais.</div>
+}
 <section class="side-section card card-body mb-3" data-ai-assist>
     <div class="side-title h6">Resumo assistido <span class="badge bg-warning text-dark">Sugestão</span></div>
     <p class="small text-muted">Como usar: gere o resumo, confira cada trecho no original e use Tab para percorrer os botões. O documento não é alterado. Cancelar interrompe a espera e descarta a resposta atrasada.</p>

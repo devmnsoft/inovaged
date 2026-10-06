@@ -276,31 +276,23 @@ where v.tenant_id=@tenantId and v.id=any(@ids) and coalesce(d.reg_status,'A')='A
 
     private async Task<AssistResponse> FinishRetentionAsync(AssistCaller caller, Guid documentId, AssistedWriteResult written, CancellationToken ct)
     {
-        var claimToken = Guid.NewGuid();
-        RetentionClaim? claim = null;
         try
         {
-            claim = await documents.ClaimRetentionAsync(caller.TenantId, written.PendingId!.Value, claimToken, ct);
-            if (claim is null)
-                return Ok(new { success = true, alreadyApplied = false, partial = true, retentionRecalculated = false, retentionPending = true, retentionState = "em processamento", concurrencyToken = written.ConcurrencyToken, applicationId = written.ApplicationId, message = "A classificação foi gravada. O recálculo de temporalidade está em processamento e permanece recuperável. HOLD, empréstimos e impedimentos não foram alterados." });
-            await retention.RunOneAsync(caller.TenantId, documentId, 30, ct);
-            var resolved = await documents.ResolveRetentionAsync(caller.TenantId, claim.Id, claimToken, CancellationToken.None);
-            var recovered = resolved && claim.Attempts > 1;
-            return Ok(new { success = true, alreadyApplied = false, partial = false, retentionRecalculated = true, retentionPending = false, retentionState = recovered ? "recuperada" : "concluida", concurrencyToken = written.ConcurrencyToken, applicationId = written.ApplicationId, message = recovered ? "Pendência de temporalidade recuperada. HOLD, empréstimos e impedimentos foram preservados." : "Gravação concluída e temporalidade recalculada. HOLD, empréstimos e impedimentos foram preservados." });
+            var result = await new InovaGed.Infrastructure.Retention.AssistedRetentionRecovery(db, retention)
+                .RunAsync(caller.TenantId, written.PendingId!.Value, true, ct);
+            return Ok(new { success = true, alreadyApplied = false, partial = !result.Resolved, retentionRecalculated = result.Resolved,
+                retentionPending = !result.Resolved, retentionState = result.State, concurrencyToken = written.ConcurrencyToken,
+                applicationId = written.ApplicationId, attempts = result.Attempts,
+                message = result.Resolved ? "Gravação e temporalidade concluídas. HOLD e impedimentos foram preservados."
+                    : "Conclusão parcial: classificação gravada; temporalidade pendente de recuperação automática." });
         }
-        catch (OperationCanceledException)
+        catch (Exception)
         {
-            if (claim is not null) await documents.FailRetentionAsync(caller.TenantId, claim.Id, claimToken, "temporalidade:cancelada", CancellationToken.None);
-            return Ok(new { success = true, alreadyApplied = false, partial = true, retentionRecalculated = false, retentionPending = true, retentionState = "pendente", concurrencyToken = written.ConcurrencyToken, applicationId = written.ApplicationId, message = "Conclusão parcial: a classificação permanece gravada e o recálculo ficou pendente após o cancelamento. HOLD, empréstimos e impedimentos não foram alterados." });
-        }
-        catch (Exception ex)
-        {
-            var code = ex is PostgresException pg ? "temporalidade:" + pg.SqlState : "temporalidade:falha";
-            if (claim is not null) await documents.FailRetentionAsync(caller.TenantId, claim.Id, claimToken, code, CancellationToken.None);
-            return Ok(new { success = true, alreadyApplied = false, partial = true, retentionRecalculated = false, retentionPending = true, retentionState = "pendente", concurrencyToken = written.ConcurrencyToken, applicationId = written.ApplicationId, message = "Conclusão parcial: a classificação foi gravada e a pendência de temporalidade permanece para recuperação. HOLD, empréstimos e impedimentos não foram alterados." });
+            return Ok(new { success = true, alreadyApplied = false, partial = true, retentionRecalculated = false,
+                retentionPending = true, retentionState = "pendente", concurrencyToken = written.ConcurrencyToken,
+                applicationId = written.ApplicationId, message = "Classificação gravada; a pendência durável será retomada pelo worker." });
         }
     }
-
     public async Task<AssistResponse> ListReviewsAsync(Guid documentId, int page, int pageSize, AssistCaller caller, CancellationToken ct)
     {
         if (!caller.Authenticated) return new(401, new { success = false, message = "Autenticação obrigatória." });
@@ -327,6 +319,7 @@ where v.tenant_id=@tenantId and v.id=any(@ids) and coalesce(d.reg_status,'A')='A
                 return new
                 {
                     row.Id,
+                    row.ExecutionId,
                     kind = row.Kind,
                     situation = ReviewIdentity.Situation(row.Kind, row.Outcome, pendingOpen, pendingResolved, row.Attempts, expired),
                     task = row.Task,
@@ -367,38 +360,17 @@ where v.tenant_id=@tenantId and v.id=any(@ids) and coalesce(d.reg_status,'A')='A
         if (!await CanAsync(caller, document, "EDIT", ct)) return await DenyAsync(caller, document, document.VersionId, "edit_permission_missing", ct);
         var pending = await documents.GetRetentionAsync(caller.TenantId, pendingId, ct);
         if (pending is null || pending.DocumentId != documentId) return Fail(404, "Pendência não encontrada.");
-        if (pending.ResolvedAt is not null)
-        {
-            await audit.WriteAsync(caller.TenantId, caller.UserId, "AI_RETENTION_RETRY", "DOCUMENT", documentId, "Recuperação de temporalidade já estava concluída", caller.Ip, caller.UserAgent, new { pendingId, pending.State, pending.Attempts }, ct);
-            return Ok(new { success = true, retentionPending = false, retentionRecalculated = true, retentionState = "resolvida", partial = false, message = "A pendência já estava resolvida." });
-        }
-        var claimToken = Guid.NewGuid();
-        var claim = await documents.ClaimRetentionAsync(caller.TenantId, pendingId, claimToken, ct);
-        if (claim is null)
-        {
-            await audit.WriteAsync(caller.TenantId, caller.UserId, "AI_RETENTION_RETRY", "DOCUMENT", documentId, "Recuperação de temporalidade já em processamento", caller.Ip, caller.UserAgent, new { pendingId, state = "em processamento" }, ct);
-            return Ok(new { success = true, retentionPending = true, retentionRecalculated = false, retentionState = "em processamento", partial = true, message = "O recálculo já está em processamento." });
-        }
-        try
-        {
-            await retention.RunOneAsync(caller.TenantId, documentId, 30, ct);
-            await documents.ResolveRetentionAsync(caller.TenantId, claim.Id, claimToken, CancellationToken.None);
-            await audit.WriteAsync(caller.TenantId, caller.UserId, "AI_RETENTION_RETRY", "DOCUMENT", documentId, "Recuperação de temporalidade concluída", caller.Ip, caller.UserAgent, new { pendingId, claim.Attempts, state = "resolvida" }, ct);
-            return Ok(new { success = true, retentionPending = false, retentionRecalculated = true, retentionState = claim.Attempts > 1 ? "recuperada" : "concluida", partial = false, attempts = claim.Attempts, message = "Pendência de temporalidade recuperada. HOLD, empréstimos e impedimentos foram preservados." });
-        }
-        catch (Exception ex)
-        {
-            var code = ex is OperationCanceledException ? "temporalidade:cancelada" : ex is PostgresException pg ? "temporalidade:" + pg.SqlState : "temporalidade:falha";
-            await documents.FailRetentionAsync(caller.TenantId, claim.Id, claimToken, code, CancellationToken.None);
-            await audit.WriteAsync(caller.TenantId, caller.UserId, "AI_RETENTION_RETRY", "DOCUMENT", documentId, "Recuperação de temporalidade permanece pendente", caller.Ip, caller.UserAgent, new { pendingId, claim.Attempts, error = code }, ct);
-            return Ok(new { success = false, retentionPending = true, retentionRecalculated = false, retentionState = "pendente", partial = true, attempts = claim.Attempts, message = "A nova tentativa não concluiu o recálculo. A pendência continua recuperável." });
-        }
+        var result = await new InovaGed.Infrastructure.Retention.AssistedRetentionRecovery(db, retention)
+            .RunAsync(caller.TenantId, pendingId, true, ct);
+        return Ok(new { success = result.Resolved, retentionPending = !result.Resolved, retentionRecalculated = result.Resolved,
+            retentionState = result.State, partial = !result.Resolved, attempts = result.Attempts,
+            message = result.Resolved ? "Temporalidade concluída. Nenhum efeito foi duplicado."
+                : "A pendência permanece recuperável; consulte as tentativas e o erro registrado." });
     }
-
     private static AssistResponse FromStored(StoredReview existing)
     {
         var pending = existing.RetentionPending;
-        var concluded = !pending && string.Equals(existing.Outcome, "Applied", StringComparison.OrdinalIgnoreCase);
+        var concluded = !pending && existing.RetentionResolvedAt is not null;
         var message = pending
             ? "Esta revisão já estava registrada. O recálculo de temporalidade ainda está pendente."
             : concluded
@@ -411,7 +383,7 @@ where v.tenant_id=@tenantId and v.id=any(@ids) and coalesce(d.reg_status,'A')='A
     {
         if (written.Code == "DecisionConflict") return Fail(409, written.Message ?? "A mesma revisão já foi registrada com outra decisão.");
         var pending = written.RetentionPending;
-        var concluded = !pending && string.Equals(written.Outcome, "Applied", StringComparison.OrdinalIgnoreCase);
+        var concluded = !pending && written.PendingId is not null;
         var message = pending
             ? "Esta revisão já estava registrada. O recálculo de temporalidade ainda está pendente."
             : concluded

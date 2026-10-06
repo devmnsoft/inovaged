@@ -49,14 +49,11 @@ public sealed class HospitalDocumentsPremiumUxContractTests
     }
 
     [Fact]
-    public void HospitalDocumentsSearch_HasShortCacheAndTimeoutForResponsiveness()
+    public void HospitalDocumentsSearch_HasTimeoutAndNarrowProjection()
     {
         var controller = Read("InovaGed.Web/Controller/HospitalDocumentsController.cs");
 
-        Assert.Contains("HospitalDocuments:Search:v2", controller);
-        Assert.Contains("X-InovaGed-Cache", controller);
         Assert.Contains("commandTimeout: 12", controller);
-        Assert.Contains("SlidingExpiration = TimeSpan.FromSeconds(20)", controller);
         Assert.DoesNotContain("SELECT vx.*", controller);
     }
 

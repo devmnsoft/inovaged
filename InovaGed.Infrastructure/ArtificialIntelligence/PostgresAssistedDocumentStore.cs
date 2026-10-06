@@ -95,14 +95,17 @@ returning p.id "Id", p.document_id "DocumentId", p.application_id "ApplicationId
     public async Task<bool> ResolveRetentionAsync(Guid tenantId, Guid pendingId, Guid claimToken, CancellationToken ct)
     {
         await using var connection = await db.OpenAsync(ct);
+        await using var tx = await connection.BeginTransactionAsync(ct);
         var applicationId = await connection.ExecuteScalarAsync<Guid?>(new CommandDefinition("""
 update ged.ai_retention_recalc_pending
 set resolved_at=now(), claimed_at=null, claim_token=null, last_error=null
 where id=@pendingId and tenant_id=@tenantId and claim_token=@claimToken and resolved_at is null
 returning application_id
-""", new { tenantId, pendingId, claimToken }, cancellationToken: ct));
+""", new { tenantId, pendingId, claimToken }, tx, cancellationToken: ct));
         if (applicationId is null) return false;
-        await connection.ExecuteAsync(new CommandDefinition("update ged.ai_suggestion_application set partial=false where id=@applicationId and tenant_id=@tenantId", new { applicationId, tenantId }, cancellationToken: ct));
+        var updated = await connection.ExecuteAsync(new CommandDefinition("update ged.ai_suggestion_application set partial=false where id=@applicationId and tenant_id=@tenantId", new { applicationId, tenantId }, tx, cancellationToken: ct));
+        if (updated != 1) return false;
+        await tx.CommitAsync(ct);
         return true;
     }
 
@@ -121,11 +124,11 @@ where id=@pendingId and tenant_id=@tenantId and claim_token=@claimToken and reso
     {
         await using var connection = await db.OpenAsync(ct);
         var rows = await connection.QueryAsync<ReviewHistoryRow>(new CommandDefinition("""
-select created_at "CreatedAt", id "Id", kind "Kind", task "Task", document_id "DocumentId", version_id "VersionId", reviewer_id "ReviewerId",
+select created_at "CreatedAt", id "Id", execution_id "ExecutionId", kind "Kind", task "Task", document_id "DocumentId", version_id "VersionId", reviewer_id "ReviewerId",
        outcome "Outcome", partial "Partial", decision_json "DecisionJson", result_expires_at "ResultExpiresAt", execution_state "ExecutionState",
        pending_id "PendingId", resolved_at "ResolvedAt", attempts "Attempts", last_error "LastError", count(*) over() "Total"
 from (
-  select a.created_at, a.id, 'application'::text kind, a.task, a.document_id, a.version_id, a.reviewer_id, a.outcome, a.partial, a.decision_json::text decision_json,
+  select a.created_at, a.id, a.execution_id, 'application'::text kind, a.task, a.document_id, a.version_id, a.reviewer_id, a.outcome, a.partial, a.decision_json::text decision_json,
          e.result_expires_at, e.state execution_state, p.id pending_id, p.resolved_at, coalesce(p.attempts,0) attempts, p.last_error
   from ged.ai_suggestion_application a
   join ged.ai_execution e on e.id=a.execution_id and e.tenant_id=a.tenant_id
@@ -135,7 +138,7 @@ from (
   ) p on true
   where a.tenant_id=@tenantId and a.document_id=@documentId
   union all
-  select e.created_at, e.id, 'suggestion', e.task, @documentId, null::uuid, e.user_id, null::text, false, null::text,
+  select e.created_at, e.id, e.id, 'suggestion', e.task, @documentId, null::uuid, e.user_id, null::text, false, null::text,
          e.result_expires_at, e.state, null::uuid, null::timestamptz, 0, null::varchar
   from ged.ai_execution e
   where e.tenant_id=@tenantId

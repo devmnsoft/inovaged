@@ -1,4 +1,4 @@
-﻿using Dapper;
+using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Retention;
 using Microsoft.Extensions.Logging;
@@ -127,8 +127,13 @@ select
 
     public async Task<int> RecalculateOneAsync(Guid tenantId, Guid documentId, int dueSoonDays, CancellationToken ct)
     {
-        // ✅ Ajuste se seu nome de tabela/colunas for diferente
-        const string sql = @"
+        await using var conn = await _db.OpenAsync(ct);
+        return await conn.ExecuteAsync(new CommandDefinition(RecalculateOneSql, new { tenantId, documentId, dueSoonDays }, cancellationToken: ct));
+    }
+
+    public Task<int> RecalculateOneAsync(System.Data.IDbConnection connection, System.Data.IDbTransaction transaction, Guid tenantId, Guid documentId, int dueSoonDays, CancellationToken ct)
+        => connection.ExecuteAsync(new CommandDefinition(RecalculateOneSql, new { tenantId, documentId, dueSoonDays }, transaction, cancellationToken: ct));
+        const string RecalculateOneSql = @"
 with base as (
   select
     d.id,
@@ -195,16 +200,4 @@ from calc c
 where d.tenant_id = c.tenant_id
   and d.id = c.id;
 ";
-
-        try
-        {
-            await using var conn = await _db.OpenAsync(ct);
-            return await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, documentId, dueSoonDays }, cancellationToken: ct));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "RecalculateOneAsync failed. Tenant={TenantId} Document={DocumentId}", tenantId, documentId);
-            throw;
-        }
-    }
 }

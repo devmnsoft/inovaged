@@ -52,6 +52,7 @@ public sealed class PgGatedFactAttribute : FactAttribute
 /// without PostgreSQL keeps working. The database is treated as disposable: each test truncates
 /// the governance tables first.
 /// </summary>
+[Collection("Document AI PostgreSQL")]
 public sealed class PostgresAiGovernanceStoreBehaviorTests : IAsyncLifetime
 {
     private NpgsqlConnection? _conn;

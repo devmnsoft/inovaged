@@ -37,6 +37,7 @@ public sealed class RetentionDailyWorker : BackgroundService
 
         try
         {
+            var nextDaily = DateTimeOffset.MinValue;
             while (!stoppingToken.IsCancellationRequested)
             {
                 try
@@ -44,14 +45,29 @@ public sealed class RetentionDailyWorker : BackgroundService
                     using var scope = _scopeFactory.CreateScope();
 
                     var svc = scope.ServiceProvider.GetRequiredService<IRetentionRecalcService>();
+                    var recovery = scope.ServiceProvider.GetRequiredService<AssistedRetentionRecovery>();
                     var catalog = scope.ServiceProvider.GetRequiredService<ITenantCatalog>();
+                    var runDaily = DateTimeOffset.UtcNow >= nextDaily;
                     foreach (var tenantId in await catalog.GetActiveTenantIdsAsync(stoppingToken))
                     {
-                        var rows = await svc.RunAsync(tenantId, DueSoonDays, stoppingToken);
-                        _logger.LogInformation(
-                            "RetentionDailyWorker execução OK. Tenant={TenantId} DueSoonDays={DueSoonDays} Rows={Rows}",
-                            tenantId, DueSoonDays, rows);
+                        try
+                        {
+                            await recovery.RunBatchAsync(tenantId, stoppingToken);
+                        }
+                        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { throw; }
+                        catch (Exception)
+                        {
+                            _logger.LogError("Falha de temporalidade no tenant {TenantId}; pendências serão retomadas.", tenantId);
+                        }
+                        // An unavailable AI schema must not disable conventional retention.
+                        if (runDaily)
+                        {
+                            try { await svc.RunAsync(tenantId, DueSoonDays, stoppingToken); }
+                            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { throw; }
+                            catch (Exception) { _logger.LogError("Falha no recálculo diário. Tenant={TenantId}", tenantId); }
+                        }
                     }
+                    if (runDaily) nextDaily = DateTimeOffset.UtcNow.AddDays(1);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -62,8 +78,8 @@ public sealed class RetentionDailyWorker : BackgroundService
                     _logger.LogError(ex, "Falha no RetentionDailyWorker.");
                 }
 
-                // ✅ roda 1x ao dia (pode trocar por cron depois)
-                await Task.Delay(TimeSpan.FromDays(1), stoppingToken);
+                // Bounded durable recovery every 30 seconds; full recalculation remains daily.
+                await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

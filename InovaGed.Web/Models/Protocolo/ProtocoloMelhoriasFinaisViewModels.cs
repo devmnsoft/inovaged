@@ -79,6 +79,7 @@ public sealed class ProtocoloGedVinculoVM
     public Guid? ProtocoloDocumentoId { get; set; }
     public string? ProtocoloAnexoNome { get; set; }
     public Guid? GedDocumentId { get; set; }
+    public string? GedDocumentName { get; set; }
     public string TipoVinculo { get; set; } = "";
     public string? Observacao { get; set; }
     public string? CriadoPorNome { get; set; }
@@ -91,12 +92,14 @@ public sealed class ProtocoloGedVincularVM
     public string? ProtocoloNumero { get; set; }
     public Guid? ProtocoloDocumentoId { get; set; }
 
-    [Required(ErrorMessage = "Informe o ID do documento GED.")]
+    [Required(ErrorMessage = "Selecione o documento GED.")]
     public Guid GedDocumentId { get; set; }
 
     public string TipoVinculo { get; set; } = "VINCULO";
     public string? Observacao { get; set; }
     public List<SelectListItem> Anexos { get; set; } = new();
+    public List<SelectListItem> Documentos { get; set; } = new();
+    public string? Q { get; set; }
     public List<ProtocoloGedVinculoVM> Vinculos { get; set; } = new();
 }
 

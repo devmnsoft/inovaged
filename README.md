@@ -25,6 +25,12 @@ Abra o PowerShell na raiz do repositório e execute o setup com uma connection s
 
 O script valida .NET, ferramentas PostgreSQL e, quando solicitado, OCR; cria e testa diretórios, aplica migrations e restaura pacotes. Para diagnóstico isolado, use `Test-InovaGedPrerequisites.ps1`. As rotinas `Backup-InovaGed.ps1` e `Restore-InovaGed.ps1` produzem backup custom validado e exigem confirmação explícita para restauração.
 
+Em banco novo, acrescente `-InitializeDatabase` ao [setup](scripts/windows/Setup-InovaGed.ps1). Isso executa `install --verify`: carrega o schema base sem dados e aplica o manifesto. O schema GED deve estar vazio, exceto pelo diário do migrador. Em instalações existentes, omita essa opção para executar o upgrade incremental `apply --verify`; não importe o schema base sobre dados existentes.
+
+O [migrador](InovaGed.Database.Migrator/Program.cs) lê `ConnectionStrings__DefaultConnection`. Para uma migration transacional que falhou, `apply --retry-failed ID --verify` admite nova tentativa somente com o checksum original e mantém o registro FAILED anterior. Não apague o diário nem edite migrations publicadas para contornar uma falha. Antes de atualizar a recuperação de temporalidade, encerre os workers antigos.
+
+Os roteiros com dados fictícios, os resultados e as limitações de homologação estão no [relatório operacional](docs/ai-operational-acceptance.md). A instalação oficial foi exercitada; isso não equivale ao aceite integral das jornadas e da interface.
+
 ## Consolidação 2026-07
 
 - Tabelas canônicas do Guardião sem sufixo `guardian`.

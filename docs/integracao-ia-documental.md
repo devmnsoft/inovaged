@@ -1,6 +1,10 @@
+## Evidência operacional atual
+
+Consulte a [auditoria operacional](ai-operational-acceptance.md) para distinguir implementação, evidência real e pendências. A recuperação atual usa bloqueio e transação PostgreSQL no worker existente, com backoff persistido; lease expirável isolado não garante exclusão durante recálculos longos. O upgrade usa um preflight novo antes da migration publicada para preservar identidades com 64 caracteres, sem sufixos maiores que a coluna.
+
 # Integração de IA documental
 
-Estado após a estabilização sobre o baseline `171ee30b0c85bf2c2906b7d3d7910066cd50aed8`.
+Estado da implementação sobre o baseline `8f784ba5e64f3fe9345c98beecb368de84db77b7`; evidências e limitações atuais no relatório operacional acima.
 Nada deste trabalho foi publicado, integrado ou aplicado em produção.
 
 ## Escopo
@@ -41,16 +45,15 @@ Resumo e preenchimento recusam texto acima de 120.000 caracteres sem enviar e se
 
 O token de concorrência é `xmin` do documento, devolvido na sugestão e exigido na primeira gravação. A alteração, o registro em `ged.ai_suggestion_application`, a linha em `ged.app_audit_log` e, quando a classificação muda, a pendência em `ged.ai_retention_recalc_pending` ocorrem na mesma transação. O commit deixa o recálculo concluído ou a pendência recuperável. Metadados não enfileiram temporalidade.
 
-A identidade da revisão é `operation_key`, SHA-256 de tenant, execução, documento, versão, revisor e tarefa. O fingerprint cobre só a decisão canônica do revisor. Repetir a mesma operação devolve o resultado persistido e o estado real da pendência vinculada, mesmo se o resultado da IA expirou ou a versão do documento avançou. A mesma identidade com outra decisão responde 409. Uma revisão intencional nova é outra execução. Registros antigos recebem a chave na migration; linhas legadas duplicadas ficam com sufixo e o replay encontra a mais antiga. A equivalência também lê o `decision_json` anterior.
+A identidade da revisão é `operation_key`, SHA-256 de tenant, execução, documento, versão, revisor e tarefa. O fingerprint cobre só a decisão canônica do revisor. Repetir a mesma operação devolve o resultado persistido e o estado real da pendência vinculada, mesmo se o resultado da IA expirou ou a versão do documento avançou. A mesma identidade com outra decisão responde 409. Uma revisão intencional nova é outra execução. O preflight novo atribui a chave canônica à revisão legada mais antiga e um SHA-256 distinto de 64 caracteres às demais; o replay encontra a mais antiga sem exceder a coluna. A equivalência também lê o `decision_json` anterior.
 
 A classe e a versão do plano são gravadas juntas. A classe precisa existir na versão vigente do plano, no caminho assistido e em `DocumentCommands.ApplyClassificationAsync`. A versão documental usada é `current_version_id`. Zero linhas nesse predicado é conflito, sem escolher outra versão por conveniência.
 
 Tags e metadados que não fazem parte da alteração permanecem. A classificação rápida do GED chama `SaveManualAsync` com tags e metadados nulos, e o serviço não apaga o que não foi enviado.
 
-O processamento da pendência usa `RetentionRecalcService.RunOneAsync`. A reivindicação é `FOR UPDATE SKIP LOCKED`, com token e arrendamento de 90 segundos. Tentativa e erro ficam em `attempts` e `last_error`, sem texto documental. A pendência só recebe `resolved_at` depois do sucesso. Falha ou cancelamento libera o token e mantém a linha. Outro consumidor vê “em processamento” enquanto o arrendamento vale. Reaplicar uma revisão concluída não cria outra pendência. HOLD, empréstimo e impedimento não são alterados por esse recálculo.
+O processamento usa `RetentionRecalcService.RunOneAsync` na mesma conexão e transação que mantém `FOR UPDATE SKIP LOCKED` sobre a pendência. O bloqueio permanece durante recálculos superiores a 90 segundos. Recálculo, conclusão da pendência e remoção do estado parcial da revisão são atômicos. Falha reverte esses efeitos até um savepoint e persiste tentativa, erro sanitizado e próxima execução; perda da conexão reverte a transação. O prazo de 90 segundos serve somente para reconhecer claims legados abandonados.
 
-Não há varredura em segundo plano. A recuperação operacional é a tentativa imediata depois do commit e `POST HospitalDocuments/RetryRetention`, que exige edição do documento, audita `AI_RETENTION_RETRY` e informa resolvida, em processamento ou pendente. Consulta: `GET HospitalDocuments/RetentionPending`.
-
+O worker de temporalidade existente varre pendências a cada 30 segundos, em lotes de até 20 por tenant. O backoff vai de 60 a 3.600 segundos, com limite de dez tentativas automáticas. A recuperação manual `POST HospitalDocuments/RetryRetention` exige edição e permite nova tentativa após esse limite; `GET HospitalDocuments/RetentionPending` consulta o estado. Reaplicar revisão concluída não cria outra pendência. Metadados sem recálculo não aparecem como temporalidade concluída. HOLD, empréstimo e impedimento não são removidos pelo recálculo.
 ## Fontes, retenção e consumo
 
 Fontes válidas são pares documento+versão em texto. Número, objeto, array, booleano, GUID vazio ou inválido, campo obrigatório ausente e pares inconsistentes são fonte corrompida. O codec não lança e não libera o resultado. Formato legado `{documento}/{versão}/texto-extraido` só é migrado depois que cada versão existe no tenant e o documento coincide. Resultado sem fonte comprovável fica inacessível. `result_expires_at` vale na primeira leitura e na primeira aplicação. O replay de uma revisão já gravada continua disponível depois da expiração e mostra a decisão humana, sem o texto do modelo. Resultado malformado, inclusive `Failure` textual, não produz HTTP 500 genérico.
@@ -69,50 +72,25 @@ Como usar: gere a sugestão, compare atual, sugerido e corrigido, confira a font
 
 ## Banco
 
-`database/migrations/2026_10_05_document_ai_application_integrity.sql` adiciona `usage_reconciled_at` e `reconciled_delta`, e cria `ged.ai_suggestion_application` e `ged.ai_retention_recalc_pending`.
+A instalação nova utiliza o [schema base sem dados](../database/base/2026_05_schema.sql) e o [manifesto ordenado](../database/migrations.manifest.json), pelo comando `install --verify` do migrador. Instalações existentes usam `apply --verify`. O schema base inclui a estrutura legada de empréstimos; não é importado sobre dados existentes.
 
-`database/migrations/2026_10_06_document_ai_review_recovery.sql` adiciona `operation_key`, o índice único `ux_ai_suggestion_application_operation` e as colunas `attempts`, `last_error`, `claimed_at` e `claim_token`. O backfill usa a mesma fórmula SHA-256 do código. A reexecução é idempotente. As duas migrations estão no manifesto, em `required_migrations.json` e uma vez em `apply_all_required_migrations.sql`. Migrations já aplicadas e com checksum não foram reescritas.
+A migration publicada de recuperação de revisões permanece intacta. O [preflight de identidade](../database/migrations/2026_10_06_document_ai_review_identity_preflight.sql) deve ser executado antes dela, pois o backfill antigo excede 64 caracteres quando existem revisões equivalentes. A [migration de retry](../database/migrations/2026_10_07_document_ai_retention_retry.sql) adiciona agendamento persistente. O manifesto, o catálogo de migrations exigidas e as referências do consolidado estão sincronizados; isso não comprova execução do consolidado manual.
 
-O script consolidado teve ajustes só em arquivos fora do manifesto de checksum, mais a ordem dos `\ir`: coluna `created_by` antes do índice de upload; índices de `ged.loan_request` condicionados à existência da tabela; modos e fila de etiqueta depois de `ged.label_print_history`; tabelas mínimas `ged.app_role` e `ged.user_role` junto do `app_user` já criado pelo consolidado; índices de `document_signature` condicionados à tabela; `2026_07_signature_cms_end_to_end.sql` antes do runtime que indexa a assinatura. `ged.loan_request` continua definida em `gedscript.sql` e não é criada pelas migrations.
-
+O diário oficial registra tentativas e checksum; recibos escritos por scripts legados usam tabela separada durante a execução oficial. `--retry-failed ID` exige o mesmo checksum e conserva a tentativa anterior. Os roteiros de instalação e upgrade, os resultados reproduzidos e os formatos históricos ainda não exercitados estão no [relatório operacional](ai-operational-acceptance.md).
 ## Homologação
 
 Use banco e aplicativo locais, documentos fictícios e as variáveis de ambiente. Não use dump, paciente, credencial de produção ou segredo no repositório.
 
-1. Aplique as migrations de IA em PostgreSQL descartável. `2026_10_05` e `2026_10_06` são idempotentes.
-2. Defina `INOVAGED_AI_PG_DSN` e rode `PostgresAiGovernanceStoreBehaviorTests` e `DocumentAiCyclePostgresTests`. Sem a variável, o fato é ignorado na descoberta: isso é não executado, não aprovação. Rode as classes em separado: a de governança trunca as tabelas de IA.
-3. Para HTTP, defina `INOVAGED_AI_HTTP_BASE`, os perfis fictícios e os GUIDs do documento e da versão. Rode `scripts/homologation/document-ai-http.ps1`. Login com destino em `/Account/Login` não conta como autenticação. Sem a base, o script termina com código 2 e `NAO EXECUTADO`. Código 0 só ocorre quando a matriz do script passa. O provedor local é `Deterministic`, e só com `INOVAGED_AI_DETERMINISTIC=1` no processo da aplicação. Ele não chama HTTP e não homologa Groq, Gemini ou DeepSeek. A política do tenant precisa usar o mesmo provedor.
+1. Instale pelo migrador em PostgreSQL descartável e teste também o upgrade legado. Preserve a ordem do manifesto, incluindo o preflight anterior à recuperação publicada.
+2. Defina `INOVAGED_AI_PG_DSN` e rode `PostgresAiGovernanceStoreBehaviorTests` e `DocumentAiCyclePostgresTests`. Sem a variável, o fato é ignorado na descoberta: isso é não executado, não aprovação. As classes PostgreSQL compartilham uma collection sem paralelismo para impedir que o TRUNCATE da fixture de governança interfira nos demais cenários.
+3. Para HTTP, defina `INOVAGED_AI_HTTP_BASE`, os perfis fictícios e os GUIDs do documento e da versão. Rode `scripts/homologation/document-ai-http.ps1`. Login com destino em `/Account/Login` não conta como autenticação. Sem a base, o script termina com código 2 e `NAO EXECUTADO`. Código 0 só ocorre quando a matriz do script passa. O provedor local é `Deterministic`, e só no ambiente `Homologation`, com `INOVAGED_AI_DETERMINISTIC=1` no processo da aplicação. Ele não chama HTTP e não homologa Groq, Gemini ou DeepSeek. A política do tenant precisa usar o mesmo provedor.
 4. Repita com `GROQ_API_KEY`, `GEMINI_API_KEY` ou `DEEPSEEK_API_KEY` quando a credencial for válida.
 5. Confira no navegador, em desktop e em largura estreita: resumo, preenchimento, tipo documental, classificação arquivística, histórico, pendência, cancelamento, duplo clique, conflito e conclusão parcial.
 
-Recuperação: liste `ged.ai_retention_recalc_pending` com `resolved_at` nulo. Quem edita o documento aciona `RetryRetention`. Se `claimed_at` tiver menos de 90 segundos, a resposta é “em processamento”. Depois desse prazo, outra tentativa reivindica a mesma linha. Sucesso preenche `resolved_at` e zera o parcial da aplicação. O erro gravado é um código curto, por exemplo `temporalidade:falha`.
+Recuperação: consulte pendências não resolvidas e sua próxima tentativa. O worker executa as elegíveis; quem edita o documento pode solicitar retry manual. Um consumidor não pode atravessar o bloqueio transacional de outro. Sucesso preenche `resolved_at` e remove o parcial na mesma transação. O erro persistido é sanitizado, sem texto documental.
 
 Matriz mínima: sigilo não selecionado preservado; valor escolhido aplicado; redução sem `Security.Manage` negada; execução de outro documento ou tarefa negada; resultado expirado não reutilizado; repetição sem efeito duplicado; edição concorrente em conflito; tags e metadados não selecionados preservados; falha de auditoria revertida com a gravação; recálculo falho com conclusão parcial; legado sem fonte inacessível; consumo tardio reconciliado uma vez; tipo documental separado da classe do plano; campo sem evidência sem sugestão inventada; Pergunte ao acervo configurável; IA indisponível com GED e busca convencionais; outro tenant sem conteúdo nem aplicação.
 
-## Verificação desta sessão
+## Evidência e pendências
 
-Baseline `c9afa95`. Nenhum commit posterior. Produção não foi alterada.
-
-| Verificação | Resultado |
-|---|---|
-| `DocumentAiIntegrityTests`, inclusive tipos JSON inválidos e identidade estável da revisão | passou, 10/10 |
-| Provedor `Deterministic` com e sem `INOVAGED_AI_DETERMINISTIC` | passou, 2/2; nenhuma chamada HTTP |
-| `DocumentAiCyclePostgresTests` em `ai_cycle` (`127.0.0.1:55432`) | passou, 3/3: pendência na mesma transação, falha sanitizada, retomada, HOLD e empréstimo preservados, consumidores concorrentes, versão canônica do documento, conflito quando a classe sai do plano vigente |
-| `PostgresAiGovernanceStoreBehaviorTests` no mesmo banco, depois de existir `ged.tenant.code` | passou, 16/16 |
-| `MigrationManifestTests` | passou, 1/1 |
-| Suíte `InovaGed.Application.Tests` sem `INOVAGED_AI_PG_DSN` | 529 aprovados, 36 falhas, 20 ignorados |
-| Comparação com a baseline 525/36/17 | os 4 aprovados a mais são os testes novos de identidade, codec e provedor determinístico; os 3 ignorados a mais são `DocumentAiCyclePostgresTests` sem DSN; as 36 falhas continuam nos contratos já existentes de etiquetas, shell, identidade, DI, Web API e segredo de configuração |
-| Migrations `2026_10_02` a `2026_10_06` e reexecução da `2026_10_06` em `ai_cycle` | passou |
-| `apply_all_required_migrations.sql` em banco vazio `ai_install` | não homologada. Os bloqueios de `created_by` e dos índices de `ged.loan_request` foram ultrapassados. A execução atual para em `database/migrations/2026_07_signature_cms_agent_runtime.sql:153` com `column "signature_id" does not exist`, porque a tabela criada antes não tem a coluna esperada pelo índice. As migrations de IA do final do script não foram alcançadas por esse caminho |
-| `scripts/homologation/document-ai-http.ps1` sem `INOVAGED_AI_HTTP_BASE` | não executado, código 2. O falso positivo do perfil sem acesso foi removido. O ciclo HTTP com aplicativo local não foi percorrido |
-| Groq, Gemini e DeepSeek | não executado; credenciais ausentes |
-| GED e visualizador no navegador, teclado, largura estreita, reabertura do painel e resposta atrasada | não executado; não há ferramenta de navegador nesta sessão e o aplicativo não foi iniciado |
-
-## Pendências
-
-- Concluir a instalação limpa do script consolidado a partir de `2026_07_signature_cms_agent_runtime.sql:153`, sem reescrever migration com checksum.
-- Criar `ged.loan_request` no fluxo oficial. Hoje ela permanece só em `gedscript.sql`.
-- Homologar o ciclo HTTP com aplicativo local, dados fictícios e provedor `Deterministic`.
-- Homologar Groq, Gemini ou DeepSeek com credencial válida.
-- Conferir as telas no navegador.
-- Protocolo assistido, comparação, voz e multimodalidade, depois deste ciclo.
+O [relatório operacional](ai-operational-acceptance.md) mantém a comparação nominal com a baseline, os resultados PostgreSQL e HTTP, as limitações de instalação, a matriz por jornada e o gate do Protocolo institucional. Não se deve interpretar os roteiros existentes como jornadas aprovadas. Provedores reais, avaliação visual e uploads ainda exigem evidência própria.

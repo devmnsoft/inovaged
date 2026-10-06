@@ -12,11 +12,21 @@ namespace InovaGed.Web.Controllers;
 [Route("Protocolo/Ged")]
 public sealed class ProtocoloGedIntegracaoController : GedControllerBase
 {
-    public ProtocoloGedIntegracaoController(IDbConnectionFactory dbFactory) : base(dbFactory) { }
+    private readonly InovaGed.Application.Ged.Loans.IProtocolAccessService _protocolAccess;
+    private readonly InovaGed.Application.Security.IAbacAuthorizationService _documents;
+    public ProtocoloGedIntegracaoController(IDbConnectionFactory dbFactory,
+        InovaGed.Application.Ged.Loans.IProtocolAccessService protocolAccess,
+        InovaGed.Application.Security.IAbacAuthorizationService documents) : base(dbFactory)
+    { _protocolAccess = protocolAccess; _documents = documents; }
+
+    private Task<bool> CanDocumentAsync(Guid id, string action) => UserId is Guid userId
+        ? _documents.CanAccessDocumentAsync(TenantId, userId, id, action, new Dictionary<string, string>(), HttpContext.RequestAborted)
+        : Task.FromResult(false);
 
     [HttpGet("Vinculos/{protocoloId:guid}")]
-    public async Task<IActionResult> Vinculos(Guid protocoloId)
+    public async Task<IActionResult> Vinculos(Guid protocoloId, string? q = null)
     {
+        if (!await _protocolAccess.CanViewProtocolAsync(TenantId, protocoloId, UserId, User, HttpContext.RequestAborted)) return Forbid();
         using var db = await OpenAsync();
 
         var numero = await db.ExecuteScalarAsync<string?>(
@@ -40,6 +50,23 @@ where tenant_id=@TenantId and protocolo_id=@ProtocoloId
 order by created_at desc;", new { TenantId, ProtocoloId = protocoloId })).ToList()
         };
 
+        var visible = new List<ProtocoloGedVinculoVM>();
+        foreach (var link in vm.Vinculos)
+            if (link.GedDocumentId is Guid documentId && await CanDocumentAsync(documentId, "VIEW"))
+            {
+                link.GedDocumentName = await db.ExecuteScalarAsync<string>("select coalesce(nullif(title,''),code,'Documento') from ged.document where tenant_id=@TenantId and id=@documentId", new { TenantId, documentId });
+                visible.Add(link);
+            }
+        vm.Vinculos = visible;
+        vm.Q = q;
+        var candidates = await db.QueryAsync<(Guid Id, string Name)>("""
+select id, coalesce(nullif(title,''),code,'Documento') as name from ged.document
+where tenant_id=@TenantId and reg_status='A' and (@q is null or title ilike @q or code ilike @q)
+order by title, id limit 100
+""", new { TenantId, q = string.IsNullOrWhiteSpace(q) ? null : "%" + q.Trim() + "%" });
+        foreach (var candidate in candidates)
+            if (await CanDocumentAsync(candidate.Id, "VIEW") && await CanDocumentAsync(candidate.Id, "EDIT"))
+                vm.Documentos.Add(new SelectListItem(candidate.Name, candidate.Id.ToString()));
         return View("~/Views/ProtocoloGed/Vinculos.cshtml", vm);
     }
 
@@ -47,6 +74,9 @@ order by created_at desc;", new { TenantId, ProtocoloId = protocoloId })).ToList
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Vincular(ProtocoloGedVincularVM vm)
     {
+        if (!ModelState.IsValid || vm.GedDocumentId == Guid.Empty) return BadRequest("Selecione um documento válido.");
+        if (!await _protocolAccess.CanManageProtocolAsync(TenantId, vm.ProtocoloId, UserId, User, HttpContext.RequestAborted)
+            || !await CanDocumentAsync(vm.GedDocumentId, "VIEW") || !await CanDocumentAsync(vm.GedDocumentId, "EDIT")) return Forbid();
         using var db = await OpenAsync();
         using var tx = db.BeginTransaction();
         var protocoloOk = await db.ExecuteScalarAsync<bool>(
@@ -73,21 +103,6 @@ order by created_at desc;", new { TenantId, ProtocoloId = protocoloId })).ToList
         {
             TempData["erro"] = "Documento GED inexistente neste tenant.";
             return RedirectToAction(nameof(Vinculos), new { protocoloId = vm.ProtocoloId });
-        }
-
-        var admin = RolePolicyHelper.IsFullAdmin(User) || User.IsInRole(AppRoles.Gestor) || User.IsInNormalizedRole(AppRoles.AdministradorOphir);
-        if (await db.ExecuteScalarAsync<bool>("select to_regclass('ged.document_acl') is not null", transaction: tx))
-        {
-            var restrito = await db.ExecuteScalarAsync<bool>(
-                "select exists(select 1 from ged.document_acl where document_id=@Id)",
-                new { Id = vm.GedDocumentId }, tx);
-            if (restrito && !admin)
-            {
-                var permitido = UserId.HasValue && await db.ExecuteScalarAsync<bool>(
-                    "select exists(select 1 from ged.document_acl where document_id=@Id and user_id=@UserId and can_read=true)",
-                    new { Id = vm.GedDocumentId, UserId }, tx);
-                if (!permitido) return Forbid();
-            }
         }
 
         var vinculoId = Guid.NewGuid();
@@ -118,11 +133,14 @@ values (@TenantId, @ProtocoloId, 'protocolo_documento_ged', @Id, 'GED_VINCULO', 
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> RemoverVinculo(Guid id, Guid protocoloId)
     {
-        if (!RolePolicyHelper.IsFullAdmin(User) && !User.IsInRole(AppRoles.Gestor) && !User.IsInRole(AppRoles.Arquivista) && !User.IsInNormalizedRole(AppRoles.ArquivistaOphir))
-            return Forbid();
-
+        if (!await _protocolAccess.CanManageProtocolAsync(TenantId, protocoloId, UserId, User, HttpContext.RequestAborted)) return Forbid();
         using var db = await OpenAsync();
         using var tx = db.BeginTransaction();
+        var documentId = await db.ExecuteScalarAsync<Guid?>(
+            "select ged_document_id from ged.protocolo_documento_ged where tenant_id=@TenantId and id=@id and protocolo_id=@protocoloId and reg_status='A' for update",
+            new { TenantId, id, protocoloId }, tx);
+        if (documentId is null) return NotFound();
+        if (!await CanDocumentAsync(documentId.Value, "VIEW") || !await CanDocumentAsync(documentId.Value, "EDIT")) return Forbid();
         var removed = await db.ExecuteAsync(
             "update ged.protocolo_documento_ged set reg_status='E' where tenant_id=@TenantId and id=@Id and protocolo_id=@ProtocoloId and reg_status='A';",
             new { TenantId, Id = id, ProtocoloId = protocoloId }, tx);

@@ -13,7 +13,7 @@ public sealed class ProtocolAccessService : IProtocolAccessService
 
     public async Task<bool> CanViewProtocolAsync(Guid tenantId, Guid protocolId, Guid? userId, ClaimsPrincipal user, CancellationToken ct)
     {
-        if (IsFullAdmin(user)) return true;
+        if (IsFullAdmin(user)) return await ExistsAsync(tenantId, protocolId, ct);
         var setores = await GetUserSectorIdsAsync(tenantId, userId, ct);
         if (setores.Length == 0) return false;
         await using var conn = await _db.OpenAsync(ct);
@@ -35,7 +35,7 @@ select exists (
 
     public async Task<bool> CanManageProtocolAsync(Guid tenantId, Guid protocolId, Guid? userId, ClaimsPrincipal user, CancellationToken ct)
     {
-        if (IsFullAdmin(user)) return true;
+        if (IsFullAdmin(user)) return await ExistsAsync(tenantId, protocolId, ct);
         if (!HasRole(user, "ADMINISTRADOROPHIR")) return false;
         var setores = await GetUserSectorIdsAsync(tenantId, userId, ct);
         if (setores.Length == 0) return false;
@@ -57,17 +57,25 @@ select exists (
         if (!userId.HasValue) return Array.Empty<Guid>();
         await using var conn = await _db.OpenAsync(ct);
         var setores = await conn.QueryAsync<Guid>(new CommandDefinition("""
-select setor_id
-from ged.protocolo_usuario_setor
-where tenant_id=@TenantId
-  and usuario_id=@UserId
-  and reg_status='A'
-  and ativo=true
+select us.setor_id
+from ged.protocolo_usuario_setor us
+join ged.protocolo_setor s on s.tenant_id=us.tenant_id and s.id=us.setor_id
+where us.tenant_id=@TenantId
+  and us.usuario_id=@UserId
+  and us.reg_status='A' and us.ativo=true
+  and s.reg_status='A' and s.ativo=true
 """, new { TenantId = tenantId, UserId = userId }, cancellationToken: ct));
         return setores.ToArray();
     }
 
     private static bool IsFullAdmin(ClaimsPrincipal user) => HasRole(user, "ADMIN") || HasRole(user, "ADMINISTRADOR");
+    private async Task<bool> ExistsAsync(Guid tenantId, Guid protocolId, CancellationToken ct)
+    {
+        await using var connection = await _db.OpenAsync(ct);
+        return await connection.ExecuteScalarAsync<bool>(new CommandDefinition(
+            "select exists(select 1 from ged.protocolo where tenant_id=@tenantId and id=@protocolId and reg_status='A')",
+            new { tenantId, protocolId }, cancellationToken: ct));
+    }
     private static bool HasRole(ClaimsPrincipal? user, string role)
     {
         var target = NormalizeRole(role);

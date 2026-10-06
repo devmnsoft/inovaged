@@ -9,6 +9,7 @@ using Npgsql;
 
 namespace InovaGed.Application.Tests;
 
+[Collection("Document AI PostgreSQL")]
 public sealed class DocumentAiCyclePostgresTests : IAsyncLifetime
 {
     private NpgsqlConnection? _admin;
@@ -106,6 +107,100 @@ public sealed class DocumentAiCyclePostgresTests : IAsyncLifetime
     }
 
     private PostgresAssistedDocumentStore Store() => new(Factory());
+
+    private AssistedRetentionRecovery Recovery(IRetentionJobRepository? repository = null) => new(Factory(),
+        new RetentionRecalcService(repository ?? new RetentionJobRepository(Factory(), NullLogger<RetentionJobRepository>.Instance), NullLogger<RetentionRecalcService>.Instance));
+
+    [PgGatedFact]
+    public async Task New_worker_recovers_committed_pending_and_replay_does_not_recalculate()
+    {
+        var fx = await Seed();
+        var written = await Store().ApplyArchivalClassAsync(Record(fx, "Applied", true), fx.Token, fx.ClassId, true, default);
+        Assert.Equal(1, await Recovery().RunBatchAsync(fx.TenantId, default));
+        var token = await One<long>("select xmin::text::bigint from ged.document where id=@id", new { id = fx.DocumentId });
+        Assert.Equal(0, await Recovery().RunBatchAsync(fx.TenantId, default));
+        Assert.True((await Recovery().RunAsync(fx.TenantId, written.PendingId!.Value, true, default)).Resolved);
+        Assert.Equal(token, await One<long>("select xmin::text::bigint from ged.document where id=@id", new { id = fx.DocumentId }));
+        Assert.False(await One<bool>("select partial from ged.ai_suggestion_application where id=@id", new { id = written.ApplicationId }));
+        Assert.True(await One<bool>("select retention_hold from ged.document where id=@id", new { id = fx.DocumentId }));
+        Assert.Equal(1, await One<int>("select count(*) from ged.app_audit_log where entity_id=@id", new { id = fx.DocumentId.ToString() }));
+    }
+
+    [PgGatedFact]
+    public async Task Failure_after_review_completion_rolls_back_calculation_and_both_completion_flags()
+    {
+        var fx = await Seed();
+        var written = await Store().ApplyArchivalClassAsync(Record(fx, "Applied", true), fx.Token, fx.ClassId, true, default);
+        var trigger = "fail_completion_" + Guid.NewGuid().ToString("N");
+        await _admin!.ExecuteAsync($"""
+create function ged.{trigger}() returns trigger language plpgsql as $$
+begin if NEW.id='{written.PendingId}' and NEW.resolved_at is not null then raise exception 'private document text'; end if; return NEW; end $$;
+create trigger {trigger} before update on ged.ai_retention_recalc_pending for each row execute function ged.{trigger}();
+""");
+        try
+        {
+            Assert.False((await Recovery().RunAsync(fx.TenantId, written.PendingId!.Value, true, default)).Resolved);
+            Assert.True(await One<bool>("select partial from ged.ai_suggestion_application where id=@id", new { id = written.ApplicationId }));
+            Assert.Null(await One<DateTime?>("select resolved_at from ged.ai_retention_recalc_pending where id=@id", new { id = written.PendingId }));
+            Assert.Null(await One<DateTime?>("select retention_due_at from ged.document where id=@id", new { id = fx.DocumentId }));
+            Assert.Equal("temporalidade:P0001", await One<string>("select last_error from ged.ai_retention_recalc_pending where id=@id", new { id = written.PendingId }));
+            Assert.Equal(0, await Recovery().RunBatchAsync(fx.TenantId, default)); // backoff
+        }
+        finally { await _admin!.ExecuteAsync($"drop trigger {trigger} on ged.ai_retention_recalc_pending; drop function ged.{trigger}();"); }
+        Assert.True((await Recovery().RunAsync(fx.TenantId, written.PendingId!.Value, true, default)).Resolved);
+        Assert.False(await One<bool>("select partial from ged.ai_suggestion_application where id=@id", new { id = written.ApplicationId }));
+    }
+
+    [PgGatedFact]
+    public async Task Database_lock_prevents_second_consumer_even_after_the_old_90_second_lease()
+    {
+        var fx = await Seed();
+        var written = await Store().ApplyArchivalClassAsync(Record(fx, "Applied", true), fx.Token, fx.ClassId, true, default);
+        var repository = new PausingRepository(new RetentionJobRepository(Factory(), NullLogger<RetentionJobRepository>.Instance));
+        var first = Recovery(repository).RunAsync(fx.TenantId, written.PendingId!.Value, true, default);
+        await repository.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(92));
+            Assert.False((await Recovery().RunAsync(fx.TenantId, written.PendingId.Value, true, default)).Resolved);
+        }
+        finally { repository.Continue.TrySetResult(); }
+        Assert.True((await first).Resolved);
+        Assert.Equal(1, await One<int>("select attempts from ged.ai_retention_recalc_pending where id=@id", new { id = written.PendingId }));
+    }
+
+    [PgGatedFact]
+    public async Task Cancellation_keeps_pending_and_persistent_failures_require_manual_recovery()
+    {
+        var fx = await Seed();
+        var written = await Store().ApplyArchivalClassAsync(Record(fx, "Applied", true), fx.Token, fx.ClassId, true, default);
+        var repository = new PausingRepository(new RetentionJobRepository(Factory(), NullLogger<RetentionJobRepository>.Instance));
+        using var cts = new CancellationTokenSource();
+        var run = Recovery(repository).RunAsync(fx.TenantId, written.PendingId!.Value, true, cts.Token);
+        await repository.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
+        Assert.True(await One<bool>("select partial from ged.ai_suggestion_application where id=@id", new { id = written.ApplicationId }));
+        Assert.Equal("temporalidade:cancelada", await One<string>("select last_error from ged.ai_retention_recalc_pending where id=@id", new { id = written.PendingId }));
+        await _admin!.ExecuteAsync("update ged.ai_retention_recalc_pending set attempts=10, next_attempt_at=now()-interval '1 day' where id=@id", new { id = written.PendingId });
+        Assert.Equal(0, await Recovery().RunBatchAsync(fx.TenantId, default));
+        Assert.True((await Recovery().RunAsync(fx.TenantId, written.PendingId.Value, true, default)).Resolved);
+    }
+
+    private sealed class PausingRepository(IRetentionJobRepository inner) : IRetentionJobRepository
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Continue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task<int> RecalculateAsync(Guid t, int days, CancellationToken ct) => inner.RecalculateAsync(t, days, ct);
+        public Task<RetentionDashboardVM> GetDashboardAsync(Guid t, int days, CancellationToken ct) => inner.GetDashboardAsync(t, days, ct);
+        public Task<int> RecalculateOneAsync(Guid t, Guid d, int days, CancellationToken ct) => inner.RecalculateOneAsync(t, d, days, ct);
+        public async Task<int> RecalculateOneAsync(System.Data.IDbConnection c, System.Data.IDbTransaction tx, Guid t, Guid d, int days, CancellationToken ct)
+        {
+            Started.TrySetResult();
+            await Continue.Task.WaitAsync(ct);
+            return await inner.RecalculateOneAsync(c, tx, t, d, days, ct);
+        }
+    }
     private NpgsqlConnectionFactory Factory() => new(PgGate.Dsn());
     private async Task<T> One<T>(string sql, object args) => await _admin!.ExecuteScalarAsync<T>(sql, args);
 
@@ -159,6 +254,7 @@ alter table ged.ai_retention_recalc_pending add column if not exists attempts in
 alter table ged.ai_retention_recalc_pending add column if not exists last_error varchar(200);
 alter table ged.ai_retention_recalc_pending add column if not exists claimed_at timestamptz;
 alter table ged.ai_retention_recalc_pending add column if not exists claim_token uuid;
+alter table ged.ai_retention_recalc_pending add column if not exists next_attempt_at timestamptz not null default now();
 create table if not exists ged.document(
   id uuid primary key, tenant_id uuid not null, title text, description text, is_confidential boolean not null default false,
   type_id uuid, classification_id uuid, classification_version_id uuid, current_version_id uuid, retention_hold boolean not null default false,

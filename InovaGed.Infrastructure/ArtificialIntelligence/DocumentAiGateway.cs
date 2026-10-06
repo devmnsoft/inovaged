@@ -77,7 +77,10 @@ public sealed class DocumentAiGateway : IDocumentAiGateway
 
     private async Task<AiResult> DeterministicAsync(AiRequest request, string correlationId, CancellationToken cancellationToken)
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("INOVAGED_AI_DETERMINISTIC"), "1", StringComparison.Ordinal))
+        var environment = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT")
+            ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+        if (!string.Equals(environment, "Homologation", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(Environment.GetEnvironmentVariable("INOVAGED_AI_DETERMINISTIC"), "1", StringComparison.Ordinal))
             return Fail("Deterministic", "deterministic-v1", AiFailureKind.Disabled, "O provedor determinístico só é ativado na homologação local.", correlationId, false);
         if (!_options.Enabled) return Fail("Deterministic", "deterministic-v1", AiFailureKind.Disabled, "A IA está desabilitada.", correlationId, false);
         if (request.OnRequestSent is not null) await request.OnRequestSent(cancellationToken);

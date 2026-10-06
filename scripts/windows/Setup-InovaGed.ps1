@@ -3,6 +3,7 @@ param(
     [Parameter(Mandatory)][string]$ConnectionString,
     [string]$DataRoot = 'C:\InovaGed',
     [switch]$SkipMigrations,
+    [switch]$InitializeDatabase,
     [switch]$RequireOcr
 )
 
@@ -34,8 +35,13 @@ dotnet user-secrets set 'Storage:Local:RootPath' (Join-Path $DataRoot 'storage')
 dotnet user-secrets set 'Backup:RootPath' (Join-Path $DataRoot 'backups') --project $webProject | Out-Null
 
 if (-not $SkipMigrations) {
-    dotnet run --project (Join-Path $repoRoot 'InovaGed.Database.Migrator') -- apply --verify
-    if ($LASTEXITCODE -ne 0) { throw 'Falha ao aplicar ou verificar migrations. Confira o PostgreSQL e a connection string.' }
+    $previousConnection = $env:ConnectionStrings__DefaultConnection
+    try {
+        $env:ConnectionStrings__DefaultConnection = $ConnectionString
+        $migrationCommand = if ($InitializeDatabase) { 'install' } else { 'apply' }
+        dotnet run --project (Join-Path $repoRoot 'InovaGed.Database.Migrator') -- $migrationCommand --verify
+        if ($LASTEXITCODE -ne 0) { throw 'Falha ao aplicar ou verificar migrations. Confira o PostgreSQL e a connection string.' }
+    } finally { $env:ConnectionStrings__DefaultConnection = $previousConnection }
 }
 
 dotnet restore (Join-Path $repoRoot 'InovaGed.sln')

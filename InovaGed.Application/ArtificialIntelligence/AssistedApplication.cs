@@ -33,6 +33,7 @@ public sealed class ReviewHistoryRow
 {
     public DateTimeOffset CreatedAt { get; set; }
     public Guid Id { get; set; }
+    public Guid ExecutionId { get; set; }
     public string Kind { get; set; } = "";
     public string Task { get; set; } = "";
     public Guid DocumentId { get; set; }

@@ -44,4 +44,7 @@ public sealed class RetentionRecalcService : IRetentionRecalcService
             throw;
         }
     }
+
+    public Task<int> RunOneAsync(System.Data.IDbConnection connection, System.Data.IDbTransaction transaction, Guid tenantId, Guid documentId, int dueSoonDays, CancellationToken ct)
+        => _repo.RecalculateOneAsync(connection, transaction, tenantId, documentId, dueSoonDays, ct);
 }

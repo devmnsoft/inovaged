@@ -5,6 +5,18 @@
 
 -- Histórico de migrations / schema base
 CREATE SCHEMA IF NOT EXISTS ged;
+\ir migrations/2026_06_ged_schema_consolidation.sql
+\ir migrations/2026_06_harden_ged_uploads_schema.sql
+\ir migrations/2026_06_document_version_reg_status.sql
+\ir migrations/2026_06_ocr_job_diagnostics.sql
+\ir migrations/2026_06_ged_processing_pipeline.sql
+\ir migrations/2026_06_code_sequence_and_parameters_fix.sql
+\ir migrations/2026_06_document_partial_workflow.sql
+\ir migrations/2026_06_upload_duplicate_allow_anyway.sql
+\ir migrations/2026_06_ocr_auto_schedule.sql
+\ir migrations/2026_06_document_quality.sql
+\ir migrations/20260605_upload_ocr_partial_documents.sql
+\ir migrations/2026_06_upload_batch_incomplete_and_resilience.sql
 \ir migrations/2026_08_24_database_readiness_migration_runner.sql
 
 -- Compatibilidade administrativa (equivalente a
@@ -3024,6 +3036,12 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_07_estabilizar_admin_continuity_ci.sql
 \ir migrations/2026_07_cluster_nodes_and_deployments.sql
 \ir migrations/2026_07_workspace_productivity.sql
+\ir migrations/2026_06_loan_item_identity_preflight.sql
+\ir migrations/2026_06_loans_manual_items_history.sql
+\ir migrations/2026_06_loans_history.sql
+\ir migrations/2026_06_contextual_smart_search_and_loans.sql
+\ir migrations/2026_06_protocol_module.sql
+\ir migrations/2026_07_signature_runtime_prerequisites.sql
 \ir migrations/2026_07_signature_cms_agent.sql
 \ir migrations/2026_07_signature_cms_end_to_end.sql
 \ir migrations/2026_07_signature_cms_agent_runtime.sql
@@ -3036,8 +3054,10 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_08_document_folder_move_history.sql
 \ir migrations/2026_08_10_classification_plan_hotfix.sql
 \ir migrations/2026_08_10_final_schema_hotfix.sql
+\ir migrations/2026_08_archival_schema_prerequisites.sql
 \ir migrations/2026_08_archival_schema_consolidation.sql
 \ir migrations/2026_08_labels_classification_evolution.sql
+\ir migrations/2026_08_physical_map_inventory_prerequisite.sql
 \ir migrations/2026_08_archival_labels_physical_inventory.sql
 \ir migrations/2026_08_physical_archive_operations.sql
 \ir migrations/2026_08_loans_overdue_collections_reports.sql
@@ -3076,6 +3096,7 @@ where coalesce(reg_status, 'A') = 'A';
 
 \ir migrations/2026_08_27_classification_retention_plan_2.sql
 
+\ir migrations/2026_08_physical_archive_v2_prerequisites.sql
 \ir migrations/2026_08_27_physical_archive_2.sql
 \ir migrations/2026_08_27_document_governance_2.sql
 \ir migrations/2026_08_28_contract_measurement_2.sql
@@ -3118,13 +3139,28 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/2026_09_10_label_studio_operational_rc29.sql
 \ir migrations/2026_09_11_rc33_collaboration_and_intake.sql
 \ir migrations/2026_09_14_label_print_governance_rc39.sql
+\ir migrations/2026_08_21_administration_legacy_schema_compat.sql
+\ir migrations/20260525_document_is_confidential_fix.sql
+\ir migrations/20260601_upload_batch.sql
 \ir migrations/20260603_upload_chunk.sql
 \ir migrations/2026_09_29_ged_upload_chunk_compatibility.sql
 \ir migrations/2026_09_30_ged_physical_transit.sql
 \ir migrations/2026_10_01_ged_retention_c2.sql
+\ir migrations/2026_09_protocol_custody_index_preflight.sql
 \ir migrations/2026_09_30_protocol_custody_center.sql
 \ir migrations/2026_10_02_document_ai_governance.sql
 \ir migrations/2026_10_03_document_ai_governance_hardening.sql
 \ir migrations/2026_10_04_document_ai_execution_sources.sql
 \ir migrations/2026_10_05_document_ai_application_integrity.sql
+BEGIN;
+\ir migrations/2026_10_06_document_ai_review_identity_preflight.sql
+COMMIT;
 \ir migrations/2026_10_06_document_ai_review_recovery.sql
+\ir migrations/2026_10_07_document_ai_retention_retry.sql
+
+\ir migrations/2026_10_07_physical_map_contract.sql
+
+\ir migrations/2026_06_profile_scope_sector_access.sql
+\ir migrations/2026_06_ged_bulk_actions_and_upload_logs.sql
+
+\ir migrations/2026_10_07_audit_runtime_actions.sql

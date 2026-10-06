@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Data;
 using Dapper;
 using InovaGed.Application;
@@ -12,7 +12,6 @@ using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
-using Microsoft.Extensions.Caching.Memory;
 using System.Diagnostics;
 using System.Text.Json;
 using InovaGed.Application.ArtificialIntelligence;
@@ -33,14 +32,34 @@ public sealed class HospitalDocumentsController : Controller
     private readonly IPreviewGenerator _preview;
     private readonly IAuditWriter _audit;
     private readonly ILogger<HospitalDocumentsController> _logger;
-    private readonly IMemoryCache _cache;
+    private readonly IAbacAuthorizationService _authorization;
     private readonly IDocumentAiAssistService _assist;
 
-    public HospitalDocumentsController(IDbConnectionFactory db, ICurrentUser currentUser, IFileStorage storage, IPreviewGenerator preview, IAuditWriter audit, ILogger<HospitalDocumentsController> logger, IMemoryCache cache, IDocumentAiAssistService assist)
-    { _db = db; _currentUser = currentUser; _storage = storage; _preview = preview; _audit = audit; _logger = logger; _cache = cache; _assist = assist; }
+    public HospitalDocumentsController(IDbConnectionFactory db, ICurrentUser currentUser, IFileStorage storage, IPreviewGenerator preview, IAuditWriter audit, ILogger<HospitalDocumentsController> logger, IAbacAuthorizationService authorization, IDocumentAiAssistService assist)
+    { _db = db; _currentUser = currentUser; _storage = storage; _preview = preview; _audit = audit; _logger = logger; _authorization = authorization; _assist = assist; }
+
+    private async Task<Guid[]> AuthorizedDocumentsAsync(CancellationToken ct)
+    {
+        Response.Headers[HeaderNames.CacheControl] = "private, no-store";
+        await using var connection = await _db.OpenAsync(ct);
+        var candidates = (await connection.QueryAsync<Guid>(new CommandDefinition(
+            "select id from ged.document where tenant_id=@tenantId and reg_status='A'",
+            new { tenantId = _currentUser.TenantId }, cancellationToken: ct))).ToArray();
+        return (await _authorization.FilterDocumentsAsync(_currentUser.TenantId, _currentUser.UserId, candidates, "VIEW", ct)).ToArray();
+    }
+
+    private async Task<bool> CanReadVersionAsync(Guid versionId, CancellationToken ct)
+    {
+        Response.Headers[HeaderNames.CacheControl] = "private, no-store";
+        await using var connection = await _db.OpenAsync(ct);
+        var documentId = await connection.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+            "select document_id from ged.document_version where tenant_id=@tenantId and id=@versionId and reg_status='A'",
+            new { tenantId = _currentUser.TenantId, versionId }, cancellationToken: ct));
+        return documentId.HasValue && await _authorization.CanAccessDocumentAsync(_currentUser.TenantId, _currentUser.UserId, documentId.Value, "VIEW", new Dictionary<string,string>(), ct);
+    }
 
     private AssistCaller Caller() => new(_currentUser.TenantId, _currentUser.UserId, _currentUser.IsAuthenticated, HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString());
-    private IActionResult FromAssist(AssistResponse response) => response.Denied ? Forbid() : StatusCode(response.StatusCode, response.Body);
+    private IActionResult FromAssist(AssistResponse response) => StatusCode(response.Denied ? StatusCodes.Status403Forbidden : response.StatusCode, response.Body);
 
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> Summarize(Guid versionId, string idempotencyKey, CancellationToken ct) => FromAssist(await _assist.SummarizeAsync(versionId, idempotencyKey, Caller(), ct));
@@ -107,13 +126,6 @@ public sealed class HospitalDocumentsController : Controller
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 5, 50);
         var offset = (page - 1) * pageSize;
-        var searchCacheKey = $"HospitalDocuments:Search:v2:{tenantId}:{query.ToLowerInvariant()}:{normalizedType}:{normalizedOcrStatus}:{dateFrom?.Date:O}:{dateTo?.Date:O}:{normalizedFolder}:{ocrRequired}:{recentOnly}:{previewOnly}:{normalizedSort}:{page}:{pageSize}";
-        if (_cache.TryGetValue<HospitalDocumentSearchResultDto>(searchCacheKey, out var cachedSearch))
-        {
-            cachedSearch.ElapsedMs = sw.ElapsedMilliseconds;
-            Response.Headers["X-InovaGed-Cache"] = "hit";
-            return Json(cachedSearch);
-        }
 
 const string sql = """
 WITH base AS (
@@ -138,7 +150,7 @@ LEFT JOIN ged.document_version v ON v.tenant_id=d.tenant_id AND v.id=s.version_i
 LEFT JOIN ged.folder f ON f.tenant_id=d.tenant_id AND f.id=d.folder_id
 LEFT JOIN LATERAL (SELECT vx.id, vx.file_name, vx.content_type, vx.file_size_bytes, vx.is_partial_document, vx.partial_status FROM ged.document_version vx WHERE vx.tenant_id=d.tenant_id AND vx.document_id=d.id ORDER BY vx.version_number DESC, vx.created_at DESC LIMIT 1) latest_v ON true
 LEFT JOIN LATERAL (SELECT j.status FROM ged.ocr_job j WHERE j.tenant_id=d.tenant_id AND j.document_version_id=COALESCE(NULLIF(s.version_id,'00000000-0000-0000-0000-000000000000'::uuid),NULLIF(d.current_version_id,'00000000-0000-0000-0000-000000000000'::uuid),latest_v.id) ORDER BY j.requested_at DESC LIMIT 1) oj ON true
-WHERE d.tenant_id=@tenantId AND coalesce(d.reg_status,'A')='A' AND d.status<>'ARCHIVED'::ged.document_status_enum
+WHERE d.tenant_id=@tenantId AND coalesce(d.reg_status,'A')='A' AND d.status<>'ARCHIVED'::ged.document_status_enum AND d.id=any(@AuthorizedDocuments)
 AND (d.code ILIKE @likeQuery OR d.title ILIKE @likeQuery OR COALESCE(d.description,'') ILIKE @likeQuery OR COALESCE(s.file_name,'') ILIKE @likeQuery OR COALESCE(s.ocr_text,'') ILIKE @likeQuery OR (s.search_vector IS NOT NULL AND s.search_vector @@ websearch_to_tsquery('portuguese', @q)))
 AND (@docType IS NULL OR (@docType='pdf' AND (lower(COALESCE(v.content_type,latest_v.content_type,'')) LIKE '%pdf%' OR lower(COALESCE(s.file_name,v.file_name,latest_v.file_name,'')) LIKE '%.pdf')) OR (@docType='word' AND (lower(COALESCE(v.content_type,latest_v.content_type,'')) LIKE '%word%' OR lower(COALESCE(s.file_name,v.file_name,latest_v.file_name,'')) LIKE '%.doc%' )) OR (@docType='image' AND (lower(COALESCE(v.content_type,latest_v.content_type,'')) LIKE 'image/%' OR lower(COALESCE(s.file_name,v.file_name,latest_v.file_name,'')) SIMILAR TO '%.(jpg|jpeg|png|tif|tiff|webp|gif)')))
 AND (@ocrFilter IS NULL OR (@ocrFilter='with' AND upper(COALESCE(oj.status::text,''))='COMPLETED' AND NULLIF(COALESCE(s.ocr_text,''),'') IS NOT NULL) OR (@ocrFilter='without' AND NOT (upper(COALESCE(oj.status::text,''))='COMPLETED' AND NULLIF(COALESCE(s.ocr_text,''),'') IS NOT NULL)) OR upper(COALESCE(oj.status::text,'NONE'))=@ocrFilter)
@@ -165,6 +177,7 @@ LIMIT @pageSize OFFSET @offset;
         try {
             await using var conn = await _db.OpenAsync(ct);
             var parameters = new DynamicParameters();
+            parameters.Add("AuthorizedDocuments", await AuthorizedDocumentsAsync(ct));
             parameters.Add("tenantId", tenantId, DbType.Guid);
             parameters.Add("q", query, DbType.String);
             parameters.Add("likeQuery", likeQuery, DbType.String);
@@ -187,7 +200,6 @@ LIMIT @pageSize OFFSET @offset;
             var typeTotals = DeserializeTypeTotals(first?.TotalByType);
             var elapsedMs = sw.ElapsedMilliseconds;
             var result = new HospitalDocumentSearchResultDto { Success = true, Items = items, TotalResults = total, ReturnedCount = items.Count, TotalWithOcr = first?.TotalWithOcr ?? 0, TotalWithoutOcr = first?.TotalWithoutOcr ?? 0, TotalByType = typeTotals, ElapsedMs = elapsedMs, Query = query, Page = page, PageSize = pageSize, TotalPages = total == 0 ? 0 : (int)Math.Ceiling(total / (double)pageSize), HasMore = offset + rows.Count < total };
-            _cache.Set(searchCacheKey, result, new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromSeconds(20), AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(90) });
             Response.Headers["X-InovaGed-Cache"] = "miss";
             _logger.LogInformation("Hospital document search executed. TenantId={TenantId} UserId={UserId} Query={Query} Type={Type} OcrStatus={OcrStatus} Filters={Filters} TotalResults={TotalResults} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}", tenantId, userId, query, normalizedType, normalizedOcrStatus, new { dateFrom, dateTo, folder, ocrRequired, recentOnly, previewOnly, sort = normalizedSort }, total, elapsedMs, correlationId);
             await _audit.WriteAsync(tenantId, userId, "VIEW", "HOSPITAL_DOCUMENT_SEARCH", null, "Busca hospitalar executada", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { EventType = "INFO", tenantId, userId, query, type = normalizedType, filters = new { ocrStatus = normalizedOcrStatus, dateFrom, dateTo, folder, ocrRequired, recentOnly, previewOnly, sort = normalizedSort }, totalResults = total, elapsedMs, correlationId }, ct);
@@ -212,8 +224,6 @@ LIMIT @pageSize OFFSET @offset;
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized(new { success = false });
         var tenantId = _currentUser.TenantId;
-        var cacheKey = $"HospitalDocuments:Summary:{tenantId}";
-        if (_cache.TryGetValue<HospitalDocumentSummaryDto>(cacheKey, out var cached)) return Json(cached);
 
         const string sql = """
 SELECT count(DISTINCT d.id)::int AS "TotalDocuments",
@@ -225,12 +235,11 @@ FROM ged.document d
 LEFT JOIN ged.document_search s ON s.tenant_id=d.tenant_id AND s.document_id=d.id
 LEFT JOIN ged.document_version v ON v.tenant_id=d.tenant_id AND v.id=s.version_id
 LEFT JOIN LATERAL (SELECT vx.id, vx.file_name, vx.content_type FROM ged.document_version vx WHERE vx.tenant_id=d.tenant_id AND vx.document_id=d.id ORDER BY vx.version_number DESC, vx.created_at DESC LIMIT 1) latest_v ON true
-WHERE d.tenant_id=@tenantId AND coalesce(d.reg_status,'A')='A' AND d.status<>'ARCHIVED'::ged.document_status_enum;
+WHERE d.tenant_id=@tenantId AND coalesce(d.reg_status,'A')='A' AND d.status<>'ARCHIVED'::ged.document_status_enum AND d.id=any(@AuthorizedDocuments);
 """;
         await using var conn = await _db.OpenAsync(ct);
-        var summary = await conn.QuerySingleAsync<HospitalDocumentSummaryDto>(new CommandDefinition(sql, new { tenantId }, cancellationToken: ct));
+        var summary = await conn.QuerySingleAsync<HospitalDocumentSummaryDto>(new CommandDefinition(sql, new { tenantId, AuthorizedDocuments = await AuthorizedDocumentsAsync(ct) }, cancellationToken: ct));
         summary.Success = true;
-        _cache.Set(cacheKey, summary, TimeSpan.FromSeconds(60));
         return Json(summary);
     }
 
@@ -244,12 +253,6 @@ WHERE d.tenant_id=@tenantId AND coalesce(d.reg_status,'A')='A' AND d.status<>'AR
         var query = string.IsNullOrWhiteSpace(q) ? string.Empty : q.Trim();
         if (query.Length < 3) return Json(new { success = true, items = Array.Empty<object>() });
 
-        var cacheKey = $"HospitalDocuments:Suggestions:{tenantId}:{query.ToLowerInvariant()}";
-        if (_cache.TryGetValue<IReadOnlyList<HospitalDocumentSuggestionDto>>(cacheKey, out var cachedItems))
-        {
-            _logger.LogInformation("Hospital suggestions cache hit. Tenant={TenantId} User={UserId} Query={Query} ResultCount={ResultCount} ElapsedMs={ElapsedMs} CacheHit={CacheHit}", tenantId, userId, query, cachedItems.Count, sw.ElapsedMilliseconds, true);
-            return Json(new { success = true, items = cachedItems });
-        }
 
         var like = $"%{query}%";
         const string sql = """
@@ -269,7 +272,7 @@ LEFT JOIN ged.document_version v ON v.tenant_id=d.tenant_id AND v.id=s.version_i
 LEFT JOIN ged.folder f ON f.tenant_id=d.tenant_id AND f.id=d.folder_id
 LEFT JOIN LATERAL (SELECT vx.id, vx.file_name, vx.content_type, vx.file_size_bytes FROM ged.document_version vx WHERE vx.tenant_id=d.tenant_id AND vx.document_id=d.id ORDER BY vx.version_number DESC,vx.created_at DESC LIMIT 1) latest_v ON true
 LEFT JOIN LATERAL (SELECT j.status FROM ged.ocr_job j WHERE j.tenant_id=d.tenant_id AND j.document_version_id=COALESCE(NULLIF(s.version_id,'00000000-0000-0000-0000-000000000000'::uuid),NULLIF(d.current_version_id,'00000000-0000-0000-0000-000000000000'::uuid),latest_v.id) ORDER BY j.requested_at DESC LIMIT 1) oj ON true
-WHERE d.tenant_id=@TenantId::uuid AND coalesce(d.reg_status,'A')='A' AND d.status<>'ARCHIVED'::ged.document_status_enum
+WHERE d.tenant_id=@TenantId::uuid AND coalesce(d.reg_status,'A')='A' AND d.status<>'ARCHIVED'::ged.document_status_enum AND d.id=any(@AuthorizedDocuments)
 AND (d.code ILIKE @Q::text OR d.title ILIKE @Q::text OR COALESCE(d.description,'') ILIKE @Q::text OR COALESCE(s.file_name,'') ILIKE @Q::text OR substring(COALESCE(s.ocr_text,'') from 1 for 4000) ILIKE @Q::text)
 AND COALESCE(NULLIF(s.version_id,'00000000-0000-0000-0000-000000000000'::uuid),NULLIF(d.current_version_id,'00000000-0000-0000-0000-000000000000'::uuid),latest_v.id) IS NOT NULL
 ORDER BY "MatchScore" DESC, "CreatedAt" DESC LIMIT 16;
@@ -277,9 +280,8 @@ ORDER BY "MatchScore" DESC, "CreatedAt" DESC LIMIT 16;
         try
         {
             await using var conn = await _db.OpenAsync(ct);
-            var rows = await conn.QueryAsync<HospitalDocumentSuggestionRow>(new CommandDefinition(sql, new { TenantId = tenantId, Q = like, RawQ = query, QExact = query }, cancellationToken: ct));
+            var rows = await conn.QueryAsync<HospitalDocumentSuggestionRow>(new CommandDefinition(sql, new { TenantId = tenantId, Q = like, RawQ = query, QExact = query, AuthorizedDocuments = await AuthorizedDocumentsAsync(ct) }, cancellationToken: ct));
             var items = rows.Where(x => x.VersionId != EmptyGuid).Select(MapSuggestion).ToList();
-            _cache.Set(cacheKey, items, TimeSpan.FromSeconds(45));
             _logger.LogInformation("Hospital suggestions executado. Tenant={TenantId} User={UserId} Query={Query} ResultCount={ResultCount} ElapsedMs={ElapsedMs} CacheHit={CacheHit}", tenantId, userId, query, items.Count, sw.ElapsedMilliseconds, false);
             return Json(new { success = true, items });
         }
@@ -343,6 +345,7 @@ ORDER BY "MatchScore" DESC, "CreatedAt" DESC LIMIT 16;
     public async Task<IActionResult> Viewer(Guid versionId, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated || versionId == Guid.Empty) return RedirectToAction(nameof(Index));
+        if (!await CanReadVersionAsync(versionId, ct)) return NotFound();
         await RegisterHospitalAccessAuditAsync("viewer", ct, new { versionId });
         await using var conn = await _db.OpenAsync(ct);
         var row = await conn.QuerySingleOrDefaultAsync<ViewerRow>(new CommandDefinition("""SELECT d.id AS "DocumentId", dv.id AS "VersionId", COALESCE(NULLIF(d.code,''),d.id::text) AS "Code", COALESCE(NULLIF(d.title,''),'Documento sem título') AS "Title", COALESCE(NULLIF(dv.file_name,''),'arquivo') AS "FileName", COALESCE(NULLIF(dv.content_type,''),'') AS "ContentType", COALESCE(dv.file_size_bytes,0) AS "SizeBytes", d.created_at AS "CreatedAt", COALESCE(dv.storage_path,'') AS "StoragePath", COALESCE(s.ocr_text,'') AS "OcrText" FROM ged.document_version dv JOIN ged.document d ON d.tenant_id=dv.tenant_id AND d.id=dv.document_id LEFT JOIN ged.document_search s ON s.tenant_id=dv.tenant_id AND s.document_id=dv.document_id AND s.version_id=dv.id WHERE dv.tenant_id=@tenantId AND dv.id=@versionId AND coalesce(d.reg_status,'A')='A' LIMIT 1""", new { tenantId = _currentUser.TenantId, versionId }, cancellationToken: ct));
@@ -360,6 +363,7 @@ ORDER BY "MatchScore" DESC, "CreatedAt" DESC LIMIT 16;
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized();
             if (versionId == Guid.Empty) return NotFound();
+            if (!await CanReadVersionAsync(versionId, ct)) return NotFound();
             await RegisterHospitalAccessAuditAsync("preview", ct, new { versionId });
 
             await using var conn = await _db.OpenAsync(ct);
@@ -367,7 +371,7 @@ ORDER BY "MatchScore" DESC, "CreatedAt" DESC LIMIT 16;
             if (row is null || string.IsNullOrWhiteSpace(row.StoragePath)) return NotFound();
             if (!await _storage.ExistsAsync(row.StoragePath, ct)) return NotFound();
 
-            Response.Headers[HeaderNames.CacheControl] = "private, max-age=120";
+            Response.Headers[HeaderNames.CacheControl] = "private, no-store";
             Response.Headers[HeaderNames.LastModified] = DateTimeOffset.UtcNow.ToString("R");
 
             if (IsImage(row.ContentType, row.FileName))
@@ -408,7 +412,7 @@ ORDER BY "MatchScore" DESC, "CreatedAt" DESC LIMIT 16;
             return PreviewProcessingContent();
         }
     }
-    [HttpGet] public async Task<IActionResult> OcrText(Guid versionId, CancellationToken ct) { if (!_currentUser.IsAuthenticated || versionId == Guid.Empty) return Json(new { success = false, hasOcr = false, text = "", message = "Documento excluído ou indisponível." }); await RegisterHospitalAccessAuditAsync("ocr_text", ct, new { versionId }); await using var conn = await _db.OpenAsync(ct); var row = await conn.QuerySingleOrDefaultAsync<OcrRow>(new CommandDefinition("""SELECT COALESCE(s.ocr_text,'') AS "Text", COALESCE(oj.status::text,'NONE') AS "Status" FROM ged.document_version dv JOIN ged.document d ON d.tenant_id=dv.tenant_id AND d.id=dv.document_id LEFT JOIN ged.document_search s ON s.tenant_id=dv.tenant_id AND s.document_id=dv.document_id AND s.version_id=dv.id LEFT JOIN LATERAL (SELECT j.status FROM ged.ocr_job j WHERE j.tenant_id=dv.tenant_id AND j.document_version_id=dv.id ORDER BY j.requested_at DESC LIMIT 1) oj ON true WHERE dv.tenant_id=@tenantId AND dv.id=@versionId AND coalesce(d.reg_status,'A')='A' LIMIT 1""", new { tenantId = _currentUser.TenantId, versionId }, cancellationToken: ct)); if (row is null) return NotFound(new { success = false, hasOcr = false, text = "", message = "Documento excluído ou indisponível." }); return Json(new { success = true, hasOcr = string.Equals(row?.Status, "COMPLETED", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(row?.Text), hasOcrText = !string.IsNullOrWhiteSpace(row?.Text), isOcrAvailable = string.Equals(row?.Status, "COMPLETED", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(row?.Text), status = row?.Status ?? "NONE", text = row?.Text ?? "" }); }
+    [HttpGet] public async Task<IActionResult> OcrText(Guid versionId, CancellationToken ct) { if (!_currentUser.IsAuthenticated || versionId == Guid.Empty) return Json(new { success = false, hasOcr = false, text = "", message = "Documento excluído ou indisponível." }); if (!await CanReadVersionAsync(versionId, ct)) return NotFound(new { success = false, text = "" }); await RegisterHospitalAccessAuditAsync("ocr_text", ct, new { versionId }); await using var conn = await _db.OpenAsync(ct); var row = await conn.QuerySingleOrDefaultAsync<OcrRow>(new CommandDefinition("""SELECT COALESCE(s.ocr_text,'') AS "Text", COALESCE(oj.status::text,'NONE') AS "Status" FROM ged.document_version dv JOIN ged.document d ON d.tenant_id=dv.tenant_id AND d.id=dv.document_id LEFT JOIN ged.document_search s ON s.tenant_id=dv.tenant_id AND s.document_id=dv.document_id AND s.version_id=dv.id LEFT JOIN LATERAL (SELECT j.status FROM ged.ocr_job j WHERE j.tenant_id=dv.tenant_id AND j.document_version_id=dv.id ORDER BY j.requested_at DESC LIMIT 1) oj ON true WHERE dv.tenant_id=@tenantId AND dv.id=@versionId AND coalesce(d.reg_status,'A')='A' LIMIT 1""", new { tenantId = _currentUser.TenantId, versionId }, cancellationToken: ct)); if (row is null) return NotFound(new { success = false, hasOcr = false, text = "", message = "Documento excluído ou indisponível." }); return Json(new { success = true, hasOcr = string.Equals(row?.Status, "COMPLETED", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(row?.Text), hasOcrText = !string.IsNullOrWhiteSpace(row?.Text), isOcrAvailable = string.Equals(row?.Status, "COMPLETED", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(row?.Text), status = row?.Status ?? "NONE", text = row?.Text ?? "" }); }
     
     private async Task RegisterHospitalAccessAuditAsync(string action, CancellationToken ct, object? data = null)
     {

@@ -120,6 +120,7 @@ public sealed class DocumentAiGatewayTests
     [Fact]
     public async Task Deterministic_provider_answers_from_the_fixture_and_never_calls_http()
     {
+        using var environment = AiKeyScope.Set("DOTNET_ENVIRONMENT", "Homologation");
         using var gate = AiKeyScope.Set("INOVAGED_AI_DETERMINISTIC", "1");
         var handler = new CountingHandler();
         var options = new DocumentAiOptions { Enabled = true, Provider = "Deterministic" };
@@ -144,6 +145,19 @@ public sealed class DocumentAiGatewayTests
         using var gate = AiKeyScope.Set("INOVAGED_AI_DETERMINISTIC", "");
         var handler = new CountingHandler();
         var result = await Create(new DocumentAiOptions { Enabled = true, Provider = "Deterministic" }, handler).ExecuteAsync(new AiRequest(Guid.NewGuid(), Guid.NewGuid(), AiTask.Summarize, "resuma", [new("fonte", "texto")]), default);
+        Assert.Equal(AiFailureKind.Disabled, result.Failure);
+        Assert.False(result.ProviderReached);
+        Assert.Equal(0, handler.Calls);
+    }
+
+    [Fact]
+    public async Task Deterministic_provider_cannot_be_enabled_in_production()
+    {
+        using var environment = AiKeyScope.Set("DOTNET_ENVIRONMENT", "Production");
+        using var gate = AiKeyScope.Set("INOVAGED_AI_DETERMINISTIC", "1");
+        var handler = new CountingHandler();
+        var result = await Create(new DocumentAiOptions { Enabled = true, Provider = "Deterministic" }, handler)
+            .ExecuteAsync(new AiRequest(Guid.NewGuid(), Guid.NewGuid(), AiTask.Summarize, "resuma", [new("fonte", "texto")]), default);
         Assert.Equal(AiFailureKind.Disabled, result.Failure);
         Assert.False(result.ProviderReached);
         Assert.Equal(0, handler.Calls);

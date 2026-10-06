@@ -3,6 +3,7 @@ using System.Text;
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Protocols;
+using InovaGed.Application.Security;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -12,11 +13,13 @@ public sealed class ProtocoloCentralService : IProtocoloCentralService
 {
     private const string ClosedSql = "('FINALIZADO','ARQUIVADO','CANCELADO','DEFERIDO','INDEFERIDO')";
     private readonly IDbConnectionFactory _db;
+    private readonly IAbacAuthorizationService _abac;
     private readonly ILogger<ProtocoloCentralService> _logger;
 
-    public ProtocoloCentralService(IDbConnectionFactory db, ILogger<ProtocoloCentralService> logger)
+    public ProtocoloCentralService(IDbConnectionFactory db, ILogger<ProtocoloCentralService> logger, IAbacAuthorizationService abac)
     {
         _db = db;
+        _abac = abac;
         _logger = logger;
     }
 
@@ -50,8 +53,12 @@ order by ordem, nome;
             }
 
             var setores = grants.Select(g => g.SetorId).ToArray();
-            page.Counts = await CountAsync(conn, query, setores, ct);
-            var parameters = BuildParameters(query, setores);
+            var candidates = await conn.QueryAsync<Guid>(new CommandDefinition(
+                "select distinct ged_document_id from ged.protocolo_documento_ged where tenant_id=@TenantId and reg_status='A'",
+                new { query.TenantId }, cancellationToken: ct));
+            var visibleDocuments = (await _abac.FilterDocumentsAsync(query.TenantId, query.UserId, candidates.ToArray(), "VIEW", ct)).ToArray();
+            page.Counts = await CountAsync(conn, query, setores, visibleDocuments, ct);
+            var parameters = BuildParameters(query, setores, visibleDocuments);
             var where = BuildWhere(query, setores);
             page.Total = await conn.ExecuteScalarAsync<int>(new CommandDefinition($"select count(*)::int from ged.protocolo p where {where}", parameters, cancellationToken: ct));
             parameters.Add("Limit", query.PageSize);
@@ -69,7 +76,7 @@ select p.id as Id, p.numero as Numero, p.assunto as Assunto, p.interessado as In
          select string_agg(distinct coalesce(d.code, d.title), ', ')
          from ged.protocolo_documento_ged g
          join ged.document d on d.tenant_id=g.tenant_id and d.id=g.ged_document_id
-         where g.tenant_id=p.tenant_id and g.protocolo_id=p.id and g.reg_status='A'
+         where g.tenant_id=p.tenant_id and g.protocolo_id=p.id and g.reg_status='A' and d.id=any(@VisibleDocuments)
        ) as CodigoDocumental
 from ged.protocolo p
 left join ged.protocolo_setor sa on sa.tenant_id=p.tenant_id and sa.id=p.setor_atual_id
@@ -88,7 +95,7 @@ offset @Offset limit @Limit;
             page.Rows = (await conn.QueryAsync<ProtocoloCentralRow>(new CommandDefinition(sql, parameters, cancellationToken: ct))).ToList();
             foreach (var row in page.Rows) ApplyFlags(row, grants, query.CanSeeAll);
             if (query.SelecionadoId.HasValue)
-                page.Selecionado = await LoadDetailAsync(conn, query.TenantId, query.SelecionadoId.Value, grants, query.CanSeeAll, ct);
+                page.Selecionado = await LoadDetailAsync(conn, query.TenantId, query.SelecionadoId.Value, grants, query.CanSeeAll, visibleDocuments, ct);
             return page;
         }
         catch (PostgresException ex)
@@ -497,8 +504,14 @@ for update;
         return (row, null);
     }
 
-    private async Task<ProtocoloCentralDetail?> LoadDetailAsync(System.Data.Common.DbConnection conn, Guid tenantId, Guid id, IReadOnlyList<Grant> grants, bool canSeeAll, CancellationToken ct)
+    private async Task<ProtocoloCentralDetail?> LoadDetailAsync(System.Data.Common.DbConnection conn, Guid tenantId, Guid id, IReadOnlyList<Grant> grants, bool canSeeAll, Guid[] visibleDocuments, CancellationToken ct)
     {
+        var visibility = new ProtocoloCentralQuery { TenantId = tenantId, CanSeeAll = canSeeAll, Visao = "historico" };
+        var sectors = grants.Select(g => g.SetorId).ToArray();
+        var parameters = BuildParameters(visibility, sectors, visibleDocuments);
+        parameters.Add("Id", id);
+        if (!await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
+            $"select exists(select 1 from ged.protocolo p where p.id=@Id and {BuildWhere(visibility, sectors)})", parameters, cancellationToken: ct))) return null;
         var detail = await conn.QuerySingleOrDefaultAsync<ProtocoloCentralDetail>(new CommandDefinition("""
 select p.id as Id, p.numero as Numero, p.assunto as Assunto, p.descricao as Descricao, p.interessado as Interessado,
        p.tipo_solicitacao as Tipo, p.status as Status, p.situacao_custodia as SituacaoCustodia,
@@ -527,7 +540,7 @@ from ged.protocolo_tramitacao
 where tenant_id=@TenantId and protocolo_id=@Id and reg_status='A'
 order by data_tramitacao desc;
 """, new { TenantId = tenantId, Id = id }, cancellationToken: ct))).ToList();
-        detail.CustodiaFisica = await LoadPhysicalAsync(conn, tenantId, id, ct);
+        detail.CustodiaFisica = await LoadPhysicalAsync(conn, tenantId, id, visibleDocuments, ct);
         var flags = new ProtocoloCentralRow
         {
             Status = detail.Status,
@@ -554,7 +567,7 @@ order by data_tramitacao desc;
         return detail;
     }
 
-    private static async Task<List<ProtocoloCustodiaFisica>> LoadPhysicalAsync(System.Data.Common.DbConnection conn, Guid tenantId, Guid protocoloId, CancellationToken ct)
+    private static async Task<List<ProtocoloCustodiaFisica>> LoadPhysicalAsync(System.Data.Common.DbConnection conn, Guid tenantId, Guid protocoloId, Guid[] visibleDocuments, CancellationToken ct)
     {
         var list = new List<ProtocoloCustodiaFisica>();
         try
@@ -567,9 +580,9 @@ select 'Empréstimo físico' as Origem, coalesce(d.title, d.code) as Documento, 
 from ged.physical_loan l
 join ged.protocolo_documento_ged g on g.tenant_id=l.tenant_id and g.ged_document_id=l.document_id and g.reg_status='A'
 left join ged.document d on d.tenant_id=l.tenant_id and d.id=l.document_id
-where l.tenant_id=@TenantId and g.protocolo_id=@Id and l.reg_status='A'
+where l.tenant_id=@TenantId and g.protocolo_id=@Id and l.reg_status='A' and d.id=any(@VisibleDocuments)
 order by l.loaned_at desc nulls last;
-""", new { TenantId = tenantId, Id = protocoloId }, cancellationToken: ct));
+""", new { TenantId = tenantId, Id = protocoloId, VisibleDocuments = visibleDocuments }, cancellationToken: ct));
             list.AddRange(rows);
         }
         if (await conn.ExecuteScalarAsync<bool>(new CommandDefinition("select to_regclass('ged.loan_request') is not null", cancellationToken: ct)))
@@ -580,8 +593,8 @@ select 'Solicitação de empréstimo' as Origem, coalesce(d.title, d.code) as Do
 from ged.loan_request lr
 join ged.protocolo_documento_ged g on g.tenant_id=lr.tenant_id and g.ged_document_id=lr.document_id and g.reg_status='A'
 left join ged.document d on d.tenant_id=lr.tenant_id and d.id=lr.document_id
-where lr.tenant_id=@TenantId and g.protocolo_id=@Id and lr.reg_status='A';
-""", new { TenantId = tenantId, Id = protocoloId }, cancellationToken: ct));
+where lr.tenant_id=@TenantId and g.protocolo_id=@Id and lr.reg_status='A' and d.id=any(@VisibleDocuments);
+""", new { TenantId = tenantId, Id = protocoloId, VisibleDocuments = visibleDocuments }, cancellationToken: ct));
             list.AddRange(rows);
         }
         }
@@ -606,9 +619,9 @@ where lr.tenant_id=@TenantId and g.protocolo_id=@Id and lr.reg_status='A';
         row.PodeEstornar = !closed && pending && ProtocolCustodyRules.CanAct(canSeeAll, linked(row.MovimentoOrigemId, g => g.PodeTramitar), true);
     }
 
-    private static async Task<ProtocoloCentralCounts> CountAsync(System.Data.Common.DbConnection conn, ProtocoloCentralQuery query, Guid[] setores, CancellationToken ct)
+    private static async Task<ProtocoloCentralCounts> CountAsync(System.Data.Common.DbConnection conn, ProtocoloCentralQuery query, Guid[] setores, Guid[] visibleDocuments, CancellationToken ct)
     {
-        var p = BuildParameters(query, setores);
+        var p = BuildParameters(query, setores, visibleDocuments);
         async Task<int> Count(string visao)
         {
             var q = new ProtocoloCentralQuery
@@ -616,7 +629,7 @@ where lr.tenant_id=@TenantId and g.protocolo_id=@Id and lr.reg_status='A';
                 TenantId = query.TenantId, CanSeeAll = query.CanSeeAll, Visao = visao, Q = query.Q, Status = query.Status,
                 Tipo = query.Tipo, SetorId = query.SetorId, ResponsavelId = query.ResponsavelId, De = query.De, Ate = query.Ate, PrazoVencido = query.PrazoVencido
             };
-            return await conn.ExecuteScalarAsync<int>(new CommandDefinition($"select count(*)::int from ged.protocolo p where {BuildWhere(q, setores)}", BuildParameters(q, setores), cancellationToken: ct));
+            return await conn.ExecuteScalarAsync<int>(new CommandDefinition($"select count(*)::int from ged.protocolo p where {BuildWhere(q, setores)}", BuildParameters(q, setores, visibleDocuments), cancellationToken: ct));
         }
         return new ProtocoloCentralCounts
         {
@@ -627,9 +640,10 @@ where lr.tenant_id=@TenantId and g.protocolo_id=@Id and lr.reg_status='A';
         };
     }
 
-    private static DynamicParameters BuildParameters(ProtocoloCentralQuery query, Guid[] setores)
+    private static DynamicParameters BuildParameters(ProtocoloCentralQuery query, Guid[] setores, Guid[] visibleDocuments)
     {
         var p = new DynamicParameters();
+        p.Add("VisibleDocuments", visibleDocuments);
         p.Add("TenantId", query.TenantId);
         p.Add("Setores", setores);
         p.Add("CanSeeAll", query.CanSeeAll);
@@ -676,7 +690,7 @@ where lr.tenant_id=@TenantId and g.protocolo_id=@Id and lr.reg_status='A';
             _ => ""
         });
         if (!string.IsNullOrWhiteSpace(query.Q))
-            sql.Append(" and (p.numero ilike @Q or p.assunto ilike @Q or coalesce(p.interessado,'') ilike @Q or exists(select 1 from ged.protocolo_documento_ged g join ged.document d on d.tenant_id=g.tenant_id and d.id=g.ged_document_id where g.tenant_id=p.tenant_id and g.protocolo_id=p.id and g.reg_status='A' and (coalesce(d.code,'') ilike @Q or coalesce(d.title,'') ilike @Q)))");
+            sql.Append(" and (p.numero ilike @Q or p.assunto ilike @Q or coalesce(p.interessado,'') ilike @Q or exists(select 1 from ged.protocolo_documento_ged g join ged.document d on d.tenant_id=g.tenant_id and d.id=g.ged_document_id where g.tenant_id=p.tenant_id and g.protocolo_id=p.id and g.reg_status='A' and d.id=any(@VisibleDocuments) and (coalesce(d.code,'') ilike @Q or coalesce(d.title,'') ilike @Q)))");
         if (!string.IsNullOrWhiteSpace(query.Status)) sql.Append(" and upper(p.status)=upper(@Status)");
         if (!string.IsNullOrWhiteSpace(query.Tipo)) sql.Append(" and coalesce(p.tipo_solicitacao,'') ilike @Tipo");
         if (query.SetorId.HasValue) sql.Append(" and (p.setor_atual_id=@SetorId or exists(select 1 from ged.protocolo_tramitacao t where t.tenant_id=p.tenant_id and t.protocolo_id=p.id and t.reg_status='A' and t.ativa=true and (t.setor_destino_id=@SetorId or t.setor_origem_id=@SetorId)))");

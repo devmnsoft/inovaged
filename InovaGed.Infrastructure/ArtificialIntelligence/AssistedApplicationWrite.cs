@@ -136,17 +136,17 @@ where tenant_id=@TenantId and execution_id=@ExecutionId and decision_fingerprint
         if (!ReviewIdentity.Equivalent(existing.Fingerprint, existing.DecisionJson, application.DecisionFingerprint, application.DecisionJson))
             return new("DecisionConflict", "A mesma revisão já foi registrada com outra decisão. Gere uma nova sugestão para revisar de novo.", token, existing.Id, existing.Partial, false, null, existing.Outcome);
         var pending = await connection.QuerySingleOrDefaultAsync<PendingRow>(new CommandDefinition("""
-select attempts "Attempts", resolved_at is null "Open"
+select id "Id", attempts "Attempts", resolved_at is null "Open"
 from ged.ai_retention_recalc_pending
 where tenant_id=@TenantId and application_id=@ApplicationId
 order by created_at desc
 limit 1
 """, new { application.TenantId, ApplicationId = existing.Id }, transaction, cancellationToken: ct));
         var open = pending?.Open == true;
-        return new("AlreadyApplied", null, token, existing.Id, open || existing.Partial && open, open, null, existing.Outcome, pending?.Attempts ?? 0);
+        return new("AlreadyApplied", null, token, existing.Id, open, open, pending?.Id, existing.Outcome, pending?.Attempts ?? 0);
     }
 
     private sealed class LockRow { public Guid Id { get; set; } public long Token { get; set; } }
     private sealed class ExistingRow { public Guid Id { get; set; } public string Fingerprint { get; set; } = ""; public string DecisionJson { get; set; } = ""; public string Outcome { get; set; } = ""; public bool Partial { get; set; } }
-    private sealed class PendingRow { public int Attempts { get; set; } public bool Open { get; set; } }
+    private sealed class PendingRow { public Guid Id { get; set; } public int Attempts { get; set; } public bool Open { get; set; } }
 }

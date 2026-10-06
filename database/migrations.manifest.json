@@ -2,36 +2,190 @@
   "version": 1,
   "migrations": [
     {
-      "id": "2026_08_label_mobile_offline_evidence",
-      "path": "database/migrations/2026_08_label_mobile_offline_evidence.sql",
-      "module": "LabelMobile",
+      "id": "2026_08_25_permission_catalog_compat_hotfix",
+      "path": "database/migrations/2026_08_25_permission_catalog_compat_hotfix.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_21_administration_legacy_schema_compat",
+      "path": "database/migrations/2026_08_21_administration_legacy_schema_compat.sql",
+      "module": "Administration",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "20260525_document_is_confidential_fix",
+      "path": "database/migrations/20260525_document_is_confidential_fix.sql",
+      "module": "GedSecurity",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "20260601_upload_batch",
+      "path": "database/migrations/20260601_upload_batch.sql",
+      "module": "Upload",
       "transactional": true,
       "deploymentSafety": "Additive",
       "minimumApplicationVersion": "04.1.31",
       "maximumApplicationVersion": "04.1.99",
       "requiresMaintenanceWindow": false,
-      "requiresVerifiedBackup": false
+      "requiresVerifiedBackup": true
     },
     {
-      "id": "2026_08_label_tracking_inventory",
-      "path": "database/migrations/2026_08_label_tracking_inventory.sql",
-      "module": "LabelTracking",
+      "id": "2026_06_ged_schema_consolidation",
+      "path": "database/migrations/2026_06_ged_schema_consolidation.sql",
+      "module": "GedCore",
       "transactional": true,
       "deploymentSafety": "Additive",
-      "minimumApplicationVersion": "04.1.31",
-      "maximumApplicationVersion": "04.1.99",
-      "requiresMaintenanceWindow": false,
-      "requiresVerifiedBackup": false
+      "requiresVerifiedBackup": true
     },
     {
-      "id": "2026_07_cluster_nodes_and_deployments",
-      "path": "database/migrations/2026_07_cluster_nodes_and_deployments.sql",
-      "module": "HighAvailability",
+      "id": "2026_06_harden_ged_uploads_schema",
+      "path": "database/migrations/2026_06_harden_ged_uploads_schema.sql",
+      "module": "GedRuntime",
       "transactional": true,
       "deploymentSafety": "Additive",
-      "minimumApplicationVersion": "04.1.24",
-      "maximumApplicationVersion": "04.1.25",
-      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_06_document_version_reg_status",
+      "path": "database/migrations/2026_06_document_version_reg_status.sql",
+      "module": "GedRuntime",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_06_ocr_job_diagnostics",
+      "path": "database/migrations/2026_06_ocr_job_diagnostics.sql",
+      "module": "GedRuntime",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_06_ged_processing_pipeline",
+      "path": "database/migrations/2026_06_ged_processing_pipeline.sql",
+      "module": "GedProcessing",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_06_code_sequence_and_parameters_fix",
+      "path": "database/migrations/2026_06_code_sequence_and_parameters_fix.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_06_document_partial_workflow",
+      "path": "database/migrations/2026_06_document_partial_workflow.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_06_upload_duplicate_allow_anyway",
+      "path": "database/migrations/2026_06_upload_duplicate_allow_anyway.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_06_ocr_auto_schedule",
+      "path": "database/migrations/2026_06_ocr_auto_schedule.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_06_document_quality",
+      "path": "database/migrations/2026_06_document_quality.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "20260605_upload_ocr_partial_documents",
+      "path": "database/migrations/20260605_upload_ocr_partial_documents.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_06_upload_batch_incomplete_and_resilience",
+      "path": "database/migrations/2026_06_upload_batch_incomplete_and_resilience.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_24_database_readiness_migration_runner",
+      "path": "database/migrations/2026_08_24_database_readiness_migration_runner.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_label_template_designer",
+      "path": "database/migrations/2026_08_label_template_designer.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_locdesk_labels",
+      "path": "database/migrations/2026_08_locdesk_labels.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_classification_plan_compat_hotfix",
+      "path": "database/migrations/2026_08_classification_plan_compat_hotfix.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_21_classification_plan_title_compat_hotfix",
+      "path": "database/migrations/2026_08_21_classification_plan_title_compat_hotfix.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_21_instrument_version_compat_hotfix",
+      "path": "database/migrations/2026_08_21_instrument_version_compat_hotfix.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_retention_destination_di_schema_hotfix",
+      "path": "database/migrations/2026_08_retention_destination_di_schema_hotfix.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
       "requiresVerifiedBackup": true
     },
     {
@@ -79,6 +233,17 @@
       "requiresVerifiedBackup": true
     },
     {
+      "id": "2026_07_cluster_nodes_and_deployments",
+      "path": "database/migrations/2026_07_cluster_nodes_and_deployments.sql",
+      "module": "HighAvailability",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.24",
+      "maximumApplicationVersion": "04.1.25",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": true
+    },
+    {
       "id": "2026_07_workspace_productivity",
       "path": "database/migrations/2026_07_workspace_productivity.sql",
       "module": "Workspace",
@@ -90,6 +255,116 @@
       "requiresVerifiedBackup": false
     },
     {
+      "id": "2026_06_loan_item_identity_preflight",
+      "path": "database/migrations/2026_06_loan_item_identity_preflight.sql",
+      "module": "Core",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_06_loans_manual_items_history",
+      "path": "database/migrations/2026_06_loans_manual_items_history.sql",
+      "module": "Core",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_06_loans_history",
+      "path": "database/migrations/2026_06_loans_history.sql",
+      "module": "Core",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_06_contextual_smart_search_and_loans",
+      "path": "database/migrations/2026_06_contextual_smart_search_and_loans.sql",
+      "module": "Core",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_06_protocol_module",
+      "path": "database/migrations/2026_06_protocol_module.sql",
+      "module": "Core",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_07_signature_runtime_prerequisites",
+      "path": "database/migrations/2026_07_signature_runtime_prerequisites.sql",
+      "module": "Signatures",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_07_signature_cms_agent",
+      "path": "database/migrations/2026_07_signature_cms_agent.sql",
+      "module": "Signatures",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_07_signature_cms_end_to_end",
+      "path": "database/migrations/2026_07_signature_cms_end_to_end.sql",
+      "module": "Signatures",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_07_signature_cms_agent_runtime",
+      "path": "database/migrations/2026_07_signature_cms_agent_runtime.sql",
+      "module": "Signatures",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_07_signature_cms_operational_fix",
+      "path": "database/migrations/2026_07_signature_cms_operational_fix.sql",
+      "module": "Signatures",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_07_signature_cms_rc3_status",
+      "path": "database/migrations/2026_07_signature_cms_rc3_status.sql",
+      "module": "Signatures",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresVerifiedBackup": true
+    },
+    {
       "id": "2026_08_archival_intelligence_core_v1",
       "path": "database/migrations/2026_08_archival_intelligence_core_v1.sql",
       "module": "ArchivalIntelligence",
@@ -99,6 +374,24 @@
       "maximumApplicationVersion": "04.1.99",
       "requiresMaintenanceWindow": false,
       "requiresVerifiedBackup": false
+    },
+    {
+      "id": "2026_08_label_print_modes_and_templates",
+      "path": "database/migrations/2026_08_label_print_modes_and_templates.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_label_print_queue",
+      "path": "database/migrations/2026_08_label_print_queue.sql",
+      "module": "Labels",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresVerifiedBackup": true
     },
     {
       "id": "2026_08_document_folder_move_history",
@@ -123,6 +416,25 @@
       "requiresVerifiedBackup": true
     },
     {
+      "id": "2026_08_10_final_schema_hotfix",
+      "path": "database/migrations/2026_08_10_final_schema_hotfix.sql",
+      "module": "FinalSchemaCompatibility",
+      "transactional": false,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_archival_schema_prerequisites",
+      "path": "database/migrations/2026_08_archival_schema_prerequisites.sql",
+      "module": "ArchivalIntelligence",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
       "id": "2026_08_archival_schema_consolidation",
       "path": "database/migrations/2026_08_archival_schema_consolidation.sql",
       "module": "ArchivalSchema",
@@ -143,6 +455,16 @@
       "maximumApplicationVersion": "04.1.99",
       "requiresMaintenanceWindow": false,
       "requiresVerifiedBackup": false
+    },
+    {
+      "id": "2026_08_physical_map_inventory_prerequisite",
+      "path": "database/migrations/2026_08_physical_map_inventory_prerequisite.sql",
+      "module": "ArchivalIntelligence",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresVerifiedBackup": true
     },
     {
       "id": "2026_08_archival_labels_physical_inventory",
@@ -181,17 +503,6 @@
       "id": "2026_08_10_archival_migration_hotfix",
       "path": "database/migrations/2026_08_10_archival_migration_hotfix.sql",
       "module": "ArchivalCompatibility",
-      "transactional": false,
-      "deploymentSafety": "Additive",
-      "minimumApplicationVersion": "04.1.31",
-      "maximumApplicationVersion": "04.1.99",
-      "requiresMaintenanceWindow": false,
-      "requiresVerifiedBackup": true
-    },
-    {
-      "id": "2026_08_10_final_schema_hotfix",
-      "path": "database/migrations/2026_08_10_final_schema_hotfix.sql",
-      "module": "FinalSchemaCompatibility",
       "transactional": false,
       "deploymentSafety": "Additive",
       "minimumApplicationVersion": "04.1.31",
@@ -244,17 +555,6 @@
       "requiresVerifiedBackup": true
     },
     {
-      "id": "2026_08_11_search_pg_trgm_safe_index",
-      "path": "database/migrations/2026_08_11_search_pg_trgm_safe_index.sql",
-      "module": "SmartSearch",
-      "transactional": true,
-      "deploymentSafety": "Additive",
-      "minimumApplicationVersion": "04.1.31",
-      "maximumApplicationVersion": "04.1.99",
-      "requiresMaintenanceWindow": false,
-      "requiresVerifiedBackup": false
-    },
-    {
       "id": "2026_08_11_billing_extraction_rules",
       "path": "database/migrations/2026_08_11_billing_extraction_rules.sql",
       "module": "BillingExtraction",
@@ -264,6 +564,17 @@
       "maximumApplicationVersion": "04.1.99",
       "requiresMaintenanceWindow": false,
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_11_search_pg_trgm_safe_index",
+      "path": "database/migrations/2026_08_11_search_pg_trgm_safe_index.sql",
+      "module": "SmartSearch",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
     },
     {
       "id": "2026_08_12_protocol_tramitation",
@@ -280,17 +591,6 @@
       "id": "2026_08_13_hospital_billing_smart_search",
       "path": "database/migrations/2026_08_13_hospital_billing_smart_search.sql",
       "module": "HospitalBillingSmartSearch",
-      "transactional": true,
-      "deploymentSafety": "Additive",
-      "minimumApplicationVersion": "04.1.31",
-      "maximumApplicationVersion": "04.1.99",
-      "requiresMaintenanceWindow": false,
-      "requiresVerifiedBackup": true
-    },
-    {
-      "id": "2026_08_17_smart_search_administration_closure",
-      "path": "database/migrations/2026_08_17_smart_search_administration_closure.sql",
-      "module": "SmartSearchAdministration",
       "transactional": true,
       "deploymentSafety": "Additive",
       "minimumApplicationVersion": "04.1.31",
@@ -321,6 +621,17 @@
       "requiresVerifiedBackup": false
     },
     {
+      "id": "2026_08_17_smart_search_administration_closure",
+      "path": "database/migrations/2026_08_17_smart_search_administration_closure.sql",
+      "module": "SmartSearchAdministration",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": true
+    },
+    {
       "id": "2026_08_18_ged_operational_routes_audit",
       "path": "database/migrations/2026_08_18_ged_operational_routes_audit.sql",
       "module": "GedOperational",
@@ -330,17 +641,6 @@
       "maximumApplicationVersion": "04.1.99",
       "requiresMaintenanceWindow": false,
       "requiresVerifiedBackup": true
-    },
-    {
-      "id": "2026_08_19_executive_reports_performance",
-      "path": "database/migrations/2026_08_19_executive_reports_performance.sql",
-      "module": "ExecutiveReports",
-      "transactional": true,
-      "deploymentSafety": "Additive",
-      "minimumApplicationVersion": "04.1.31",
-      "maximumApplicationVersion": "04.1.99",
-      "requiresMaintenanceWindow": false,
-      "requiresVerifiedBackup": false
     },
     {
       "id": "2026_08_18_smart_search_saved_search_evolution",
@@ -365,6 +665,28 @@
       "requiresVerifiedBackup": false
     },
     {
+      "id": "2026_08_19_executive_reports_performance",
+      "path": "database/migrations/2026_08_19_executive_reports_performance.sql",
+      "module": "ExecutiveReports",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
+    },
+    {
+      "id": "2026_08_label_tracking_inventory",
+      "path": "database/migrations/2026_08_label_tracking_inventory.sql",
+      "module": "LabelTracking",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
+    },
+    {
       "id": "2026_08_contract_fiscalization_acceptance",
       "path": "database/migrations/2026_08_contract_fiscalization_acceptance.sql",
       "module": "ContractFiscalization",
@@ -376,15 +698,100 @@
       "requiresVerifiedBackup": false
     },
     {
-      "id": "2026_08_fiscal_portal_acceptance_signature",
-      "path": "database/migrations/2026_08_fiscal_portal_acceptance_signature.sql",
-      "module": "FiscalPortal",
+      "id": "2026_08_24_observability_incident_center",
+      "path": "database/migrations/2026_08_24_observability_incident_center.sql",
+      "module": "OperationalReadiness",
       "transactional": true,
       "deploymentSafety": "Additive",
-      "minimumApplicationVersion": "04.1.31",
-      "maximumApplicationVersion": "04.1.99",
-      "requiresMaintenanceWindow": false,
-      "requiresVerifiedBackup": false
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_24_uat_go_live_readiness",
+      "path": "database/migrations/2026_08_24_uat_go_live_readiness.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_25_admin_labels_legacy_schema_compat",
+      "path": "database/migrations/2026_08_25_admin_labels_legacy_schema_compat.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_26_smart_ged_core",
+      "path": "database/migrations/2026_08_26_smart_ged_core.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_26_smart_ged_assistant",
+      "path": "database/migrations/2026_08_26_smart_ged_assistant.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_26_smart_workflow_core",
+      "path": "database/migrations/2026_08_26_smart_workflow_core.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_26_label_template_catalog_seed_fix",
+      "path": "database/migrations/2026_08_26_label_template_catalog_seed_fix.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_26_label_print_calibration",
+      "path": "database/migrations/2026_08_26_label_print_calibration.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_27_classification_retention_plan_2",
+      "path": "database/migrations/2026_08_27_classification_retention_plan_2.sql",
+      "module": "Retention",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_physical_archive_v2_prerequisites",
+      "path": "database/migrations/2026_08_physical_archive_v2_prerequisites.sql",
+      "module": "PhysicalArchive",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_27_physical_archive_2",
+      "path": "database/migrations/2026_08_27_physical_archive_2.sql",
+      "module": "PhysicalArchive",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_27_document_governance_2",
+      "path": "database/migrations/2026_08_27_document_governance_2.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
     },
     {
       "id": "2026_08_28_contract_measurement_2",
@@ -396,6 +803,106 @@
       "maximumApplicationVersion": "04.1.99",
       "requiresMaintenanceWindow": false,
       "requiresVerifiedBackup": false
+    },
+    {
+      "id": "2026_08_31_label_visual_designer_2",
+      "path": "database/migrations/2026_08_31_label_visual_designer_2.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_31_label_print_fidelity_2",
+      "path": "database/migrations/2026_08_31_label_print_fidelity_2.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_08_31_label_traceability_2",
+      "path": "database/migrations/2026_08_31_label_traceability_2.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_09_01_brand_logo_upload_print",
+      "path": "database/migrations/2026_09_01_brand_logo_upload_print.sql",
+      "module": "Branding",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_09_01_print_branding_center_2",
+      "path": "database/migrations/2026_09_01_print_branding_center_2.sql",
+      "module": "Branding",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_09_02_brand_asset_resize_selector_fix",
+      "path": "database/migrations/2026_09_02_brand_asset_resize_selector_fix.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_09_02_smart_workflow_schema_fix",
+      "path": "database/migrations/2026_09_02_smart_workflow_schema_fix.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_09_02_logo_layout_studio_print",
+      "path": "database/migrations/2026_09_02_logo_layout_studio_print.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_09_02_brand_assets_create_view_and_resize_fix",
+      "path": "database/migrations/2026_09_02_brand_assets_create_view_and_resize_fix.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_09_02_label_history_branding_fix",
+      "path": "database/migrations/2026_09_02_label_history_branding_fix.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_09_03_label_print_channel_compat_fix",
+      "path": "database/migrations/2026_09_03_label_print_channel_compat_fix.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_09_03_physical_archive_reg_status_compat_fix",
+      "path": "database/migrations/2026_09_03_physical_archive_reg_status_compat_fix.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
     },
     {
       "id": "2026_09_08_label_canvas_designer_rc22",
@@ -434,6 +941,28 @@
       "id": "2026_09_09_label_canvas_production_rc25",
       "path": "database/migrations/2026_09_09_label_canvas_production_rc25.sql",
       "module": "Labels",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
+    },
+    {
+      "id": "2026_08_label_mobile_offline_evidence",
+      "path": "database/migrations/2026_08_label_mobile_offline_evidence.sql",
+      "module": "LabelMobile",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
+    },
+    {
+      "id": "2026_08_fiscal_portal_acceptance_signature",
+      "path": "database/migrations/2026_08_fiscal_portal_acceptance_signature.sql",
+      "module": "FiscalPortal",
       "transactional": true,
       "deploymentSafety": "Additive",
       "minimumApplicationVersion": "04.1.31",
@@ -530,6 +1059,14 @@
       "requiresVerifiedBackup": false
     },
     {
+      "id": "2026_09_protocol_custody_index_preflight",
+      "path": "database/migrations/2026_09_protocol_custody_index_preflight.sql",
+      "module": "ProtocolCustody",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
       "id": "2026_09_30_protocol_custody_center",
       "path": "database/migrations/2026_09_30_protocol_custody_center.sql",
       "module": "GedProtocolCustody",
@@ -585,6 +1122,15 @@
       "requiresVerifiedBackup": false
     },
     {
+      "id": "2026_10_06_document_ai_review_identity_preflight",
+      "path": "database/migrations/2026_10_06_document_ai_review_identity_preflight.sql",
+      "module": "DocumentAi",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": true
+    },
+    {
       "id": "2026_10_06_document_ai_review_recovery",
       "path": "database/migrations/2026_10_06_document_ai_review_recovery.sql",
       "module": "DocumentAi",
@@ -594,6 +1140,49 @@
       "maximumApplicationVersion": "04.1.99",
       "requiresMaintenanceWindow": false,
       "requiresVerifiedBackup": false
+    },
+    {
+      "id": "2026_10_07_document_ai_retention_retry",
+      "path": "database/migrations/2026_10_07_document_ai_retention_retry.sql",
+      "module": "DocumentAi",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_10_07_physical_map_contract",
+      "path": "database/migrations/2026_10_07_physical_map_contract.sql",
+      "module": "ArchivalIntelligence",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_06_profile_scope_sector_access",
+      "path": "database/migrations/2026_06_profile_scope_sector_access.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_06_ged_bulk_actions_and_upload_logs",
+      "path": "database/migrations/2026_06_ged_bulk_actions_and_upload_logs.sql",
+      "module": "OperationalReadiness",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_10_07_audit_runtime_actions",
+      "path": "database/migrations/2026_10_07_audit_runtime_actions.sql",
+      "module": "Audit",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
     }
   ]
 }
