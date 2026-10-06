@@ -42,10 +42,8 @@ public sealed class HospitalDocumentsController : Controller
     {
         Response.Headers[HeaderNames.CacheControl] = "private, no-store";
         await using var connection = await _db.OpenAsync(ct);
-        var candidates = (await connection.QueryAsync<Guid>(new CommandDefinition(
-            "select id from ged.document where tenant_id=@tenantId and reg_status='A'",
-            new { tenantId = _currentUser.TenantId }, cancellationToken: ct))).ToArray();
-        return (await _authorization.FilterDocumentsAsync(_currentUser.TenantId, _currentUser.UserId, candidates, "VIEW", ct)).ToArray();
+        var sql = $"select d.id from ged.document d where d.tenant_id=@tenantId and d.reg_status='A' and {InovaGed.Infrastructure.Security.AbacAuthorizationService.DocumentAccessPredicate("d")}";
+        return (await connection.QueryAsync<Guid>(new CommandDefinition(sql, new { tenantId = _currentUser.TenantId, userId = _currentUser.UserId, permissionCode = "Documents.View", write = false, hour = DateTime.UtcNow.Hour }, cancellationToken: ct))).ToArray();
     }
 
     private async Task<bool> CanReadVersionAsync(Guid versionId, CancellationToken ct)
@@ -150,7 +148,7 @@ LEFT JOIN ged.document_version v ON v.tenant_id=d.tenant_id AND v.id=s.version_i
 LEFT JOIN ged.folder f ON f.tenant_id=d.tenant_id AND f.id=d.folder_id
 LEFT JOIN LATERAL (SELECT vx.id, vx.file_name, vx.content_type, vx.file_size_bytes, vx.is_partial_document, vx.partial_status FROM ged.document_version vx WHERE vx.tenant_id=d.tenant_id AND vx.document_id=d.id ORDER BY vx.version_number DESC, vx.created_at DESC LIMIT 1) latest_v ON true
 LEFT JOIN LATERAL (SELECT j.status FROM ged.ocr_job j WHERE j.tenant_id=d.tenant_id AND j.document_version_id=COALESCE(NULLIF(s.version_id,'00000000-0000-0000-0000-000000000000'::uuid),NULLIF(d.current_version_id,'00000000-0000-0000-0000-000000000000'::uuid),latest_v.id) ORDER BY j.requested_at DESC LIMIT 1) oj ON true
-WHERE d.tenant_id=@tenantId AND coalesce(d.reg_status,'A')='A' AND d.status<>'ARCHIVED'::ged.document_status_enum AND d.id=any(@AuthorizedDocuments)
+WHERE d.tenant_id=@tenantId AND coalesce(d.reg_status,'A')='A' AND d.status<>'ARCHIVED'::ged.document_status_enum AND /*AUTH_PREDICATE*/
 AND (d.code ILIKE @likeQuery OR d.title ILIKE @likeQuery OR COALESCE(d.description,'') ILIKE @likeQuery OR COALESCE(s.file_name,'') ILIKE @likeQuery OR COALESCE(s.ocr_text,'') ILIKE @likeQuery OR (s.search_vector IS NOT NULL AND s.search_vector @@ websearch_to_tsquery('portuguese', @q)))
 AND (@docType IS NULL OR (@docType='pdf' AND (lower(COALESCE(v.content_type,latest_v.content_type,'')) LIKE '%pdf%' OR lower(COALESCE(s.file_name,v.file_name,latest_v.file_name,'')) LIKE '%.pdf')) OR (@docType='word' AND (lower(COALESCE(v.content_type,latest_v.content_type,'')) LIKE '%word%' OR lower(COALESCE(s.file_name,v.file_name,latest_v.file_name,'')) LIKE '%.doc%' )) OR (@docType='image' AND (lower(COALESCE(v.content_type,latest_v.content_type,'')) LIKE 'image/%' OR lower(COALESCE(s.file_name,v.file_name,latest_v.file_name,'')) SIMILAR TO '%.(jpg|jpeg|png|tif|tiff|webp|gif)')))
 AND (@ocrFilter IS NULL OR (@ocrFilter='with' AND upper(COALESCE(oj.status::text,''))='COMPLETED' AND NULLIF(COALESCE(s.ocr_text,''),'') IS NOT NULL) OR (@ocrFilter='without' AND NOT (upper(COALESCE(oj.status::text,''))='COMPLETED' AND NULLIF(COALESCE(s.ocr_text,''),'') IS NOT NULL)) OR upper(COALESCE(oj.status::text,'NONE'))=@ocrFilter)
@@ -174,10 +172,14 @@ CASE WHEN @sort='relevance' THEN "MatchScore" END DESC,
 "Rank" DESC, "CreatedAt" DESC
 LIMIT @pageSize OFFSET @offset;
 """;
+        var finalSql = sql.Replace("/*AUTH_PREDICATE*/", InovaGed.Infrastructure.Security.AbacAuthorizationService.DocumentAccessPredicate("d"));
         try {
             await using var conn = await _db.OpenAsync(ct);
             var parameters = new DynamicParameters();
-            parameters.Add("AuthorizedDocuments", await AuthorizedDocumentsAsync(ct));
+            parameters.Add("userId", userId, DbType.Guid);
+            parameters.Add("permissionCode", "Documents.View", DbType.String);
+            parameters.Add("write", false, DbType.Boolean);
+            parameters.Add("hour", DateTime.UtcNow.Hour, DbType.Int32);
             parameters.Add("tenantId", tenantId, DbType.Guid);
             parameters.Add("q", query, DbType.String);
             parameters.Add("likeQuery", likeQuery, DbType.String);
@@ -193,7 +195,7 @@ LIMIT @pageSize OFFSET @offset;
             parameters.Add("sort", normalizedSort, DbType.String);
             parameters.Add("offset", offset, DbType.Int32);
             parameters.Add("pageSize", pageSize, DbType.Int32);
-            var rows = (await conn.QueryAsync<HospitalDocumentSearchRow>(new CommandDefinition(sql, parameters, commandTimeout: 12, cancellationToken: ct))).ToList();
+            var rows = (await conn.QueryAsync<HospitalDocumentSearchRow>(new CommandDefinition(finalSql, parameters, commandTimeout: 12, cancellationToken: ct))).ToList();
             var first = rows.FirstOrDefault();
             var total = first?.TotalRows ?? 0;
             var items = rows.Where(x => x.VersionId != EmptyGuid).Select(MapResult).ToList();
@@ -235,10 +237,11 @@ FROM ged.document d
 LEFT JOIN ged.document_search s ON s.tenant_id=d.tenant_id AND s.document_id=d.id
 LEFT JOIN ged.document_version v ON v.tenant_id=d.tenant_id AND v.id=s.version_id
 LEFT JOIN LATERAL (SELECT vx.id, vx.file_name, vx.content_type FROM ged.document_version vx WHERE vx.tenant_id=d.tenant_id AND vx.document_id=d.id ORDER BY vx.version_number DESC, vx.created_at DESC LIMIT 1) latest_v ON true
-WHERE d.tenant_id=@tenantId AND coalesce(d.reg_status,'A')='A' AND d.status<>'ARCHIVED'::ged.document_status_enum AND d.id=any(@AuthorizedDocuments);
+WHERE d.tenant_id=@tenantId AND coalesce(d.reg_status,'A')='A' AND d.status<>'ARCHIVED'::ged.document_status_enum AND /*AUTH_PREDICATE*/;
 """;
+        var finalSql = sql.Replace("/*AUTH_PREDICATE*/", InovaGed.Infrastructure.Security.AbacAuthorizationService.DocumentAccessPredicate("d"));
         await using var conn = await _db.OpenAsync(ct);
-        var summary = await conn.QuerySingleAsync<HospitalDocumentSummaryDto>(new CommandDefinition(sql, new { tenantId, AuthorizedDocuments = await AuthorizedDocumentsAsync(ct) }, cancellationToken: ct));
+        var summary = await conn.QuerySingleAsync<HospitalDocumentSummaryDto>(new CommandDefinition(finalSql, new { tenantId, userId = _currentUser.UserId, permissionCode = "Documents.View", write = false, hour = DateTime.UtcNow.Hour }, cancellationToken: ct));
         summary.Success = true;
         return Json(summary);
     }
@@ -272,15 +275,16 @@ LEFT JOIN ged.document_version v ON v.tenant_id=d.tenant_id AND v.id=s.version_i
 LEFT JOIN ged.folder f ON f.tenant_id=d.tenant_id AND f.id=d.folder_id
 LEFT JOIN LATERAL (SELECT vx.id, vx.file_name, vx.content_type, vx.file_size_bytes FROM ged.document_version vx WHERE vx.tenant_id=d.tenant_id AND vx.document_id=d.id ORDER BY vx.version_number DESC,vx.created_at DESC LIMIT 1) latest_v ON true
 LEFT JOIN LATERAL (SELECT j.status FROM ged.ocr_job j WHERE j.tenant_id=d.tenant_id AND j.document_version_id=COALESCE(NULLIF(s.version_id,'00000000-0000-0000-0000-000000000000'::uuid),NULLIF(d.current_version_id,'00000000-0000-0000-0000-000000000000'::uuid),latest_v.id) ORDER BY j.requested_at DESC LIMIT 1) oj ON true
-WHERE d.tenant_id=@TenantId::uuid AND coalesce(d.reg_status,'A')='A' AND d.status<>'ARCHIVED'::ged.document_status_enum AND d.id=any(@AuthorizedDocuments)
+WHERE d.tenant_id=@TenantId::uuid AND coalesce(d.reg_status,'A')='A' AND d.status<>'ARCHIVED'::ged.document_status_enum AND /*AUTH_PREDICATE*/
 AND (d.code ILIKE @Q::text OR d.title ILIKE @Q::text OR COALESCE(d.description,'') ILIKE @Q::text OR COALESCE(s.file_name,'') ILIKE @Q::text OR substring(COALESCE(s.ocr_text,'') from 1 for 4000) ILIKE @Q::text)
 AND COALESCE(NULLIF(s.version_id,'00000000-0000-0000-0000-000000000000'::uuid),NULLIF(d.current_version_id,'00000000-0000-0000-0000-000000000000'::uuid),latest_v.id) IS NOT NULL
 ORDER BY "MatchScore" DESC, "CreatedAt" DESC LIMIT 16;
 """;
+        var finalSql = sql.Replace("/*AUTH_PREDICATE*/", InovaGed.Infrastructure.Security.AbacAuthorizationService.DocumentAccessPredicate("d"));
         try
         {
             await using var conn = await _db.OpenAsync(ct);
-            var rows = await conn.QueryAsync<HospitalDocumentSuggestionRow>(new CommandDefinition(sql, new { TenantId = tenantId, Q = like, RawQ = query, QExact = query, AuthorizedDocuments = await AuthorizedDocumentsAsync(ct) }, cancellationToken: ct));
+            var rows = await conn.QueryAsync<HospitalDocumentSuggestionRow>(new CommandDefinition(finalSql, new { TenantId = tenantId, userId, permissionCode = "Documents.View", write = false, hour = DateTime.UtcNow.Hour, Q = like, RawQ = query, QExact = query }, cancellationToken: ct));
             var items = rows.Where(x => x.VersionId != EmptyGuid).Select(MapSuggestion).ToList();
             _logger.LogInformation("Hospital suggestions executado. Tenant={TenantId} User={UserId} Query={Query} ResultCount={ResultCount} ElapsedMs={ElapsedMs} CacheHit={CacheHit}", tenantId, userId, query, items.Count, sw.ElapsedMilliseconds, false);
             return Json(new { success = true, items });

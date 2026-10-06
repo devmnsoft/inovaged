@@ -19,11 +19,13 @@ public sealed class ProtocoloController : GedControllerBase
     private static readonly HashSet<string> ExtensoesBloqueadas = new(StringComparer.OrdinalIgnoreCase) { ".exe", ".bat", ".cmd", ".com", ".scr", ".ps1", ".vbs", ".js", ".msi", ".dll" };
     private readonly InovaGed.Application.Ged.Loans.IProtocolAccessService _protocolAccess;
     private readonly IProtocoloCentralService _central;
+    private readonly InovaGed.Application.Protocolo.IProtocolAiAssistService _aiAssist;
 
-    public ProtocoloController(IDbConnectionFactory dbFactory, InovaGed.Application.Ged.Loans.IProtocolAccessService protocolAccess, IProtocoloCentralService central) : base(dbFactory)
+    public ProtocoloController(IDbConnectionFactory dbFactory, InovaGed.Application.Ged.Loans.IProtocolAccessService protocolAccess, IProtocoloCentralService central, InovaGed.Application.Protocolo.IProtocolAiAssistService aiAssist) : base(dbFactory)
     {
         _protocolAccess = protocolAccess;
         _central = central;
+        _aiAssist = aiAssist;
     }
 
     [HttpGet]
@@ -307,4 +309,51 @@ order by coalesce(ordem, 0), nome;";
     private sealed class Basico { public Guid Id { get; set; } public string Status { get; set; } = ""; public Guid? SetorAtualId { get; set; } }
     private sealed class DocumentoBasico { public Guid Id { get; set; } public Guid ProtocoloId { get; set; } public Guid? SetorId { get; set; } public string Status { get; set; } = ""; public Guid? SetorAtualId { get; set; } }
     private sealed class DocumentoArquivo { public Guid Id { get; set; } public Guid ProtocoloId { get; set; } public string NomeArquivo { get; set; } = ""; public string? ContentType { get; set; } public byte[]? ArquivoBytes { get; set; } }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> AiAssist(Guid protocoloId, string? taskKind, string? idempotencyKey, CancellationToken ct)
+    {
+        try {
+            var res = await _aiAssist.AssistAsync(new InovaGed.Application.Protocolo.ProtocolAiAssistRequest { ProtocoloId = protocoloId, TaskKind = taskKind, IdempotencyKey = idempotencyKey }, ct);
+            return Json(res);
+        } catch (UnauthorizedAccessException) { return StatusCode(403, new { success = false, message = "Acesso não autorizado ao protocolo ou documentos vinculados." }); }
+        catch (KeyNotFoundException ex) { return NotFound(new { success = false, message = ex.Message }); }
+        catch (Exception ex) { return StatusCode(500, new { success = false, message = "Erro ao processar assistência de IA.", error = ex.Message }); }
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> AiApplySubject(Guid protocoloId, Guid executionId, long concurrencyToken, string subject, bool accepted = true, string? notes = null, CancellationToken ct = default)
+    {
+        try {
+            var res = await _aiAssist.ApplySubjectAsync(new InovaGed.Application.Protocolo.ProtocolAiApplySubjectRequest { ProtocoloId = protocoloId, ExecutionId = executionId, ConcurrencyToken = concurrencyToken, Subject = subject, Accepted = accepted, Notes = notes }, ct);
+            return Json(res);
+        } catch (UnauthorizedAccessException) { return StatusCode(403, new { success = false, message = "Acesso não autorizado." }); }
+        catch (KeyNotFoundException ex) { return NotFound(new { success = false, message = ex.Message }); }
+        catch (InvalidOperationException ex) { return Conflict(new { success = false, message = ex.Message }); }
+        catch (ArgumentException ex) { return BadRequest(new { success = false, message = ex.Message }); }
+        catch (Exception ex) { return StatusCode(500, new { success = false, message = "Erro ao aplicar assunto.", error = ex.Message }); }
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> AiApplyDraft(Guid protocoloId, Guid executionId, long concurrencyToken, string draftText, bool accepted = true, string? notes = null, CancellationToken ct = default)
+    {
+        try {
+            var res = await _aiAssist.ApplyDispatchDraftAsync(new InovaGed.Application.Protocolo.ProtocolAiApplyDraftRequest { ProtocoloId = protocoloId, ExecutionId = executionId, ConcurrencyToken = concurrencyToken, DraftText = draftText, Accepted = accepted, Notes = notes }, ct);
+            return Json(res);
+        } catch (UnauthorizedAccessException) { return StatusCode(403, new { success = false, message = "Acesso não autorizado." }); }
+        catch (KeyNotFoundException ex) { return NotFound(new { success = false, message = ex.Message }); }
+        catch (InvalidOperationException ex) { return Conflict(new { success = false, message = ex.Message }); }
+        catch (ArgumentException ex) { return BadRequest(new { success = false, message = ex.Message }); }
+        catch (Exception ex) { return StatusCode(500, new { success = false, message = "Erro ao aplicar minuta.", error = ex.Message }); }
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> AiHistory(Guid protocoloId, int page = 1, int pageSize = 10, CancellationToken ct = default)
+    {
+        try {
+            var res = await _aiAssist.GetReviewHistoryAsync(protocoloId, page, pageSize, ct);
+            return Json(res);
+        } catch (UnauthorizedAccessException) { return StatusCode(403, new { success = false, message = "Acesso não autorizado." }); }
+        catch (Exception ex) { return StatusCode(500, new { success = false, message = "Erro ao carregar histórico.", error = ex.Message }); }
+    }
 }

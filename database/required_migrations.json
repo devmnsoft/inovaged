@@ -873,5 +873,12 @@
     "area": "Audit",
     "required": true,
     "description": "Compatibilidade operacional validada pelo manifesto."
+  },
+  {
+    "name": "2026_10_08_protocol_ai_assist",
+    "path": "database/migrations/2026_10_08_protocol_ai_assist.sql",
+    "area": "ProtocolAi",
+    "required": true,
+    "description": "Persistência e decisões humanas de assistência de IA no Protocolo institucional."
   }
 ]

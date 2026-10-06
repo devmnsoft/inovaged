@@ -1,0 +1,438 @@
+using System.Security.Claims;
+using Dapper;
+using InovaGed.Application.ArtificialIntelligence;
+using InovaGed.Application.Audit;
+using InovaGed.Application.Common.Database;
+using InovaGed.Application.Identity;
+using InovaGed.Application.Protocolo;
+using InovaGed.Application.Security;
+using InovaGed.Infrastructure.ArtificialIntelligence;
+using InovaGed.Infrastructure.Audit;
+using InovaGed.Infrastructure.Common.Database;
+using InovaGed.Infrastructure.Ged.Loans;
+using InovaGed.Infrastructure.Protocolo;
+using InovaGed.Infrastructure.Security;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Npgsql;
+using Xunit;
+
+namespace InovaGed.Application.Tests;
+
+[Collection("Document AI PostgreSQL")]
+public sealed class ProtocolAiAssistPostgresTests : IAsyncLifetime
+{
+    private NpgsqlConnection? _admin;
+
+    public async Task InitializeAsync()
+    {
+        System.Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", "Homologation");
+        System.Environment.SetEnvironmentVariable("INOVAGED_AI_DETERMINISTIC", "1");
+        if (PgGate.UnavailableReason is not null) return;
+        _admin = new NpgsqlConnection(PgGate.Dsn());
+        await _admin.OpenAsync();
+
+        const string schema = """
+create schema if not exists ged;
+create extension if not exists pgcrypto;
+create table if not exists ged.tenant(id uuid primary key, name text);
+create table if not exists ged.app_user(id uuid primary key, tenant_id uuid, name text, email text, reg_status text default 'A', is_active boolean default true);
+create table if not exists ged.app_role(id uuid, tenant_id uuid);
+create table if not exists ged.role(id uuid, tenant_id uuid);
+create table if not exists ged.user_role(user_id uuid, role_id uuid);
+create table if not exists ged.permission(code text, reg_status text default 'A');
+create table if not exists ged.role_permission(role_id uuid, tenant_id uuid, permission_code text, reg_status text default 'A');
+create table if not exists ged.document_acl(document_id uuid, user_id uuid, role_id uuid, can_read boolean, can_write boolean);
+
+create table if not exists ged.protocolo_setor(id uuid primary key, tenant_id uuid not null, nome text not null, sigla text, ativo boolean not null default true, reg_status char(1) not null default 'A');
+create table if not exists ged.protocolo_usuario_setor(id uuid primary key, tenant_id uuid not null, usuario_id uuid not null, setor_id uuid not null, ativo boolean not null default true, reg_status char(1) not null default 'A');
+create table if not exists ged.protocolo_setor_participante(tenant_id uuid not null, protocolo_id uuid not null, setor_id uuid not null, pode_visualizar boolean not null default true, pode_editar boolean not null default false, participou_em timestamptz not null default now(), primary key (tenant_id, protocolo_id, setor_id));
+
+create table if not exists ged.protocolo(
+    id uuid primary key, tenant_id uuid not null, numero text not null, assunto text not null, descricao text,
+    status text not null default 'CRIADO', prioridade text default 'NORMAL', setor_atual_id uuid, setor_origem_id uuid,
+    created_at timestamptz not null default now(), updated_at timestamptz, updated_by uuid, reg_status char(1) not null default 'A'
+);
+
+create table if not exists ged.protocolo_tramitacao(
+    id uuid default gen_random_uuid() primary key, tenant_id uuid not null, protocolo_id uuid not null,
+    setor_origem_id uuid, setor_origem_nome text, setor_destino_id uuid, setor_destino_nome text,
+    usuario_id uuid, usuario_nome text, acao text not null, status_anterior text, status_novo text,
+    despacho text, observacao text, justificativa text, data_tramitacao timestamptz not null default now(),
+    ip text, user_agent text, reg_status char(1) not null default 'A'
+);
+
+create table if not exists ged.protocolo_documento_ged(
+    id uuid primary key, tenant_id uuid not null, protocolo_id uuid not null, ged_document_id uuid not null,
+    vinculado_por uuid, vinculado_em timestamptz not null default now(), reg_status char(1) not null default 'A'
+);
+
+create table if not exists ged.protocolo_observacao(
+    id uuid default gen_random_uuid() primary key, tenant_id uuid not null, protocolo_id uuid not null,
+    setor_id uuid, setor_nome text, usuario_id uuid, usuario_nome text, tipo text not null default 'PUBLICA',
+    observacao text not null, created_at timestamptz not null default now(), reg_status char(1) not null default 'A'
+);
+
+create table if not exists ged.protocolo_ai_revisao (
+    id uuid primary key,
+    tenant_id uuid not null,
+    protocolo_id uuid not null,
+    execution_id uuid not null,
+    task text not null,
+    reviewer_id uuid not null,
+    decision_type text not null,
+    decision_fingerprint text not null,
+    original_suggestion_json jsonb,
+    applied_content_json jsonb,
+    concurrency_token bigint,
+    notes text,
+    created_at timestamptz not null default now()
+);
+
+create table if not exists ged.document(
+    id uuid primary key, tenant_id uuid not null, title text, description text,
+    is_confidential boolean not null default false, current_version_id uuid,
+    reg_status char(1) not null default 'A', created_at timestamptz not null default now()
+);
+
+create table if not exists ged.document_version(
+    id uuid primary key, tenant_id uuid not null, document_id uuid not null,
+    version_number int not null default 1, file_name text, size_bytes bigint default 0,
+    storage_path text, created_at timestamptz not null default now()
+);
+
+create table if not exists ged.document_search(
+    document_id uuid primary key, tenant_id uuid not null, ocr_text text, indexed_at timestamptz not null default now()
+);
+
+create table if not exists ged.app_audit_log(
+    id uuid default gen_random_uuid() primary key, tenant_id uuid, user_id uuid, user_name text,
+    action text not null, event_type text not null default 'INFO', source text, entity_name text,
+    entity_id text, method text, path text, status_code integer, message text, details jsonb, correlation_id text, ip_address text, user_agent text,
+    created_at timestamptz not null default now(), reg_status char(1) not null default 'A'
+);
+
+create table if not exists ged.ai_execution (
+    id uuid primary key, tenant_id uuid not null, user_id uuid not null, task text not null,
+    provider text not null, model text not null, idempotency_key text, input_fingerprint text,
+    policy_revision int default 1, state text not null default 'Completed', reserved_tokens bigint default 0,
+    reservation_period date default current_date, expires_at timestamptz default now() + interval '1 day',
+    source_documents jsonb not null default '[]'::jsonb, document_refs jsonb not null default '[]'::jsonb
+);
+""";
+        await _admin.ExecuteAsync(schema);
+    }
+
+    public async Task DisposeAsync()
+    {
+        if (_admin is not null) await _admin.DisposeAsync();
+    }
+
+    private IDbConnectionFactory Factory() => new NpgsqlConnectionFactory(PgGate.Dsn());
+
+    private sealed class TestCurrentUser : ICurrentUser
+    {
+        public bool IsAuthenticated { get; set; } = true;
+        public Guid TenantId { get; set; }
+        public Guid UserId { get; set; }
+        public string Email { get; set; } = "revisor@inovaged.local";
+        public IReadOnlyList<string> Roles { get; set; } = ["User"];
+    }
+
+    private sealed class ProtocolFixture
+    {
+        public Guid TenantId { get; set; }
+        public Guid UserId { get; set; }
+        public Guid SetorId { get; set; }
+        public Guid ProtocoloId { get; set; }
+        public Guid DocumentId { get; set; }
+        public Guid VersionId { get; set; }
+        public string ProtocolNumber { get; set; } = string.Empty;
+    }
+
+    private async Task<ProtocolFixture> SeedProtocolAsync()
+    {
+        var tenant = Guid.NewGuid();
+        var user = Guid.NewGuid();
+        var setor = Guid.NewGuid();
+        var proto = Guid.NewGuid();
+        var doc = Guid.NewGuid();
+        var version = Guid.NewGuid();
+        var num = "PROT-" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+
+        // 1. Tenant, User, Setor e Vínculo
+        await _admin!.ExecuteAsync("insert into ged.tenant(id,name) values(@tenant,'Tenant AI') on conflict do nothing", new { tenant });
+        await _admin!.ExecuteAsync("insert into ged.app_user(id,tenant_id,name,email,is_active) values(@user,@tenant,'Revisor AI','revisor@inovaged.local',true) on conflict do nothing", new { user, tenant });
+        await _admin!.ExecuteAsync("insert into ged.protocolo_setor(id,tenant_id,nome,sigla,ativo,reg_status) values(@setor,@tenant,'Gabinete','GAB',true,'A')", new { setor, tenant });
+        await _admin!.ExecuteAsync("insert into ged.protocolo_usuario_setor(id,tenant_id,usuario_id,setor_id,ativo,reg_status) values(@id,@tenant,@user,@setor,true,'A')", new { id = Guid.NewGuid(), tenant, user, setor });
+
+        var role = Guid.NewGuid();
+        await _admin!.ExecuteAsync("insert into ged.app_role(id,tenant_id) values(@role,@tenant)", new { role, tenant });
+        await _admin!.ExecuteAsync("insert into ged.role(id,tenant_id) values(@role,@tenant)", new { role, tenant });
+        await _admin!.ExecuteAsync("insert into ged.user_role(user_id,role_id) values(@user,@role)", new { user, role });
+        await _admin!.ExecuteAsync("insert into ged.permission(code,reg_status) values('Documents.View','A'),('GED.DOCUMENTS','A') on conflict do nothing");
+        await _admin!.ExecuteAsync("insert into ged.role_permission(role_id,tenant_id,permission_code,reg_status) values(@role,@tenant,'Documents.View','A'),(@role,@tenant,'GED.DOCUMENTS','A')", new { role, tenant });
+
+        // 2. Protocolo institucional
+        await _admin!.ExecuteAsync("""
+insert into ged.protocolo(id,tenant_id,numero,assunto,descricao,status,prioridade,setor_atual_id,created_at,updated_at,reg_status)
+values(@proto,@tenant,@num,'Assunto Original de Teste','Descrição detalhada do processo institucional','TRAMITANDO','NORMAL',@setor,now(),now(),'A')
+""", new { proto, tenant, num, setor });
+
+        // 3. Documento GED com Versão e OCR
+        await _admin!.ExecuteAsync("""
+insert into ged.document(id,tenant_id,title,is_confidential,current_version_id,reg_status,created_at)
+values(@doc,@tenant,'Ofício 123',false,@version,'A',now())
+""", new { doc, tenant, version });
+        await _admin!.ExecuteAsync("""
+insert into ged.document_version(id,tenant_id,document_id,version_number)
+values(@version,@tenant,@doc,1)
+""", new { version, tenant, doc });
+        await _admin!.ExecuteAsync("""
+insert into ged.document_search(document_id,tenant_id,ocr_text,indexed_at)
+values(@doc,@tenant,'Texto integral do ofício requisitando parecer técnico institucional.',now())
+""", new { doc, tenant });
+
+        // 4. Vínculo do Documento GED ao Protocolo
+        await _admin!.ExecuteAsync("""
+insert into ged.protocolo_documento_ged(id,tenant_id,protocolo_id,ged_document_id,vinculado_por,vinculado_em,reg_status)
+values(@id,@tenant,@proto,@doc,@user,now(),'A')
+""", new { id = Guid.NewGuid(), tenant, proto, doc, user });
+
+        return new ProtocolFixture
+        {
+            TenantId = tenant,
+            UserId = user,
+            SetorId = setor,
+            ProtocoloId = proto,
+            DocumentId = doc,
+            VersionId = version,
+            ProtocolNumber = num
+        };
+    }
+
+    private ProtocolAiAssistService CreateService(TestCurrentUser current)
+    {
+        var factory = Factory();
+        var options = Options.Create(new DocumentAiOptions
+        {
+            Enabled = true,
+            Provider = "Deterministic"
+        });
+        var gateway = new DocumentAiGateway(new System.Net.Http.HttpClient(), options, NullLogger<DocumentAiGateway>.Instance);
+        var protocolAccess = new ProtocolAccessService(factory);
+        var auth = new AbacAuthorizationService(factory);
+        var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build();
+        var audit = new AuditWriter(factory, NullLogger<AuditWriter>.Instance, config);
+        var httpContextAccessor = new HttpContextAccessor();
+
+        return new ProtocolAiAssistService(factory, current, gateway, protocolAccess, auth, audit, httpContextAccessor, NullLogger<ProtocolAiAssistService>.Instance);
+    }
+
+    [PgGatedFact]
+    public async Task Assist_generates_all_modalities_with_sources_and_concurrency_token()
+    {
+        System.Environment.SetEnvironmentVariable("INOVAGED_AI_DETERMINISTIC", "1");
+        var fx = await SeedProtocolAsync();
+        var current = new TestCurrentUser { TenantId = fx.TenantId, UserId = fx.UserId };
+        var service = CreateService(current);
+
+        var result = await service.AssistAsync(new ProtocolAiAssistRequest
+        {
+            ProtocoloId = fx.ProtocoloId,
+            TaskKind = "SUMMARY"
+        }, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.NotEqual(Guid.Empty, result.ExecutionId);
+        Assert.True(result.ReviewRequired);
+        Assert.True(result.ConcurrencyToken > 0);
+        Assert.Equal(fx.ProtocolNumber, result.ProtocolNumber);
+        Assert.False(string.IsNullOrWhiteSpace(result.Summary));
+        Assert.False(string.IsNullOrWhiteSpace(result.SuggestedSubject));
+        Assert.False(string.IsNullOrWhiteSpace(result.DispatchDraft));
+        Assert.NotEmpty(result.PendingItems);
+        Assert.Contains(result.PendingItems, p => p.RequiresHumanCheck);
+        Assert.True(result.Sources.Count >= 2); // Processo + Documento GED
+        Assert.Contains(result.Sources, s => s.SourceType == "PROTOCOLO");
+        Assert.Contains(result.Sources, s => s.SourceType == "GED_DOCUMENT" && s.HasOcr);
+    }
+
+    [PgGatedFact]
+    public async Task Assist_blocks_user_without_sector_access_or_wrong_tenant()
+    {
+        System.Environment.SetEnvironmentVariable("INOVAGED_AI_DETERMINISTIC", "1");
+        var fx = await SeedProtocolAsync();
+
+        // Usuário de outro tenant
+        var otherTenantUser = new TestCurrentUser { TenantId = Guid.NewGuid(), UserId = Guid.NewGuid() };
+        var serviceOtherTenant = CreateService(otherTenantUser);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            serviceOtherTenant.AssistAsync(new ProtocolAiAssistRequest { ProtocoloId = fx.ProtocoloId }, CancellationToken.None));
+
+        // Usuário do mesmo tenant mas sem vínculo ao setor e sem papel admin
+        var unauthorizedUser = Guid.NewGuid();
+        await _admin!.ExecuteAsync("insert into ged.app_user(id,tenant_id,name,email,is_active) values(@user,@tenant,'Sem Acesso','noaccess@inovaged.local',true)", new { user = unauthorizedUser, tenant = fx.TenantId });
+        var currentNoAccess = new TestCurrentUser { TenantId = fx.TenantId, UserId = unauthorizedUser, Roles = ["User"] };
+        var serviceNoAccess = CreateService(currentNoAccess);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            serviceNoAccess.AssistAsync(new ProtocolAiAssistRequest { ProtocoloId = fx.ProtocoloId }, CancellationToken.None));
+    }
+
+    [PgGatedFact]
+    public async Task Apply_subject_persists_revision_audits_and_updates_protocol()
+    {
+        System.Environment.SetEnvironmentVariable("INOVAGED_AI_DETERMINISTIC", "1");
+        var fx = await SeedProtocolAsync();
+        var current = new TestCurrentUser { TenantId = fx.TenantId, UserId = fx.UserId };
+        var service = CreateService(current);
+
+        var assist = await service.AssistAsync(new ProtocolAiAssistRequest { ProtocoloId = fx.ProtocoloId }, CancellationToken.None);
+        var novoAssunto = "Assunto Revisado por Humano";
+
+        var applied = await service.ApplySubjectAsync(new ProtocolAiApplySubjectRequest
+        {
+            ProtocoloId = fx.ProtocoloId,
+            ExecutionId = assist.ExecutionId,
+            ConcurrencyToken = assist.ConcurrencyToken,
+            Subject = novoAssunto,
+            Accepted = true
+        }, CancellationToken.None);
+
+        Assert.True(applied.Success);
+        Assert.False(applied.AlreadyApplied);
+        Assert.Equal(novoAssunto, applied.AppliedContent);
+
+        // Conferir no banco de dados
+        var subjectDb = await _admin!.ExecuteScalarAsync<string>("select assunto from ged.protocolo where id=@id", new { id = fx.ProtocoloId });
+        Assert.Equal(novoAssunto, subjectDb);
+
+        var revCount = await _admin!.ExecuteScalarAsync<int>("select count(*) from ged.protocolo_ai_revisao where protocolo_id=@id and task='SUGGEST_SUBJECT'", new { id = fx.ProtocoloId });
+        Assert.Equal(1, revCount);
+
+        var auditCount = await _admin!.ExecuteScalarAsync<int>("select count(*) from ged.app_audit_log where action='AI_PROTOCOL_SUBJECT_APPLY' and entity_id=@id", new { id = fx.ProtocoloId.ToString() });
+        Assert.Equal(1, auditCount);
+
+        // Replay: mesma decisão não duplica efeitos
+        var replay = await service.ApplySubjectAsync(new ProtocolAiApplySubjectRequest
+        {
+            ProtocoloId = fx.ProtocoloId,
+            ExecutionId = assist.ExecutionId,
+            ConcurrencyToken = assist.ConcurrencyToken,
+            Subject = novoAssunto,
+            Accepted = true
+        }, CancellationToken.None);
+
+        Assert.True(replay.Success);
+        Assert.True(replay.AlreadyApplied);
+        Assert.Equal(1, await _admin!.ExecuteScalarAsync<int>("select count(*) from ged.protocolo_ai_revisao where protocolo_id=@id and task='SUGGEST_SUBJECT'", new { id = fx.ProtocoloId }));
+        Assert.Equal(1, await _admin!.ExecuteScalarAsync<int>("select count(*) from ged.app_audit_log where action='AI_PROTOCOL_SUBJECT_APPLY' and entity_id=@id", new { id = fx.ProtocoloId.ToString() }));
+
+        // Conflito de decisão diferente na mesma execução
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.ApplySubjectAsync(new ProtocolAiApplySubjectRequest
+            {
+                ProtocoloId = fx.ProtocoloId,
+                ExecutionId = assist.ExecutionId,
+                ConcurrencyToken = assist.ConcurrencyToken,
+                Subject = "Outro Assunto Totalmente Diferente",
+                Accepted = false
+            }, CancellationToken.None));
+    }
+
+    [PgGatedFact]
+    public async Task Apply_draft_saves_as_observation_draft_without_auto_dispatch_or_signing()
+    {
+        System.Environment.SetEnvironmentVariable("INOVAGED_AI_DETERMINISTIC", "1");
+        var fx = await SeedProtocolAsync();
+        var current = new TestCurrentUser { TenantId = fx.TenantId, UserId = fx.UserId };
+        var service = CreateService(current);
+
+        var assist = await service.AssistAsync(new ProtocolAiAssistRequest { ProtocoloId = fx.ProtocoloId }, CancellationToken.None);
+        var minutaTexto = "Minuta de Despacho Requisitando Informações Complementares.";
+
+        var applied = await service.ApplyDispatchDraftAsync(new ProtocolAiApplyDraftRequest
+        {
+            ProtocoloId = fx.ProtocoloId,
+            ExecutionId = assist.ExecutionId,
+            ConcurrencyToken = assist.ConcurrencyToken,
+            DraftText = minutaTexto,
+            Accepted = true
+        }, CancellationToken.None);
+
+        Assert.True(applied.Success);
+        Assert.False(applied.AlreadyApplied);
+        Assert.Equal(minutaTexto, applied.AppliedContent);
+
+        // Status do protocolo DEVE permanecer TRAMITANDO (não encerra, não defere silenciosamente)
+        var statusDb = await _admin!.ExecuteScalarAsync<string>("select status from ged.protocolo where id=@id", new { id = fx.ProtocoloId });
+        Assert.Equal("TRAMITANDO", statusDb);
+
+        // Minuta salva como observação/rascunho tipo DESPACHO
+        var obsCount = await _admin!.ExecuteScalarAsync<int>("select count(*) from ged.protocolo_observacao where protocolo_id=@id and tipo='DESPACHO'", new { id = fx.ProtocoloId });
+        Assert.Equal(1, obsCount);
+
+        var obsTexto = await _admin!.ExecuteScalarAsync<string>("select observacao from ged.protocolo_observacao where protocolo_id=@id and tipo='DESPACHO'", new { id = fx.ProtocoloId });
+        Assert.Contains(minutaTexto, obsTexto);
+
+        var revCount = await _admin!.ExecuteScalarAsync<int>("select count(*) from ged.protocolo_ai_revisao where protocolo_id=@id and task='PREPARE_DISPATCH_DRAFT'", new { id = fx.ProtocoloId });
+        Assert.Equal(1, revCount);
+
+        var auditCount = await _admin!.ExecuteScalarAsync<int>("select count(*) from ged.app_audit_log where action='AI_PROTOCOL_DRAFT_APPLY' and entity_id=@id", new { id = fx.ProtocoloId.ToString() });
+        Assert.Equal(1, auditCount);
+
+        // Replay idempotente
+        var replay = await service.ApplyDispatchDraftAsync(new ProtocolAiApplyDraftRequest
+        {
+            ProtocoloId = fx.ProtocoloId,
+            ExecutionId = assist.ExecutionId,
+            ConcurrencyToken = assist.ConcurrencyToken,
+            DraftText = minutaTexto,
+            Accepted = true
+        }, CancellationToken.None);
+
+        Assert.True(replay.Success);
+        Assert.True(replay.AlreadyApplied);
+        Assert.Equal(1, await _admin!.ExecuteScalarAsync<int>("select count(*) from ged.protocolo_observacao where protocolo_id=@id and tipo='DESPACHO'", new { id = fx.ProtocoloId }));
+
+        // Conflito de concorrência com token defasado
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.ApplyDispatchDraftAsync(new ProtocolAiApplyDraftRequest
+            {
+                ProtocoloId = fx.ProtocoloId,
+                ExecutionId = Guid.NewGuid(),
+                ConcurrencyToken = assist.ConcurrencyToken - 5000,
+                DraftText = "Tentativa de minuta em estado defasado",
+                Accepted = true
+            }, CancellationToken.None));
+    }
+
+    [PgGatedFact]
+    public async Task Review_history_lists_saved_revisions()
+    {
+        System.Environment.SetEnvironmentVariable("INOVAGED_AI_DETERMINISTIC", "1");
+        var fx = await SeedProtocolAsync();
+        var current = new TestCurrentUser { TenantId = fx.TenantId, UserId = fx.UserId };
+        var service = CreateService(current);
+
+        var assist = await service.AssistAsync(new ProtocolAiAssistRequest { ProtocoloId = fx.ProtocoloId }, CancellationToken.None);
+        await service.ApplySubjectAsync(new ProtocolAiApplySubjectRequest
+        {
+            ProtocoloId = fx.ProtocoloId,
+            ExecutionId = assist.ExecutionId,
+            ConcurrencyToken = assist.ConcurrencyToken,
+            Subject = "Assunto Aprovado",
+            Accepted = true
+        }, CancellationToken.None);
+
+        var history = await service.GetReviewHistoryAsync(fx.ProtocoloId, 1, 10, CancellationToken.None);
+
+        Assert.True(history.Success);
+        Assert.True(history.Total >= 1);
+        Assert.NotEmpty(history.Items);
+        Assert.Contains(history.Items, r => r.Task == "SUGGEST_SUBJECT" && r.DecisionType == "ACCEPTED");
+    }
+}

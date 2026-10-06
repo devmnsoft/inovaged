@@ -19,9 +19,176 @@
     </div></div>
 }
 <div class="row g-3 mb-3"><div class="col-md-3"><div class="card shadow-sm border-0"><div class="card-body"><div class="text-muted small">Status</div><b>@Model.Status</b></div></div></div><div class="col-md-3"><div class="card shadow-sm border-0"><div class="card-body"><div class="text-muted small">Setor atual</div><b>@Model.SetorAtual</b></div></div></div><div class="col-md-3"><div class="card shadow-sm border-0"><div class="card-body"><div class="text-muted small">Emissão</div><b>@Model.CreatedAt.ToString("dd/MM/yyyy HH:mm")</b></div></div></div><div class="col-md-3"><div class="card shadow-sm border-0"><div class="card-body"><div class="text-muted small">Anexos</div><b>@Model.Documentos.Count</b></div></div></div></div>
-<ul class="nav nav-tabs mb-3"><li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#dados" type="button">Dados</button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#anexos" type="button">Anexos</button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tram" type="button">Tramitação</button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#obs" type="button">Observações</button></li>@if(Model.PodeOperar){<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#acoes" type="button">Ações</button></li>}</ul>
+<ul class="nav nav-tabs mb-3"><li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#dados" type="button">Dados</button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#anexos" type="button">Anexos</button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tram" type="button">Tramitação</button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#obs" type="button">Observações</button></li>@if(Model.PodeOperar){<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#acoes" type="button">Ações</button></li>}<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#iaAssist" type="button"><span class="badge bg-primary text-white me-1">IA</span> Assistência</button></li></ul>
 <div class="tab-content"><div class="tab-pane fade show active" id="dados"><div class="card border-0 shadow-sm"><div class="card-body row g-3"><div class="col-md-3"><small class="text-muted">Espécie</small><div>@Model.Especie</div></div><div class="col-md-3"><small class="text-muted">Tipo</small><div>@Model.TipoSolicitacao</div></div><div class="col-md-3"><small class="text-muted">Procedência</small><div>@Model.Procedencia</div></div><div class="col-md-3"><small class="text-muted">Origem</small><div>@Model.OrigemPedido</div></div><div class="col-md-4"><small class="text-muted">Solicitante</small><div>@Model.SolicitanteNome</div></div><div class="col-md-4"><small class="text-muted">Interessado</small><div>@Model.Interessado</div></div><div class="col-md-4"><small class="text-muted">Contato</small><div>@Model.Email @Model.Telefone</div></div><div class="col-md-12"><small class="text-muted">Descrição</small><div class="border rounded p-3 bg-light">@Model.Descricao</div></div><div class="col-md-12"><small class="text-muted">Informações complementares</small><div class="border rounded p-3 bg-light">@Model.InformacoesComplementares</div></div></div></div></div>
 <div class="tab-pane fade" id="anexos">@if(Model.PodeAnexar){<div class="card border-0 shadow-sm mb-3"><div class="card-body"><form asp-action="Anexar" method="post" enctype="multipart/form-data" class="row g-2">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><div class="col-md-3"><select name="tipoDocumentoId" asp-items="Model.TiposDocumento" class="form-select"><option value="">Tipo</option></select></div><div class="col-md-4"><input name="descricao" class="form-control" placeholder="Descrição" /></div><div class="col-md-4"><input type="file" name="arquivos" multiple class="form-control" /></div><div class="col-md-1"><button class="btn btn-primary w-100">+</button></div></form></div></div>}<div class="card border-0 shadow-sm"><table class="table mb-0"><thead><tr><th>Arquivo</th><th>Tipo</th><th>Setor</th><th>Data</th><th></th></tr></thead><tbody>@foreach(var d in Model.Documentos){<tr><td>@d.NomeArquivo<br /><small>@d.ContentType - @d.TamanhoBytes bytes</small></td><td>@d.TipoDocumento</td><td>@d.SetorNome</td><td>@d.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td><td class="text-end"><a asp-action="VisualizarDocumento" asp-route-id="@d.Id" class="btn btn-sm btn-outline-primary">Ver</a>@if(d.PodeExcluir){<form asp-action="ExcluirDocumento" method="post" class="d-inline">@Html.AntiForgeryToken()<input type="hidden" name="id" value="@d.Id" /><input type="hidden" name="motivo" value="Exclusão pelo setor responsável" /><button class="btn btn-sm btn-outline-danger">Excluir</button></form>}</td></tr>}@if(!Model.Documentos.Any()){<tr><td colspan="5" class="text-center text-muted">Nenhum anexo.</td></tr>}</tbody></table></div></div>
 <div class="tab-pane fade" id="tram"><div class="card border-0 shadow-sm"><div class="card-body">@foreach(var t in Model.Tramitacoes){<div class="border-bottom py-2"><b>@t.Acao</b> <span class="text-muted small">@t.DataTramitacao.ToString("dd/MM/yyyy HH:mm")</span><div class="small text-muted">@t.SetorOrigemNome → @t.SetorDestinoNome | @t.UsuarioNome</div><div>@t.Despacho @t.Observacao @t.Justificativa</div></div>}@if(!Model.Tramitacoes.Any()){<div class="text-muted">Nenhuma tramitação.</div>}</div></div></div>
 <div class="tab-pane fade" id="obs">@if(Model.PodeOperar){<div class="card border-0 shadow-sm mb-3"><div class="card-body"><form asp-action="AdicionarObservacao" method="post" class="row g-2">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><div class="col-md-3"><select name="tipo" class="form-select"><option value="PUBLICA">Pública</option><option value="DESPACHO">Despacho</option><option value="INTERNA_SETOR">Interna do Setor</option></select></div><div class="col-md-8"><input name="observacao" class="form-control" /></div><div class="col-md-1"><button class="btn btn-primary w-100">+</button></div></form></div></div>}<div class="card border-0 shadow-sm"><div class="card-body">@foreach(var o in Model.Observacoes){<div class="border-bottom py-2"><b>@o.Tipo</b> <span class="text-muted small">@o.CreatedAt.ToString("dd/MM/yyyy HH:mm")</span><div class="small text-muted">@o.SetorNome | @o.UsuarioNome</div><div>@o.Observacao</div></div>}@if(!Model.Observacoes.Any()){<div class="text-muted">Nenhuma observação.</div>}</div></div></div>
-@if(Model.PodeOperar){<div class="tab-pane fade" id="acoes"><div class="row g-3"><div class="col-md-6"><div class="card border-0 shadow-sm"><div class="card-header bg-white">Tramitar</div><div class="card-body"><form asp-action="Tramitar" method="post">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><select name="setorDestinoId" asp-items="Model.SetoresDestino" class="form-select mb-2"></select><textarea name="despacho" class="form-control mb-2" placeholder="Despacho"></textarea><textarea name="observacao" class="form-control mb-2" placeholder="Observação"></textarea><button class="btn btn-primary">Tramitar</button></form></div></div></div><div class="col-md-6"><div class="card border-0 shadow-sm"><div class="card-header bg-white">Decisão</div><div class="card-body">@foreach(var a in new[]{"Deferir","Indeferir","Finalizar","Arquivar"}){<form asp-action="@a" method="post" class="mb-2">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><textarea name="justificativa" class="form-control mb-1" placeholder="Justificativa obrigatória"></textarea><button class="btn btn-secondary">@a</button></form>}</div></div></div></div></div>}</div>
+@if(Model.PodeOperar){<div class="tab-pane fade" id="acoes"><div class="row g-3"><div class="col-md-6"><div class="card border-0 shadow-sm"><div class="card-header bg-white">Tramitar</div><div class="card-body"><form asp-action="Tramitar" method="post">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><select name="setorDestinoId" asp-items="Model.SetoresDestino" class="form-select mb-2"></select><textarea name="despacho" class="form-control mb-2" placeholder="Despacho"></textarea><textarea name="observacao" class="form-control mb-2" placeholder="Observação"></textarea><button class="btn btn-primary">Tramitar</button></form></div></div></div><div class="col-md-6"><div class="card border-0 shadow-sm"><div class="card-header bg-white">Decisão</div><div class="card-body">@foreach(var a in new[]{"Deferir","Indeferir","Finalizar","Arquivar"}){<form asp-action="@a" method="post" class="mb-2">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><textarea name="justificativa" class="form-control mb-1" placeholder="Justificativa obrigatória"></textarea><button class="btn btn-secondary">@a</button></form>}</div></div></div></div></div>}
+
+<!-- ABA ASSISTÊNCIA DE IA -->
+<div class="tab-pane fade" id="iaAssist">
+    <div id="protocolAiContainer" data-protocol-id="@Model.Id" class="card border-0 shadow-sm">
+        <div class="card-body">
+            <!-- Guia "Como Usar" -->
+            <div class="alert alert-light border d-flex align-items-start gap-2 mb-3">
+                <div class="fs-4 text-primary"><i class="bi bi-info-circle"></i></div>
+                <div class="small">
+                    <strong>Como usar a Assistência de IA:</strong><br />
+                    O assistente institucional analisa o teor do processo, histórico de tramitações e documentos GED vinculados autorizados.<br />
+                    • Todas as sugestões são <em>consultivas</em>: a IA não tramita, não defere e não assina autos automaticamente.<br />
+                    • Você pode revisar e alterar o assunto sugerido ou a minuta de despacho antes de confirmar a aplicação.<br />
+                    • A minuta é registrada como rascunho de despacho no histórico para tramitação pelo fluxo regular.
+                </div>
+            </div>
+
+            <!-- Botões de Ação da IA -->
+            <div class="d-flex flex-wrap gap-2 mb-3">
+                <button type="button" class="btn btn-outline-primary btn-sm" data-protocol-ai-action="SUMMARY">
+                    <i class="bi bi-file-text me-1"></i> Resumir Processo
+                </button>
+                <button type="button" class="btn btn-outline-primary btn-sm" data-protocol-ai-action="PENDING">
+                    <i class="bi bi-check2-square me-1"></i> Identificar Pendências
+                </button>
+                <button type="button" class="btn btn-outline-primary btn-sm" data-protocol-ai-action="SUBJECT">
+                    <i class="bi bi-pencil-square me-1"></i> Sugerir Assunto
+                </button>
+                <button type="button" class="btn btn-outline-primary btn-sm" data-protocol-ai-action="DRAFT">
+                    <i class="bi bi-chat-left-quote me-1"></i> Preparar Minuta de Despacho
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm ms-auto" data-protocol-ai-action="REFRESH_HISTORY">
+                    <i class="bi bi-arrow-clockwise me-1"></i> Atualizar Histórico
+                </button>
+            </div>
+
+            <!-- Indicador de Carregamento -->
+            <div id="protocolAiLoading" class="alert alert-info py-2 d-flex align-items-center justify-content-between mb-3" hidden role="status">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                    <span id="protocolAiLoadingText">Processando assistência com governança...</span>
+                </div>
+                <button type="button" id="protocolAiCancelBtn" class="btn btn-sm btn-outline-danger" hidden>Cancelar</button>
+            </div>
+
+            <!-- Alertas de Erro e Sucesso -->
+            <div id="protocolAiErrorAlert" class="alert alert-danger mb-3" hidden role="alert" tabindex="-1">
+                <strong>Atenção:</strong> <span id="protocolAiErrorMessage"></span>
+            </div>
+            <div id="protocolAiSuccessAlert" class="alert alert-success mb-3" hidden role="alert" tabindex="-1">
+                <span id="protocolAiSuccessMessage"></span>
+            </div>
+
+            <!-- Banner de Cobertura Parcial / Limitações -->
+            <div id="protocolAiCoverageBanner" class="alert alert-warning mb-3" hidden>
+                <div class="fw-semibold small"><i class="bi bi-exclamation-triangle me-1"></i> Cobertura documental parcial:</div>
+                <ul id="protocolAiCoverageNotes" class="small mb-0 mt-1 ps-3"></ul>
+            </div>
+
+            <!-- Painéis de Resultados -->
+            <div id="protocolAiResultPanels" hidden>
+                <div class="row g-3">
+                    <!-- Resumo Consultivo -->
+                    <div class="col-md-6">
+                        <div class="card h-100 border">
+                            <div class="card-header bg-light py-2 fw-semibold small">
+                                <i class="bi bi-card-text me-1"></i> Resumo Consultivo
+                            </div>
+                            <div class="card-body">
+                                <p id="protocolAiSummaryText" class="card-text small mb-0" style="white-space: pre-wrap;"></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Pendências Documentais -->
+                    <div class="col-md-6">
+                        <div class="card h-100 border">
+                            <div class="card-header bg-light py-2 fw-semibold small">
+                                <i class="bi bi-list-check me-1"></i> Pendências Documentais
+                            </div>
+                            <ul id="protocolAiPendingList" class="list-group list-group-flush small"></ul>
+                        </div>
+                    </div>
+
+                    <!-- Sugestão de Assunto -->
+                    <div class="col-md-6">
+                        <div class="card border">
+                            <div class="card-header bg-light py-2 fw-semibold small">
+                                <i class="bi bi-tag me-1"></i> Sugestão de Assunto
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-2 small">
+                                    <span class="text-muted">Assunto atual:</span> <strong id="protocolAiSubjectCurrent"></strong>
+                                </div>
+                                <div class="mb-2 small">
+                                    <span class="text-muted">Sugestão de IA:</span> <em id="protocolAiSubjectSuggested"></em>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label small fw-semibold">Valor Corrigido pelo Revisor:</label>
+                                    <input type="text" id="protocolAiSubjectEdit" class="form-control form-control-sm" />
+                                </div>
+                                <div class="d-flex gap-2">
+                                    <button type="button" id="protocolAiBtnApplySubject" class="btn btn-sm btn-primary">
+                                        Aplicar Assunto Revisado
+                                    </button>
+                                    <button type="button" id="protocolAiBtnRejectSubject" class="btn btn-sm btn-outline-secondary">
+                                        Rejeitar Sugestão
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Minuta de Despacho -->
+                    <div class="col-md-6">
+                        <div class="card border">
+                            <div class="card-header bg-light py-2 fw-semibold small">
+                                <i class="bi bi-file-earmark-text me-1"></i> Minuta de Despacho
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-2">
+                                    <label class="form-label small fw-semibold">Texto do Despacho (Editável):</label>
+                                    <textarea id="protocolAiDraftEdit" class="form-control form-control-sm" rows="4"></textarea>
+                                    <div class="form-text small">Salva como rascunho de despacho no setor atual. Não tramita nem assina automaticamente.</div>
+                                </div>
+                                <div class="d-flex gap-2">
+                                    <button type="button" id="protocolAiBtnApplyDraft" class="btn btn-sm btn-success">
+                                        Salvar como Rascunho de Despacho
+                                    </button>
+                                    <button type="button" id="protocolAiBtnRejectDraft" class="btn btn-sm btn-outline-secondary">
+                                        Descartar Minuta
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Fontes Auditadas -->
+                    <div class="col-12">
+                        <div class="card border">
+                            <div class="card-header bg-light py-2 fw-semibold small">
+                                <i class="bi bi-journal-bookmark me-1"></i> Fontes e Evidências Consideradas
+                            </div>
+                            <ul id="protocolAiSourcesList" class="list-group list-group-flush small"></ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Histórico de Revisões Humanas -->
+            <div class="mt-4">
+                <div class="fw-semibold small mb-2"><i class="bi bi-clock-history me-1"></i> Histórico de Decisões e Revisões Humanas</div>
+                <div class="card border">
+                    <ul id="protocolAiHistoryList" class="list-group list-group-flush small">
+                        <li class="list-group-item text-muted">Carregando histórico de revisões...</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+
+@section Scripts {
+    <script src="~/js/protocol-assist.js" asp-append-version="true"></script>
+}
+

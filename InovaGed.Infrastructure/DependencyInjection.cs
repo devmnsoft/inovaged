@@ -89,6 +89,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IAssistedDocumentStore, PostgresAssistedDocumentStore>();
         services.AddScoped<IDocumentAiGateway, GovernedDocumentAiGateway>();
         services.AddScoped<IDocumentAiAssistService, DocumentAiAssistService>();
+        services.AddScoped<InovaGed.Application.Protocolo.IProtocolAiAssistService, InovaGed.Infrastructure.Protocolo.ProtocolAiAssistService>();
         services.AddScoped<InovaGed.Infrastructure.Retention.AssistedRetentionRecovery>();
 
         services.AddOptions<NodeIdentityOptions>()

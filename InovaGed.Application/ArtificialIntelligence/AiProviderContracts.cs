@@ -56,10 +56,11 @@ public static class AiTaskCatalog
         AiTask.Summarize,
         AiTask.ExtractMetadata,
         AiTask.SuggestClassification,
-        AiTask.SuggestArchivalClassification
+        AiTask.SuggestArchivalClassification,
+        AiTask.SupportProtocol
     ];
 
-    public static readonly AiTask[] Unavailable = [AiTask.SupportProtocol, AiTask.CompareDocuments];
+    public static readonly AiTask[] Unavailable = [AiTask.CompareDocuments];
 
     public static bool IsSupported(AiTask task) => Supported.Contains(task);
 
@@ -77,7 +78,6 @@ public static class AiTaskCatalog
 
     public static string? UnavailableReason(AiTask task) => task switch
     {
-        AiTask.SupportProtocol => "Protocolo assistido permanece fora deste incremento. A configuração não o habilita.",
         AiTask.CompareDocuments => "Comparação assistida permanece fora deste incremento. A configuração não a habilita.",
         _ => null
     };

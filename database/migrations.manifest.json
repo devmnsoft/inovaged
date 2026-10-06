@@ -1183,6 +1183,14 @@
       "transactional": true,
       "deploymentSafety": "Additive",
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_10_08_protocol_ai_assist",
+      "path": "database/migrations/2026_10_08_protocol_ai_assist.sql",
+      "module": "ProtocolAi",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
     }
   ]
 }

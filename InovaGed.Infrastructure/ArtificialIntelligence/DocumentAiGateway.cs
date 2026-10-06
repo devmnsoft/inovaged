@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -94,6 +94,20 @@ public sealed class DocumentAiGateway : IDocumentAiGateway
             AiTask.ExtractMetadata => new { fields = new { title = Field(text, "TITULO:", evidence), description = Field(text, "DESCRICAO:", evidence), isConfidential = new { sufficient = text.Contains("SIGILOSO", StringComparison.Ordinal), value = true, evidence = text.Contains("SIGILOSO", StringComparison.Ordinal) ? "SIGILOSO" : "" } } },
             AiTask.SuggestClassification => text.Contains("TIPO:", StringComparison.Ordinal) ? new { outcome = "suggested", typeName = Marker(text, "TIPO:"), evidence, justification = "catálogo de teste" } : new { outcome = "insufficient", typeName = "", evidence = "", justification = "" },
             AiTask.SuggestArchivalClassification => text.Contains("CLASSE:", StringComparison.Ordinal) ? new { outcome = "suggested", classCode = Marker(text, "CLASSE:"), evidence, justification = "plano de teste" } : new { outcome = "insufficient", classCode = "", evidence = "", justification = "" },
+            AiTask.SupportProtocol => new
+            {
+                summary = text.Length > 0 ? "Processo institucional instruÃ­do com peÃ§as documentais autorizadas e histÃ³rico de movimentaÃ§Ãµes." : "Processo sem peÃ§as documentais anexadas ou texto OCR disponÃ­vel.",
+                pending = new[]
+                {
+                    new { item = "ConferÃªncia formal de requisitos e peÃ§as instrutÃ³rias", status = text.Length > 0 ? "CONFIRMADO" : "CONFERENCIA_HUMANA", evidence = evidence, requiresHumanCheck = text.Length == 0 },
+                    new { item = "ValidaÃ§Ã£o de assinatura fÃ­sica ou digital do requerente", status = "CONFERENCIA_HUMANA", evidence = "Folha de rosto / Termo de autuaÃ§Ã£o", requiresHumanCheck = true }
+                },
+                suggestedSubject = text.Contains("TITULO:", StringComparison.Ordinal)
+                    ? $"Processo Administrativo - {Marker(text, "TITULO:")}"
+                    : (text.Contains("ASSUNTO:", StringComparison.Ordinal) ? Marker(text, "ASSUNTO:") : "Processo de RegularizaÃ§Ã£o e AnÃ¡lise Institucional"),
+                dispatchDraft = "Encaminho os presentes autos Ã  unidade responsÃ¡vel para exame tÃ©cnico de mÃ©rito, observadas as peÃ§as instrutÃ³rias juntadas aos autos.",
+                limitations = new[] { "Provedor determinÃ­stico de teste.", "DecisÃµes de tramitaÃ§Ã£o, assunto e despacho exigem revisÃ£o e comando humano explÃ­cito." }
+            },
             _ => null
         };
         if (body is null) return Fail("Deterministic", "deterministic-v1", AiFailureKind.InvalidOutput, "O provedor determinístico não cobre esta tarefa.", correlationId, true);

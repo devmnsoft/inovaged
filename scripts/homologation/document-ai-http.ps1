@@ -46,10 +46,23 @@ function Read-Body($response) {
 }
 function Invoke-App([Microsoft.PowerShell.Commands.WebRequestSession]$Session, [string]$Method, [string]$Url, $Body, [bool]$AllowLoginRedirect = $false) {
     try {
-        $request = @{ Uri = $Url; WebSession = $Session; Method = $Method; UseBasicParsing = $true; MaximumRedirection = 0 }
+        $request = @{ Uri = $Url; WebSession = $Session; Method = $Method; UseBasicParsing = $true; MaximumRedirection = 0; ErrorAction = 'SilentlyContinue'; ErrorVariable = 'wev' }
         if ($null -ne $Body) { $request.Body = $Body }
         $response = Invoke-WebRequest @request
-        return @{ Code = [int]$response.StatusCode; Body = $response.Content; Location = [string]$response.Headers['Location'] }
+        if ($null -ne $response) {
+            $loc = [string]$response.Headers['Location']
+            return @{ Code = [int]$response.StatusCode; Body = $response.Content; Location = $loc; LoginRedirect = (-not $AllowLoginRedirect -and $loc -match '/Account/Login') }
+        }
+        if ($wev -and $wev[0].Exception.Response) {
+            $http = $wev[0].Exception.Response
+            $code = [int]$http.StatusCode
+            $location = ''
+            try { $location = if ($http -is [System.Net.Http.HttpResponseMessage]) { [string]$http.Headers.Location } else { [string]$http.Headers['Location'] } } catch { }
+            $text = ''
+            try { $text = Read-Body $http } catch { }
+            return @{ Code = $code; Body = $text; Location = $location; LoginRedirect = (-not $AllowLoginRedirect -and $location -match '/Account/Login') }
+        }
+        throw "Sem resposta ao chamar $Url"
     } catch {
         $http = $_.Exception.Response
         if ($null -eq $http) { throw }
@@ -140,7 +153,7 @@ if (-not $editor.Authenticated) { Write-Output 'FALHA: a sessao do editor nao fo
 $viewerUrl = "$base/HospitalDocuments/Viewer?documentId=$documentId&versionId=$versionId"
 $viewer = Invoke-App $editor.Session 'GET' $viewerUrl $null
 $token = Get-Token $editor.Session $viewerUrl
-$historyOnPage = $viewer.Code -eq 200 -and -not $viewer.LoginRedirect -and $viewer.Body.Contains('data-ai-review-history') -and $viewer.Body.Contains('Histórico de revisões de IA')
+$historyOnPage = $viewer.Code -eq 200 -and -not $viewer.LoginRedirect -and $viewer.Body.Contains('data-ai-review-history') -and ($viewer.Body -match 'Hist.rico de revis.es de IA')
 Add-Result 'visualizador autenticado expoe o historico' ($null -ne $token -and $historyOnPage) ("HTTP $($viewer.Code) token=$($null -ne $token)")
 
 $noToken = Invoke-App $editor.Session 'POST' "$base/HospitalDocuments/SuggestMetadata" @{ versionId = $versionId; idempotencyKey = [guid]::NewGuid().ToString() }

@@ -73,3 +73,77 @@ if ($validLink) {
     $audits = Invoke-FixtureSql "select count(*) from ged.protocolo_auditoria where entidade_id='$linkId' and usuario_id='$managerId' and acao in ('GED_VINCULO','GED_VINCULO_REMOVIDO');"
     Add-Result 'remocao autorizada preserva documento e audita comandos' ($response.Code -eq 302 -and $state -eq 'E|A' -and $audits -eq '2') "HTTP $($response.Code) estados=$state auditorias=$audits"
 }
+
+# --- TESTES HTTP DA ASSISTÊNCIA DE IA NO PROTOCOLO ---
+$detailsUrl = "$base/Protocolo/Details/$protocolId"
+$detailsToken = Get-Token $secrecy.Session $detailsUrl
+
+# 1. Assistência de IA autorizada
+$aiReq = @{
+    protocoloId = $protocolId
+    taskKind = 'SUMMARY'
+    idempotencyKey = [guid]::NewGuid().ToString()
+    __RequestVerificationToken = $detailsToken
+}
+$aiAssistRes = Invoke-App $secrecy.Session 'POST' "$base/Protocolo/AiAssist" $aiReq
+$aiAssistJson = Convert-JsonSafe $aiAssistRes.Body
+$aiAssistOk = $aiAssistRes.Code -eq 200 -and $aiAssistJson.success -eq $true -and $aiAssistJson.executionId -and $aiAssistJson.summary
+Add-Result 'Protocolo AI: geracao assistida autorizada' $aiAssistOk "HTTP $($aiAssistRes.Code) exec=$($aiAssistJson.executionId)"
+
+# 2. Usuário de outro tenant bloqueado
+$aiForeignReq = @{
+    protocoloId = $foreignProtocolId
+    taskKind = 'SUMMARY'
+    idempotencyKey = [guid]::NewGuid().ToString()
+    __RequestVerificationToken = $detailsToken
+}
+$aiForeignRes = Invoke-App $secrecy.Session 'POST' "$base/Protocolo/AiAssist" $aiForeignReq
+Add-Result 'Protocolo AI: outro tenant bloqueado' ($aiForeignRes.Code -in 403,404) "HTTP $($aiForeignRes.Code)"
+
+if ($aiAssistOk) {
+    $execId = [string]$aiAssistJson.executionId
+    $concToken = [string]$aiAssistJson.concurrencyToken
+    $newSubject = "Assunto Homologado HTTP " + ([guid]::NewGuid().ToString('N').Substring(0, 6))
+
+    # 3. Aplicar assunto
+    $applySubjectReq = @{
+        protocoloId = $protocolId
+        executionId = $execId
+        concurrencyToken = $concToken
+        subject = $newSubject
+        accepted = 'true'
+        __RequestVerificationToken = $detailsToken
+    }
+    $applySubjectRes = Invoke-App $secrecy.Session 'POST' "$base/Protocolo/AiApplySubject" $applySubjectReq
+    $applySubjectJson = Convert-JsonSafe $applySubjectRes.Body
+    $applySubjectOk = $applySubjectRes.Code -eq 200 -and $applySubjectJson.success -eq $true -and $applySubjectJson.appliedContent -eq $newSubject
+    Add-Result 'Protocolo AI: aplicacao de assunto revisado' $applySubjectOk "HTTP $($applySubjectRes.Code) assunto=$($applySubjectJson.appliedContent)"
+
+    # 4. Replay de assunto (idempotência)
+    $replaySubjectRes = Invoke-App $secrecy.Session 'POST' "$base/Protocolo/AiApplySubject" $applySubjectReq
+    $replaySubjectJson = Convert-JsonSafe $replaySubjectRes.Body
+    $replayOk = $replaySubjectRes.Code -eq 200 -and $replaySubjectJson.alreadyApplied -eq $true
+    Add-Result 'Protocolo AI: replay de assunto idempotente' $replayOk "HTTP $($replaySubjectRes.Code) alreadyApplied=$($replaySubjectJson.alreadyApplied)"
+
+    # 5. Aplicar minuta de despacho como rascunho
+    $draftText = "Minuta homologada via HTTP em " + (Get-Date -Format "yyyy-MM-dd HH:mm")
+    $applyDraftReq = @{
+        protocoloId = $protocolId
+        executionId = $execId
+        concurrencyToken = $concToken
+        draftText = $draftText
+        accepted = 'true'
+        __RequestVerificationToken = $detailsToken
+    }
+    $applyDraftRes = Invoke-App $secrecy.Session 'POST' "$base/Protocolo/AiApplyDraft" $applyDraftReq
+    $applyDraftJson = Convert-JsonSafe $applyDraftRes.Body
+    $applyDraftOk = $applyDraftRes.Code -eq 200 -and $applyDraftJson.success -eq $true
+    Add-Result 'Protocolo AI: minuta salva como rascunho sem tramitacao automatica' $applyDraftOk "HTTP $($applyDraftRes.Code)"
+
+    # 6. Histórico de revisões
+    $historyRes = Invoke-App $secrecy.Session 'GET' "$base/Protocolo/AiHistory?protocoloId=$protocolId&page=1&pageSize=10" $null
+    $historyJson = Convert-JsonSafe $historyRes.Body
+    $historyOk = $historyRes.Code -eq 200 -and $historyJson.success -eq $true -and $historyJson.total -ge 2
+    Add-Result 'Protocolo AI: historico de revisoes humanas exposto' $historyOk "HTTP $($historyRes.Code) total=$($historyJson.total)"
+}
+

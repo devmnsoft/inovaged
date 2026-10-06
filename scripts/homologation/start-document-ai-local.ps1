@@ -21,7 +21,7 @@ $env:DocumentAi__Enabled = 'true'
 $env:DocumentAi__Provider = 'Deterministic'
 $env:DocumentAi__Providers__Deterministic__Enabled = 'true'
 $env:DocumentAi__Providers__Deterministic__AllowedModels__0 = 'deterministic-v1'
-foreach ($task in @('Summarize','ExtractMetadata','SuggestClassification','SuggestArchivalClassification')) {
+foreach ($task in @('Summarize','ExtractMetadata','SuggestClassification','SuggestArchivalClassification','SupportProtocol')) {
     [Environment]::SetEnvironmentVariable('DocumentAi__TaskModels__' + $task, 'deterministic-v1')
 }
 $env:Database__FailFastOnInvalidSchema = 'true'

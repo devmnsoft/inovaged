@@ -3164,3 +3164,4 @@ COMMIT;
 \ir migrations/2026_06_ged_bulk_actions_and_upload_logs.sql
 
 \ir migrations/2026_10_07_audit_runtime_actions.sql
+\ir migrations/2026_10_08_protocol_ai_assist.sql

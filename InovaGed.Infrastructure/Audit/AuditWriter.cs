@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using System.Text.Json;
 using Dapper;
 using InovaGed.Application.Audit;
@@ -351,6 +351,9 @@ select exists (
             "AI_ARCHIVAL_APPLY" => "AI_ARCHIVAL_APPLY",
             "AI_ACCESS_DENIED" => "AI_ACCESS_DENIED",
             "AI_RETENTION_RETRY" => "AI_RETENTION_RETRY",
+            "AI_PROTOCOL_SUBJECT_APPLY" => "AI_PROTOCOL_SUBJECT_APPLY",
+            "AI_PROTOCOL_DRAFT_APPLY" => "AI_PROTOCOL_DRAFT_APPLY",
+            "AI_PROTOCOL_REVISE" => "AI_PROTOCOL_REVISE",
 
             _ => "VIEW"
         };
