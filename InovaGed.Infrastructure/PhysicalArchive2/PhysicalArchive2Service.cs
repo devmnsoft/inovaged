@@ -32,14 +32,14 @@ public sealed class PhysicalArchive2Service(IDbConnectionFactory factory) : IPhy
         var monthPred = movementHasPerformed ? " and performed_at>=date_trunc('month',now())" : string.Empty;
         var pendingPred = itemHasResult ? " and result in ('PENDING','MISSING','WRONG_LOCATION')" : string.Empty;
         var r=await db.QuerySingleAsync<DashboardRow>(new CommandDefinition($"""
-select (select count(*) from ged.physical_box where tenant_id=@t{active["physical_box"]}) as \"Boxes\",
-(select count(*) from ged.physical_box where tenant_id=@t{active["physical_box"]}{labelledPred}) as \"LabelledBoxes\",
-(select count(*) from ged.physical_box where tenant_id=@t{active["physical_box"]}{unlocatedPred}) as \"UnlocatedBoxes\",
-(select count(*) from ged.physical_box where tenant_id=@t{active["physical_box"]}{loanedPred}) as \"LoanedBoxes\",
-(select count(*) from ged.physical_inventory_session where tenant_id=@t{active["physical_inventory_session"]}{openInvPred}) as \"OpenInventories\",
-(select count(*) from ged.physical_loan where tenant_id=@t{active["physical_loan"]}{overduePred}) as \"OverdueLoans\",
-(select count(*) from ged.physical_movement where tenant_id=@t{active["physical_movement"]}{monthPred}) as \"MonthlyMovements\",
-(select count(*) from ged.physical_inventory_item where tenant_id=@t{active["physical_inventory_item"]}{pendingPred}) as \"PendingChecks\"
+select (select count(*) from ged.physical_box where tenant_id=@t{active["physical_box"]}) as "Boxes",
+(select count(*) from ged.physical_box where tenant_id=@t{active["physical_box"]}{labelledPred}) as "LabelledBoxes",
+(select count(*) from ged.physical_box where tenant_id=@t{active["physical_box"]}{unlocatedPred}) as "UnlocatedBoxes",
+(select count(*) from ged.physical_box where tenant_id=@t{active["physical_box"]}{loanedPred}) as "LoanedBoxes",
+(select count(*) from ged.physical_inventory_session where tenant_id=@t{active["physical_inventory_session"]}{openInvPred}) as "OpenInventories",
+(select count(*) from ged.physical_loan where tenant_id=@t{active["physical_loan"]}{overduePred}) as "OverdueLoans",
+(select count(*) from ged.physical_movement where tenant_id=@t{active["physical_movement"]}{monthPred}) as "MonthlyMovements",
+(select count(*) from ged.physical_inventory_item where tenant_id=@t{active["physical_inventory_item"]}{pendingPred}) as "PendingChecks"
 """,new{t},cancellationToken:ct));
         return new(r.Boxes,r.LabelledBoxes,r.UnlocatedBoxes,r.LoanedBoxes,r.OpenInventories,r.OverdueLoans,r.MonthlyMovements,r.PendingChecks);
     }
