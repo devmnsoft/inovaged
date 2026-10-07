@@ -13,6 +13,7 @@ using System.Diagnostics;
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Documents.Partials;
+using Npgsql;
 
 namespace InovaGed.Infrastructure.Ged.Documents;
 
@@ -20,8 +21,8 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
 {
     private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase) { ".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt" };
     private readonly DocumentUploadOptions _uploadOptions;
-    private readonly DocumentAppService _documentApp; private readonly IAuditWriter _audit; private readonly ILogger<DocumentBulkUploadService> _logger; private readonly IMemoryCache _cache; private readonly IDbConnectionFactory _db; private readonly IDocumentPartialService _partialService;
-    public DocumentBulkUploadService(DocumentAppService documentApp, IAuditWriter audit, ILogger<DocumentBulkUploadService> logger, IOptions<DocumentUploadOptions> options, IMemoryCache cache, IDbConnectionFactory db, IDocumentPartialService partialService){_documentApp=documentApp;_audit=audit;_logger=logger;_uploadOptions=options.Value;_cache=cache;_db=db;_partialService=partialService;_ = DocumentUploadSizePolicy.Resolve(_uploadOptions);}
+    private readonly DocumentAppService _documentApp; private readonly IAuditWriter _audit; private readonly ILogger<DocumentBulkUploadService> _logger; private readonly IMemoryCache _cache; private readonly IDbConnectionFactory _db; private readonly IDocumentPartialService _partialService; private readonly IDocumentBulkClassificationService _classification;
+    public DocumentBulkUploadService(DocumentAppService documentApp, IAuditWriter audit, ILogger<DocumentBulkUploadService> logger, IOptions<DocumentUploadOptions> options, IMemoryCache cache, IDbConnectionFactory db, IDocumentPartialService partialService, IDocumentBulkClassificationService classification){_documentApp=documentApp;_audit=audit;_logger=logger;_uploadOptions=options.Value;_cache=cache;_db=db;_partialService=partialService;_classification=classification;_ = DocumentUploadSizePolicy.Resolve(_uploadOptions);}
     public async Task<Result<DocumentBulkUploadResultDto>> UploadStreamAsync(Guid tenantId, Guid userId, string? userName, Stream content, string fileName, string contentType, long sizeBytes, Guid? folderId, DocumentBulkUploadMetadata metadata, bool isAdmin, CancellationToken ct)
     {
         try
@@ -33,6 +34,8 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
             var safeName = Path.GetFileName(string.IsNullOrWhiteSpace(metadata.UploadName) ? fileName : metadata.UploadName);
             var ext = Path.GetExtension(safeName ?? string.Empty);
             if (!AllowedExtensions.Contains(ext)) return Result<DocumentBulkUploadResultDto>.Fail("VALIDATION", $"Extensão não permitida: {ext}");
+            if (metadata.ClassificationId.HasValue && metadata.ClassificationId.Value != Guid.Empty && !await IsActiveClassificationInCurrentPlanAsync(tenantId, metadata.ClassificationId.Value, ct))
+                return Result<DocumentBulkUploadResultDto>.Fail("CLASSIFICATION_INVALID", "Classificação documental inválida ou fora do plano vigente.");
             if (content.CanSeek) content.Position = 0;
             var title = Path.GetFileNameWithoutExtension(safeName);
             var uploadedAtUtc = DateTime.UtcNow;
@@ -72,7 +75,7 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
             }
             else
             {
-                var cmd = new UploadDocumentCommand { FolderId = folderId.Value, TypeId = metadata.DocumentTypeId, ClassificationId = metadata.ClassificationId, Description = metadata.Notes, Visibility = string.IsNullOrWhiteSpace(metadata.Visibility) ? "INTERNAL" : metadata.Visibility.Trim().ToUpperInvariant(), Title = title, FileName = safeName, ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType, Content = content, UploadedAtUtc = uploadedAtUtc, IsPartialDocument = isPart, IsDocumentIncomplete = isIncomplete, IncompleteReason = metadata.IncompleteReason, IncompleteSource = incompleteSource, PartNumber = metadata.PartNumber, TotalParts = metadata.TotalParts };
+                var cmd = new UploadDocumentCommand { FolderId = folderId.Value, TypeId = metadata.DocumentTypeId, ClassificationId = null, Description = metadata.Notes, Visibility = string.IsNullOrWhiteSpace(metadata.Visibility) ? "INTERNAL" : metadata.Visibility.Trim().ToUpperInvariant(), Title = title, FileName = safeName, ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType, Content = content, UploadedAtUtc = uploadedAtUtc, IsPartialDocument = isPart, IsDocumentIncomplete = isIncomplete, IncompleteReason = metadata.IncompleteReason, IncompleteSource = incompleteSource, PartNumber = metadata.PartNumber, TotalParts = metadata.TotalParts };
                 var result = await _documentApp.UploadAsync(cmd, "BULK", userName ?? "BULK", ct);
                 if (!result.Success) return Result<DocumentBulkUploadResultDto>.Fail(result.Error?.Code ?? "UPLOAD", result.Error?.Message ?? "Falha no upload.");
                 documentId = result.Value;
@@ -96,6 +99,29 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
                     isIncomplete = metadata.MarkAsIncomplete || addPart.Value?.PartialStatus == "INCOMPLETE";
                 }
             }
+            string? processingWarning = null;
+            if (!isPart && metadata.ClassificationId.HasValue && metadata.ClassificationId.Value != Guid.Empty)
+            {
+                try
+                {
+                    var classification = await _classification.ApplyAsync(tenantId, userId, new[] { documentId }, metadata.ClassificationId.Value, ct);
+                    var item = classification.Items.FirstOrDefault();
+                    if (item is null || !item.Success)
+                    {
+                        processingWarning = item?.Message ?? "Documento salvo; classificação pendente de recuperação.";
+                        _logger.LogWarning("Classificação pós-upload não aplicada. Tenant={TenantId} User={UserId} DocumentId={DocumentId} ClassificationId={ClassificationId} Code={Code} Message={Message}", tenantId, userId, documentId, metadata.ClassificationId, item?.Code, item?.Message);
+                    }
+                    else if (item.Status == "PENDING")
+                    {
+                        processingWarning = item.Message;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    processingWarning = "Documento salvo; classificação pendente de recuperação.";
+                    _logger.LogError(ex, "Falha ao aplicar classificação pós-upload. Tenant={TenantId} User={UserId} DocumentId={DocumentId} ClassificationId={ClassificationId} Batch={BatchId}", tenantId, userId, documentId, metadata.ClassificationId, metadata.BatchId);
+                }
+            }
             if (metadata.MarkAsIncomplete && versionId.HasValue)
             {
                 await MarkDocumentIncompleteAsync(tenantId, documentId, versionId, metadata.IncompleteReason, "USER_MARKED", ct);
@@ -106,12 +132,18 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
                 tenantId, userId, folderId, metadata.BatchId, safeName, sizeBytes, contentType, documentId, sw.ElapsedMilliseconds);
             await _audit.WriteAsync(tenantId, userId, isPart ? "UPLOAD_DOCUMENT_PART" : "UPLOAD", "DOCUMENT", documentId, isPart ? "Parte de documento anexada" : "Upload em lote concluído", null, null, new { folderId, fileName = safeName, fileSize = sizeBytes, contentType, metadata.RunOcr, metadata.GeneratePreview, metadata.BatchId, versionId, metadata.PartNumber, metadata.TotalParts, metadata.MarkAsIncomplete, metadata.IncompleteReason, isIncomplete }, ct);
             InvalidateGedFolderCache(tenantId, folderId.Value);
-            return Result<DocumentBulkUploadResultDto>.Ok(new DocumentBulkUploadResultDto { DocumentId = documentId, VersionId = versionId, FileName = safeName, FolderId = folderId.Value, Title = title });
+            return Result<DocumentBulkUploadResultDto>.Ok(new DocumentBulkUploadResultDto { DocumentId = documentId, VersionId = versionId, FileName = safeName, FolderId = folderId.Value, Title = title, ProcessingWarning = processingWarning });
         }
         catch (OperationCanceledException)
         {
             _logger.LogWarning("UploadStreamAsync cancelado. Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} File={FileName}", tenantId, userId, folderId, metadata.BatchId, fileName);
             throw;
+        }
+        catch (PostgresException ex)
+        {
+            _logger.LogError(ex, "Erro SQL em UploadStreamAsync. SQLSTATE={SqlState} Table={TableName} Column={ColumnName} Constraint={ConstraintName} Step={Step} Tenant={TenantId} User={UserId} Folder={FolderId} Batch={BatchId} File={FileName}",
+                ex.SqlState, ex.TableName, ex.ColumnName, ex.ConstraintName, "DocumentBulkUploadService.UploadStreamAsync", tenantId, userId, folderId, metadata.BatchId, fileName);
+            return Result<DocumentBulkUploadResultDto>.Fail("SQL_" + ex.SqlState, "Falha ao gravar o documento. Verifique a classificação documental e o destino selecionado.");
         }
         catch (Exception ex)
         {
@@ -196,6 +228,27 @@ WHERE tenant_id=@tenantId
         const string sql = "SELECT current_version_id FROM ged.document WHERE tenant_id=@tenantId AND id=@documentId;";
         await using var conn = await _db.OpenAsync(ct);
         return await conn.ExecuteScalarAsync<Guid?>(new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct));
+    }
+
+    private async Task<bool> IsActiveClassificationInCurrentPlanAsync(Guid tenantId, Guid classificationId, CancellationToken ct)
+    {
+        const string sql = """
+select exists(
+  select 1
+  from ged.classification_plan c
+  join ged.classification_plan_version_item i on i.tenant_id=c.tenant_id and i.classification_id=c.id
+  join ged.classification_plan_version v on v.tenant_id=i.tenant_id and v.id=i.version_id
+  where c.tenant_id=@tenantId
+    and c.id=@classificationId
+    and coalesce(c.reg_status,'A')='A'
+    and coalesce(c.is_active,true)
+    and coalesce(i.is_active,true)
+    and coalesce(v.reg_status,'A')='A'
+    and v.version_no=(select max(version_no) from ged.classification_plan_version where tenant_id=@tenantId and coalesce(reg_status,'A')='A')
+);
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition(sql, new { tenantId, classificationId }, cancellationToken: ct));
     }
 
     private async Task MarkPartialVersionAsync(Guid tenantId, Guid documentId, Guid versionId, DateTime uploadedAtUtc, bool isPart, bool isIncomplete, int? partNumber, int? totalParts, Guid? consolidatedVersionId, CancellationToken ct)

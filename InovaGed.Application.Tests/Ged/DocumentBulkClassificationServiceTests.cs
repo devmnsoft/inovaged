@@ -178,6 +178,10 @@ alter table ged.document add column if not exists updated_by uuid;
 create table if not exists ged.classification_plan(id uuid primary key, tenant_id uuid not null, code text, name text);
 create table if not exists ged.classification_plan_version(id uuid primary key, tenant_id uuid not null, version_no int not null, title text);
 create table if not exists ged.classification_plan_version_item(tenant_id uuid not null, version_id uuid not null, classification_id uuid not null, code text, name text, is_active boolean not null default true);
+create table if not exists ged.document_classification(id uuid primary key default gen_random_uuid(), tenant_id uuid not null, document_id uuid not null,
+  document_version_id uuid, classification_id uuid, classification_version_id uuid, confidence numeric(5,4), method text, summary text,
+  source text, classified_by uuid, classified_at timestamptz not null default now(), updated_at timestamptz, reg_status char(1) not null default 'A');
+create unique index if not exists ux_test_document_classification_document on ged.document_classification(document_id);
 create table if not exists ged.ai_retention_recalc_pending(id uuid primary key, tenant_id uuid not null, document_id uuid not null, application_id uuid null,
   reason varchar(500) not null, created_at timestamptz not null default now(), resolved_at timestamptz null, attempts integer not null default 0,
   last_error varchar(200), claimed_at timestamptz, claim_token uuid, next_attempt_at timestamptz not null default now());

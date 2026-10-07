@@ -147,7 +147,7 @@ public sealed class UploadChunkController : Controller
     {
         code = string.IsNullOrWhiteSpace(code) ? "ERR" : code;
         message = string.IsNullOrWhiteSpace(message) ? "Falha no upload em partes." : message;
-        var canRetry = code is not "UPLOAD_CHUNK_SCHEMA_MISSING" and not "VALIDATION" and not "AUTHORIZATION" and not "LIMIT" and not "EXTENSION";
+        var canRetry = code is not "UPLOAD_CHUNK_SCHEMA_MISSING" and not "VALIDATION" and not "AUTHORIZATION" and not "LIMIT" and not "EXTENSION" and not "CLASSIFICATION_INVALID";
         var status = code switch
         {
             "UPLOAD_CHUNK_SCHEMA_MISSING" => StatusCodes.Status503ServiceUnavailable,
@@ -155,7 +155,7 @@ public sealed class UploadChunkController : Controller
             "AUTHORIZATION" => StatusCodes.Status403Forbidden,
             "NOT_FOUND" => StatusCodes.Status404NotFound,
             "CONCURRENCY" => StatusCodes.Status409Conflict,
-            "MISSING_CHUNKS" or "VALIDATION" or "EXTENSION" => StatusCodes.Status400BadRequest,
+            "MISSING_CHUNKS" or "VALIDATION" or "EXTENSION" or "CLASSIFICATION_INVALID" => StatusCodes.Status400BadRequest,
             _ => StatusCodes.Status500InternalServerError
         };
         return StatusCode(status, Error(code, message, errorStep, canRetry, correlationId));

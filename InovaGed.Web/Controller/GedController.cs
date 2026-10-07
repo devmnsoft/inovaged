@@ -260,8 +260,9 @@ public sealed class GedController : Controller
                 var isExtensionError = code.Contains("EXT", StringComparison.OrdinalIgnoreCase)
                     || message.Contains("extensão", StringComparison.OrdinalIgnoreCase)
                     || message.Contains("extension", StringComparison.OrdinalIgnoreCase);
+                var isClassificationError = code.Equals("CLASSIFICATION_INVALID", StringComparison.OrdinalIgnoreCase);
 
-                return BadRequest(JsonError(message, isExtensionError ? "Validação de extensão" : "Persistência", string.IsNullOrWhiteSpace(code) ? "Falha ao processar upload no backend." : code, !isExtensionError, correlationId));
+                return BadRequest(JsonError(message, isExtensionError ? "Validação de extensão" : isClassificationError ? "Classificação documental" : "Persistência", string.IsNullOrWhiteSpace(code) ? "Falha ao processar upload no backend." : code, !isExtensionError && !isClassificationError, correlationId));
             }
             var uploadedDocument = await _docs.GetAsync(_currentUser.TenantId, result.Value.DocumentId, ct);
             var versionId = result.Value.VersionId ?? uploadedDocument?.CurrentVersionId;
@@ -270,7 +271,7 @@ public sealed class GedController : Controller
                 _logger.LogError("Upload retornou documento/versão inválidos. Tenant={TenantId} DocumentId={DocumentId} VersionId={VersionId} CorrelationId={CorrelationId}", _currentUser.TenantId, result.Value.DocumentId, versionId, correlationId);
                 return StatusCode(500, JsonError("Arquivo salvo, mas a versão atual não foi localizada. Atualize a pasta e tente abrir novamente.", "Persistência", "DocumentId/VersionId inválidos após upload.", true, correlationId));
             }
-            return Ok(new { success = true, status = "success", message = "Arquivo enviado com sucesso.", documentId = result.Value.DocumentId, versionId, requestedFolderId = folderResolution.RequestedFolderId, folderId = folderResolution.ResolvedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, folderName = folderResolution.FolderName, createdDocuments = new[] { new { documentId = result.Value.DocumentId, versionId, title = result.Value.Title, fileName = result.Value.FileName } }, data = new { documentId = result.Value.DocumentId, versionId, title = result.Value.Title, fileName = result.Value.FileName, batchId, ocrQueued = runOcr, previewQueued = generatePreview, requestedFolderId = folderResolution.RequestedFolderId, folderId = folderResolution.ResolvedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, folderName = folderResolution.FolderName, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder }, correlationId });
+            return Ok(new { success = true, status = "success", message = result.Value.ProcessingWarning ?? "Arquivo enviado com sucesso.", processingWarning = result.Value.ProcessingWarning, documentId = result.Value.DocumentId, versionId, requestedFolderId = folderResolution.RequestedFolderId, folderId = folderResolution.ResolvedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, folderName = folderResolution.FolderName, createdDocuments = new[] { new { documentId = result.Value.DocumentId, versionId, title = result.Value.Title, fileName = result.Value.FileName } }, data = new { documentId = result.Value.DocumentId, versionId, title = result.Value.Title, fileName = result.Value.FileName, batchId, ocrQueued = runOcr, previewQueued = generatePreview, requestedFolderId = folderResolution.RequestedFolderId, folderId = folderResolution.ResolvedFolderId, resolvedFolderId = folderResolution.ResolvedFolderId, folderName = folderResolution.FolderName, wasVirtual = folderResolution.WasVirtual, createdRealFolder = folderResolution.CreatedRealFolder, processingWarning = result.Value.ProcessingWarning }, correlationId });
         }
         catch (Exception ex)
         {
@@ -299,27 +300,44 @@ public sealed class GedController : Controller
         if (!_currentUser.IsAuthenticated) return Unauthorized();
         var normalized = (query ?? string.Empty).Trim();
         const string sql = """
-with recursive tree as (
-    select n.id, n.parent_id, n.code, n.title, n.description, n.is_active, 0 as level
-      from ged.classification_node n
-     where n.tenant_id = @tenantId and n.reg_status = 'A' and n.parent_id is null
-    union all
-    select n.id, n.parent_id, n.code, n.title, n.description, n.is_active, tree.level + 1
-      from ged.classification_node n
-      join tree on tree.id = n.parent_id
-     where n.tenant_id = @tenantId and n.reg_status = 'A'
-)
-select tree.id as "Id", tree.code as "Code", tree.title as "Name", tree.description as "Description", tree.level as "Level",
-       parent.title as "ParentName", tree.is_active as "IsActive"
-  from tree
-  left join ged.classification_node parent
-    on parent.id = tree.parent_id and parent.tenant_id = @tenantId and parent.reg_status = 'A'
- where nullif(@query, '') is null
-    or tree.code ilike '%' || @query || '%'
-    or tree.title ilike '%' || @query || '%'
-    or coalesce(tree.description, '') ilike '%' || @query || '%'
- order by tree.is_active desc, tree.code, tree.title
- limit 30;
+SELECT
+  c.id AS "Id",
+  c.code AS "Code",
+  c.name AS "Name",
+  c.description AS "Description",
+  0 AS "Level",
+  parent.name AS "ParentName",
+  COALESCE(c.is_active, true) AS "IsActive"
+FROM ged.classification_plan c
+JOIN ged.classification_plan_version_item i
+  ON i.tenant_id = c.tenant_id
+ AND i.classification_id = c.id
+JOIN ged.classification_plan_version v
+  ON v.tenant_id = i.tenant_id
+ AND v.id = i.version_id
+LEFT JOIN ged.classification_plan parent
+  ON parent.tenant_id = c.tenant_id
+ AND parent.id = c.parent_id
+ AND COALESCE(parent.reg_status, 'A') = 'A'
+WHERE c.tenant_id = @tenantId
+  AND COALESCE(c.reg_status, 'A') = 'A'
+  AND COALESCE(c.is_active, true)
+  AND COALESCE(i.is_active, true)
+  AND COALESCE(v.reg_status, 'A') = 'A'
+  AND v.version_no = (
+      SELECT max(version_no)
+      FROM ged.classification_plan_version
+      WHERE tenant_id = @tenantId
+        AND COALESCE(reg_status, 'A') = 'A'
+  )
+  AND (
+      nullif(@query, '') is null
+      OR c.code ilike '%' || @query || '%'
+      OR c.name ilike '%' || @query || '%'
+      OR coalesce(c.description, '') ilike '%' || @query || '%'
+  )
+ORDER BY c.code, lower(c.name)
+LIMIT 30;
 """;
         await using var connection = await _db.OpenAsync(ct);
         var items = await connection.QueryAsync<ClassificationOptionRow>(

@@ -47,6 +47,10 @@ public sealed class UploadChunkService : IUploadChunkService
         var safeName = Path.GetFileName(string.IsNullOrWhiteSpace(request.UploadName) ? request.OriginalFileName : request.UploadName);
         var ext = Path.GetExtension(safeName ?? string.Empty);
         if (_allowedExtensions.Count > 0 && !_allowedExtensions.Contains(ext)) return Result<UploadChunkSessionDto>.Fail("EXTENSION", $"Extensão não permitida: {ext}");
+        if (request.BatchId.HasValue && (!request.Metadata.ClassificationId.HasValue || request.Metadata.ClassificationId.Value == Guid.Empty))
+            request.Metadata.ClassificationId = await GetBatchClassificationIdAsync(tenantId, request.BatchId.Value, ct);
+        if (request.Metadata.ClassificationId is Guid classificationId && classificationId != Guid.Empty && !await IsActiveClassificationInCurrentPlanAsync(tenantId, classificationId, ct))
+            return Result<UploadChunkSessionDto>.Fail("CLASSIFICATION_INVALID", "Classificação documental inválida ou fora do plano vigente.");
 
         var chunkSize = request.ChunkSizeBytes.GetValueOrDefault(Math.Max(1, _options.ChunkSizeMb) * 1024 * 1024);
         if (chunkSize <= 0) return Result<UploadChunkSessionDto>.Fail("VALIDATION", "Tamanho da parte inválido.");
@@ -250,7 +254,10 @@ WHERE s.tenant_id=@tenantId AND s.id=@uploadId;
         if (md.RunOcr && version?.VersionId is Guid ocrVersionId) { try { await _ocrJobs.EnqueueAsync(tenantId, ocrVersionId, userId, false, ct); ocrQueued = true; _logger.LogInformation("OCR queued Tenant={TenantId} User={UserId} Upload={UploadId} VersionId={VersionId} CorrelationId={CorrelationId}", tenantId, userId, uploadId, ocrVersionId, session.CorrelationId); } catch (Exception ex) { await MarkPostProcessingWarningAsync(tenantId, session, "OCR", ex.Message, CancellationToken.None); } }
         if (md.GeneratePreview && version is not null) { try { await _previewStatus.UpsertAsync(tenantId, version.VersionId, PreviewProcessingStatus.Pending, null, null, DateTimeOffset.UtcNow, null, ct); await _previewQueue.EnqueueAsync(tenantId, upload.Value.DocumentId, version.VersionId, version.StoragePath, version.FileName, ct); previewQueued = true; _logger.LogInformation("Preview queued Tenant={TenantId} User={UserId} Upload={UploadId} VersionId={VersionId} CorrelationId={CorrelationId}", tenantId, userId, uploadId, version.VersionId, session.CorrelationId); } catch (Exception ex) { await MarkPostProcessingWarningAsync(tenantId, session, "PREVIEW", ex.Message, CancellationToken.None); } }
         _logger.LogInformation("Chunk complete finished Tenant={TenantId} User={UserId} Upload={UploadId} DocumentId={DocumentId} VersionId={VersionId} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}", tenantId, userId, uploadId, upload.Value.DocumentId, version?.VersionId, sw.ElapsedMilliseconds, session.CorrelationId);
-        return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = session.BatchItemId ?? uploadId, DocumentId = upload.Value.DocumentId, VersionId = version?.VersionId, RequestedFolderId = session.RequestedFolderId, ResolvedFolderId = session.FolderId, FolderName = md.FolderName, Title = upload.Value.Title, FileName = upload.Value.FileName, UploadedAtUtc = version?.UploadedAtUtc, UploadedAtLocalFormatted = version?.UploadedAtUtc?.ToUniversalTime().ToString("dd/MM/yyyy HH:mm"), Status = "COMPLETED", Message = "Arquivo grande recebido em partes com sucesso.", OcrQueued = ocrQueued, PreviewQueued = previewQueued, CorrelationId = session.CorrelationId });
+        if (!string.IsNullOrWhiteSpace(upload.Value.ProcessingWarning))
+            await MarkPostProcessingWarningAsync(tenantId, session, "CLASSIFICATION", upload.Value.ProcessingWarning, CancellationToken.None);
+
+        return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = session.BatchItemId ?? uploadId, DocumentId = upload.Value.DocumentId, VersionId = version?.VersionId, RequestedFolderId = session.RequestedFolderId, ResolvedFolderId = session.FolderId, FolderName = md.FolderName, Title = upload.Value.Title, FileName = upload.Value.FileName, UploadedAtUtc = version?.UploadedAtUtc, UploadedAtLocalFormatted = version?.UploadedAtUtc?.ToUniversalTime().ToString("dd/MM/yyyy HH:mm"), Status = "COMPLETED", Message = upload.Value.ProcessingWarning ?? "Arquivo grande recebido em partes com sucesso.", OcrQueued = ocrQueued, PreviewQueued = previewQueued, CorrelationId = session.CorrelationId, ProcessingWarning = upload.Value.ProcessingWarning });
     }
 
     public async Task<Result<UploadChunkStatusDto>> GetStatusAsync(Guid tenantId, Guid userId, Guid uploadId, CancellationToken ct)
@@ -427,6 +434,35 @@ WHERE c.session_id=@uploadId AND c.chunk_index=@chunkIndex;
         const string sql = "UPDATE ged.upload_batch_item SET processing_warning=COALESCE(processing_warning, @warning), updated_at=now() WHERE tenant_id=@tenantId AND upload_session_id=@uploadId;";
         await using var conn = await _db.OpenAsync(ct);
         await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, session.UploadId, warning = $"Falha recuperável em {step}: {message}" }, cancellationToken: ct));
+    }
+
+    private async Task<Guid?> GetBatchClassificationIdAsync(Guid tenantId, Guid batchId, CancellationToken ct)
+    {
+        const string sql = "SELECT options_json->>'ClassificationId' FROM ged.upload_batch WHERE tenant_id=@tenantId AND id=@batchId;";
+        await using var conn = await _db.OpenAsync(ct);
+        var raw = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(sql, new { tenantId, batchId }, cancellationToken: ct));
+        return Guid.TryParse(raw, out var id) && id != Guid.Empty ? id : null;
+    }
+
+    private async Task<bool> IsActiveClassificationInCurrentPlanAsync(Guid tenantId, Guid classificationId, CancellationToken ct)
+    {
+        const string sql = """
+select exists(
+  select 1
+  from ged.classification_plan c
+  join ged.classification_plan_version_item i on i.tenant_id=c.tenant_id and i.classification_id=c.id
+  join ged.classification_plan_version v on v.tenant_id=i.tenant_id and v.id=i.version_id
+  where c.tenant_id=@tenantId
+    and c.id=@classificationId
+    and coalesce(c.reg_status,'A')='A'
+    and coalesce(c.is_active,true)
+    and coalesce(i.is_active,true)
+    and coalesce(v.reg_status,'A')='A'
+    and v.version_no=(select max(version_no) from ged.classification_plan_version where tenant_id=@tenantId and coalesce(reg_status,'A')='A')
+);
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition(sql, new { tenantId, classificationId }, cancellationToken: ct));
     }
 
     private sealed class SessionRow

@@ -232,9 +232,16 @@ public sealed class DocumentAppService
 
             return Result<Guid>.Ok(documentId);
         }
+        catch (PostgresException ex)
+        {
+            _logger.LogError(ex, "Erro no upload do documento. SQLSTATE={SqlState} Table={TableName} Column={ColumnName} Constraint={ConstraintName} Step={Step} Tenant={TenantId} Folder={FolderId} ClassificationId={ClassificationId}",
+                ex.SqlState, ex.TableName, ex.ColumnName, ex.ConstraintName, "DocumentAppService.UploadAsync", tenantId, cmd.FolderId, cmd.ClassificationId);
+            return Result<Guid>.Fail("SQL_" + ex.SqlState, "Falha ao gravar o documento. Verifique a classificação e o destino informados.");
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro no upload do documento.");
+            _logger.LogError(ex, "Erro no upload do documento. Step={Step} Tenant={TenantId} Folder={FolderId} ClassificationId={ClassificationId}",
+                "DocumentAppService.UploadAsync", tenantId, cmd.FolderId, cmd.ClassificationId);
             return Result<Guid>.Fail("ERR", "Erro ao realizar upload.");
         }
     }

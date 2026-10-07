@@ -117,6 +117,29 @@ where d.tenant_id=@tenantId and d.id=@id
 """, new { tenantId, userId, id, classificationId }, tx, cancellationToken: ct));
             if (rows != 1) return Denied(id, "A classe não pertence mais ao plano vigente.", "PLAN_CHANGED");
 
+            await connection.ExecuteAsync(new CommandDefinition("""
+insert into ged.document_classification
+  (document_id, tenant_id, document_version_id, classification_id, classification_version_id, confidence, method, summary, classified_at, classified_by, source, updated_at, reg_status)
+select d.id, d.tenant_id, d.current_version_id, d.classification_id, d.classification_version_id, null, 'MANUAL', 'Classificação aplicada no upload/lote', now(), @userId, 'UPLOAD_BULK_CLASSIFICATION', now(), 'A'
+from ged.document d
+where d.tenant_id=@tenantId and d.id=@id
+on conflict (document_id)
+do update set
+  tenant_id=excluded.tenant_id,
+  document_version_id=excluded.document_version_id,
+  classification_id=excluded.classification_id,
+  classification_version_id=excluded.classification_version_id,
+  confidence=null,
+  method='MANUAL',
+  summary=excluded.summary,
+  classified_at=now(),
+  classified_by=@userId,
+  source='UPLOAD_BULK_CLASSIFICATION',
+  updated_at=now(),
+  reg_status='A'
+where ged.document_classification.tenant_id=excluded.tenant_id;
+""", new { tenantId, userId, id }, tx, cancellationToken: ct));
+
             // Same transaction: the classification cannot commit without durable recalculation work.
             await connection.ExecuteAsync(new CommandDefinition("""
 insert into ged.ai_retention_recalc_pending (id, tenant_id, document_id, application_id, reason, attempts, next_attempt_at)

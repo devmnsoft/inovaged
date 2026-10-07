@@ -7,6 +7,7 @@ public sealed class UploadBatchOptionsDto
 {
     public bool RunOcr { get; set; }
     public bool GeneratePreview { get; set; }
+    public Guid? ClassificationId { get; set; }
     public string? DuplicateStrategy { get; set; }
     public bool MarkAsIncomplete { get; set; }
     public string? IncompleteReason { get; set; }

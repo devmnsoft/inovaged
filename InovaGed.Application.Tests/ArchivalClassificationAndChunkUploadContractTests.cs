@@ -72,6 +72,26 @@ public sealed class ArchivalClassificationAndChunkUploadContractTests
     }
 
     [Fact]
+    public void Ged_upload_catalog_and_completion_use_archival_classification_and_refresh_successful_documents()
+    {
+        var controller = File.ReadAllText(Root("InovaGed.Web/Controller/GedController.cs"));
+        var batch = File.ReadAllText(Root("InovaGed.Infrastructure/Ged/Documents/UploadBatchService.cs"));
+        var bulk = File.ReadAllText(Root("InovaGed.Infrastructure/Ged/Documents/DocumentBulkUploadService.cs"));
+        var js = File.ReadAllText(Root("InovaGed.Web/wwwroot/js/ged-bulk-upload.js"));
+
+        var options = Section(controller, "[HttpGet(\"/Ged/ClassificationOptions\")]", "[HttpGet(\"/Ged/DocumentsList\")]");
+        Assert.Contains("FROM ged.classification_plan c", options);
+        Assert.Contains("classification_plan_version_item", options);
+        Assert.DoesNotContain("classification_node", options, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ClassificationId", batch);
+        Assert.Contains("CLASSIFICATION_INVALID", batch);
+        Assert.Contains("IDocumentBulkClassificationService", bulk);
+        Assert.Contains("ClassificationId = null", bulk);
+        Assert.Contains("getCurrentListingFolderId", js);
+        Assert.DoesNotContain("if (hasBatchFailures()) { updateFooterActions(); return; }", js);
+    }
+
+    [Fact]
     public void Upload_size_policy_treats_zero_as_no_business_limit_and_bytes_as_authoritative()
     {
         var none = InovaGed.Application.Ged.Documents.DocumentUploadSizePolicy.Resolve(new InovaGed.Application.Ged.Documents.DocumentUploadOptions { MaxFileSizeBytes = 0, MaxFileSizeMb = 1 });

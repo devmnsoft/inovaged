@@ -144,7 +144,8 @@ public sealed class UploadBatchController : Controller
             {
                 var code = result.Error?.Code ?? "UPLOAD";
                 var statusCode = string.Equals(code, "CONCURRENCY", StringComparison.OrdinalIgnoreCase) ? 429 : 400;
-                return StatusCode(statusCode, Error(result.Error?.Message ?? "Não foi possível enviar o arquivo.", code == "CONCURRENCY" ? "Concorrência" : code, code != "EXTENSION", correlationId, code));
+                var canRetry = code is not "EXTENSION" and not "CLASSIFICATION_INVALID" and not "VALIDATION";
+                return StatusCode(statusCode, Error(result.Error?.Message ?? "Não foi possível enviar o arquivo.", code == "CONCURRENCY" ? "Concorrência" : code, canRetry, correlationId, code));
             }
 
             return Ok(new

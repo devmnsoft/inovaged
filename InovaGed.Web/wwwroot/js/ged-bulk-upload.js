@@ -195,6 +195,8 @@
 
         const retryBtn = e.target.closest('#btnBulkRetryFailed');
         if (retryBtn) { e.preventDefault(); retryFailedFiles(); return; }
+        const refreshBtn = e.target.closest('#btnBulkRefreshFolder');
+        if (refreshBtn) { e.preventDefault(); e.stopPropagation(); refreshCurrentFolderDocuments(); return; }
         const retryFileBtn = e.target.closest('.js-retry-upload-file');
         if (retryFileBtn) { e.preventDefault(); retryFailedFiles(retryFileBtn.getAttribute('data-file-id')); return; }
 
@@ -1468,27 +1470,46 @@
 
     async function onBatchFinished(result) {
         persistCurrentUploadBatch(result?.status || (hasBatchFailures() ? 'PARTIAL_ERROR' : 'COMPLETED'));
-        if (hasBatchFailures()) { updateFooterActions(); return; }
         const target = getUploadNavigationTarget(result);
-        await navigateToUploadedFolder(target.folderId, target.folderName, target.createdDocuments);
+        const created = target.createdDocuments || [];
+        if (!created.length) {
+            updateFooterActions();
+            return;
+        }
+
+        const currentListingFolderId = getCurrentListingFolderId();
+        const targetFolderId = normalizeFolderId(target.folderId);
+        const userIsViewingUploadTarget = !currentListingFolderId || !targetFolderId || String(currentListingFolderId).toLowerCase() === String(targetFolderId).toLowerCase();
+        if (userIsViewingUploadTarget) {
+            await navigateToUploadedFolder(target.folderId, target.folderName, created, { preserveCurrentFolder: true });
+        } else {
+            const btn = document.getElementById('btnBulkRefreshFolder');
+            if (btn) {
+                btn.classList.remove('d-none');
+                btn.textContent = 'Abrir destino';
+                btn.onclick = event => { event?.preventDefault?.(); navigateToUploadedFolder(target.folderId, target.folderName, created); };
+            }
+            showBulkUploadMessage(`Upload concluído no destino ${target.folderName || 'selecionado'}. Você permaneceu na pasta atual; use “Abrir destino” para ver os documentos enviados.`, hasBatchFailures() ? 'warning' : 'success');
+        }
+        if (hasBatchFailures()) updateFooterActions();
     }
 
-    async function navigateToUploadedFolder(folderId, folderName, createdDocuments = []) {
+    async function navigateToUploadedFolder(folderId, folderName, createdDocuments = [], options = {}) {
         if (!folderId || folderId === '00000000-0000-0000-0000-000000000000') {
             console.warn('[BulkUpload] pasta de destino inválida após upload', { folderId, folderName });
             window.location.reload();
             return;
         }
         console.log('[BulkUpload] navegando para pasta do upload', { folderId, folderName, createdDocuments });
-        updateCurrentFolderState(folderId, folderName);
+        if (!options.preserveCurrentFolder) updateCurrentFolderState(folderId, folderName);
         const url = new URL(window.location.href);
-        url.searchParams.set('folderId', folderId);
+        if (!options.preserveCurrentFolder) url.searchParams.set('folderId', folderId);
         const visualFolderId = state.requestedFolderId || getSelectedUploadFolder()?.folderId;
-        if (visualFolderId) url.searchParams.set('visualFolderId', visualFolderId);
+        if (visualFolderId && !options.preserveCurrentFolder) url.searchParams.set('visualFolderId', visualFolderId);
         url.searchParams.set('_ts', Date.now().toString());
-        history.pushState({}, '', url.toString());
+        if (!options.preserveCurrentFolder) history.pushState({}, '', url.toString());
         if (window.GedFolderNavigation?.loadFolderDocuments) {
-            await window.GedFolderNavigation.loadFolderDocuments(folderId, { forceRefresh: true, visualFolderId: state.requestedFolderId || getSelectedUploadFolder()?.folderId || folderId, listingFolderId: folderId, highlightDocumentIds: createdDocuments.map(x => x.documentId).filter(Boolean), folderName });
+            await window.GedFolderNavigation.loadFolderDocuments(folderId, { forceRefresh: true, visualFolderId: options.preserveCurrentFolder ? (getSelectedUploadFolder()?.folderId || state.requestedFolderId || folderId) : (state.requestedFolderId || getSelectedUploadFolder()?.folderId || folderId), listingFolderId: folderId, highlightDocumentIds: createdDocuments.map(x => x.documentId).filter(Boolean), folderName }, !options.preserveCurrentFolder);
         } else {
             window.location.href = url.toString();
         }
@@ -1539,6 +1560,13 @@
         if (visualFolderId) url.searchParams.set('visualFolderId', visualFolderId);
         url.searchParams.set('_ts', Date.now().toString());
         window.location.href = url.toString();
+    }
+
+    function getCurrentListingFolderId() {
+        return normalizeFolderId(getSelectedUploadFolder()?.listingFolderId)
+            || normalizeFolderId(document.getElementById('bulkListingFolderId')?.value)
+            || normalizeFolderId(new URL(window.location.href).searchParams.get('listingFolderId'))
+            || normalizeFolderId(new URL(window.location.href).searchParams.get('folderId'));
     }
 
 

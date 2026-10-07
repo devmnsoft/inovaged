@@ -68,6 +68,8 @@ public sealed class UploadBatchService : IUploadBatchService
         if (!request.FolderId.HasValue || request.FolderId.Value == Guid.Empty) return Result<Guid>.Fail("VALIDATION", "Selecione uma pasta para enviar documentos.");
         if (request.TotalFiles <= 0) return Result<Guid>.Fail("VALIDATION", "Informe ao menos um arquivo para iniciar o lote.");
         if (request.TotalFiles > Math.Max(1, _options.MaxBatchFiles)) return Result<Guid>.Fail("LIMIT", $"O lote excede o limite de {_options.MaxBatchFiles} arquivos.");
+        if (request.Options?.ClassificationId is Guid classificationId && classificationId != Guid.Empty && !await IsActiveClassificationInCurrentPlanAsync(tenantId, classificationId, ct))
+            return Result<Guid>.Fail("CLASSIFICATION_INVALID", "Classificação documental inválida ou fora do plano vigente.");
 
         var id = Guid.NewGuid();
         var requestedFolderId = request.RequestedFolderId ?? request.FolderId;
@@ -125,6 +127,10 @@ VALUES (@id, @tenantId, @folderId, @requestedFolderId, @userId, @userName, 'OPEN
             var batchOptions = await GetBatchOptionsAsync(tenantId, request.BatchId, ct);
             var markAsIncomplete = request.MarkAsIncomplete || batchOptions?.MarkAsIncomplete == true || request.Metadata.MarkAsIncomplete;
             var incompleteReason = !string.IsNullOrWhiteSpace(request.IncompleteReason) ? request.IncompleteReason : !string.IsNullOrWhiteSpace(request.Metadata.IncompleteReason) ? request.Metadata.IncompleteReason : batchOptions?.IncompleteReason;
+            if ((!request.Metadata.ClassificationId.HasValue || request.Metadata.ClassificationId.Value == Guid.Empty) && batchOptions?.ClassificationId is Guid batchClassificationId && batchClassificationId != Guid.Empty)
+                request.Metadata.ClassificationId = batchClassificationId;
+            if (request.Metadata.ClassificationId is Guid requestedClassificationId && requestedClassificationId != Guid.Empty && !await IsActiveClassificationInCurrentPlanAsync(tenantId, requestedClassificationId, ct))
+                return Result<UploadBatchFileResultDto>.Fail("CLASSIFICATION_INVALID", "Classificação documental inválida ou fora do plano vigente.");
             request.MarkAsIncomplete = markAsIncomplete;
             request.IncompleteReason = incompleteReason;
             await InsertItemAsync(tenantId, request, itemId, correlationId, ct);
@@ -202,12 +208,17 @@ VALUES (@id, @tenantId, @folderId, @requestedFolderId, @userId, @userName, 'OPEN
                 await TryEnqueueProcessingJobAsync(tenantId, userId, result.Value.DocumentId, indexVersionId, request.BatchId, itemId, "SMART_INDEX", 7, correlationId, CancellationToken.None);
             }
 
+            if (!string.IsNullOrWhiteSpace(result.Value.ProcessingWarning))
+            {
+                await MarkItemProcessingWarningAsync(tenantId, itemId, "CLASSIFICATION", result.Value.ProcessingWarning, CancellationToken.None);
+            }
+
             await UpdateItemStatusAsync(tenantId, itemId, "QUEUED", sw.ElapsedMilliseconds, CancellationToken.None);
             await UpdateItemStatusAsync(tenantId, itemId, "COMPLETED", sw.ElapsedMilliseconds, CancellationToken.None);
             await _audit.WriteAsync(tenantId, userId, "UPLOAD_FILE_COMPLETED", "UPLOAD_BATCH_ITEM", itemId, "Arquivo concluído no lote", null, null, new { request.BatchId, result.Value.DocumentId, VersionId = version?.VersionId, correlationId }, CancellationToken.None);
             await IncrementBatchCounterAsync(tenantId, request.BatchId, "success_files", CancellationToken.None);
             _logger.LogInformation("File completed Tenant={TenantId} User={UserId} Batch={BatchId} Item={ItemId} File={FileName} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}", tenantId, userId, request.BatchId, itemId, request.File.FileName, sw.ElapsedMilliseconds, correlationId);
-            return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = itemId, DocumentId = result.Value.DocumentId, VersionId = version?.VersionId, RequestedFolderId = request.RequestedFolderId, ResolvedFolderId = request.FolderId, Title = result.Value.Title, FileName = result.Value.FileName, UploadedAtUtc = version?.UploadedAtUtc, UploadedAtLocalFormatted = FormatUploadDate(version?.UploadedAtUtc), Status = "COMPLETED", Message = "Arquivo recebido e processamento pesado enfileirado.", OcrQueued = ocrQueued, PreviewQueued = previewQueued, CorrelationId = correlationId });
+            return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = itemId, DocumentId = result.Value.DocumentId, VersionId = version?.VersionId, RequestedFolderId = request.RequestedFolderId, ResolvedFolderId = request.FolderId, Title = result.Value.Title, FileName = result.Value.FileName, UploadedAtUtc = version?.UploadedAtUtc, UploadedAtLocalFormatted = FormatUploadDate(version?.UploadedAtUtc), Status = "COMPLETED", Message = result.Value.ProcessingWarning ?? "Arquivo recebido e processamento pesado enfileirado.", OcrQueued = ocrQueued, PreviewQueued = previewQueued, CorrelationId = correlationId, ProcessingWarning = result.Value.ProcessingWarning });
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -520,6 +531,27 @@ WHERE tenant_id=@tenantId AND id=@itemId;
         if (string.IsNullOrWhiteSpace(json)) return null;
         try { return JsonSerializer.Deserialize<UploadBatchOptionsDto>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); }
         catch (JsonException ex) { _logger.LogWarning(ex, "Opções inválidas no lote de upload. Tenant={TenantId} Batch={BatchId}", tenantId, batchId); return null; }
+    }
+
+    private async Task<bool> IsActiveClassificationInCurrentPlanAsync(Guid tenantId, Guid classificationId, CancellationToken ct)
+    {
+        const string sql = """
+select exists(
+  select 1
+  from ged.classification_plan c
+  join ged.classification_plan_version_item i on i.tenant_id=c.tenant_id and i.classification_id=c.id
+  join ged.classification_plan_version v on v.tenant_id=i.tenant_id and v.id=i.version_id
+  where c.tenant_id=@tenantId
+    and c.id=@classificationId
+    and coalesce(c.reg_status,'A')='A'
+    and coalesce(c.is_active,true)
+    and coalesce(i.is_active,true)
+    and coalesce(v.reg_status,'A')='A'
+    and v.version_no=(select max(version_no) from ged.classification_plan_version where tenant_id=@tenantId and coalesce(reg_status,'A')='A')
+);
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition(sql, new { tenantId, classificationId }, cancellationToken: ct));
     }
 
     private async Task<bool> TryEnqueueProcessingJobAsync(Guid tenantId, Guid userId, Guid documentId, Guid versionId, Guid batchId, Guid itemId, string jobType, int priority, string correlationId, CancellationToken ct)
