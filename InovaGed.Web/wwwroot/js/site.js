@@ -139,9 +139,10 @@
     }
 
     async function applyClassification(documentId, classificationId, button, meta) {
+        const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
         const res = await fetch(`/Ged/Documents/${encodeURIComponent(documentId)}/Classification`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', ...(token ? { RequestVerificationToken: token } : {}) },
             body: JSON.stringify({ classificationId: classificationId || null, reason: 'Classificação rápida pela listagem' })
         });
         const json = await res.json().catch(() => ({}));

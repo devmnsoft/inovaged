@@ -178,12 +178,56 @@ on conflict (id) do update set
   current_retention_text = excluded.current_retention_text, current_start_event = excluded.current_start_event,
   intermediate_retention_text = excluded.intermediate_retention_text, intermediate_start_event = excluded.intermediate_start_event,
   normative_source = excluded.normative_source, condition_exception = excluded.condition_exception,
-  confidentiality_level = excluded.confidentiality_level, review_status = excluded.review_status;";
+  confidentiality_level = excluded.confidentiality_level, review_status = excluded.review_status
+where ged.classification_plan.tenant_id = excluded.tenant_id;";
 
         try
         {
             await using var conn = await _db.OpenAsync(ct);
-            await conn.ExecuteAsync(new CommandDefinition(sql, new
+            await using var tx = conn.BeginTransaction();
+
+            var existingTenant = await conn.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+                "select tenant_id from ged.classification_plan where id=@id limit 1",
+                new { id },
+                tx,
+                cancellationToken: ct));
+
+            if (existingTenant.HasValue && existingTenant.Value != tenantId)
+                throw new InvalidOperationException("Classe arquivística pertence a outro tenant.");
+
+            if (vm.ParentId.HasValue)
+            {
+                if (vm.ParentId.Value == id)
+                    throw new InvalidOperationException("A classe pai não pode ser a própria classe.");
+
+                var parentExists = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
+                    "select exists(select 1 from ged.classification_plan where tenant_id=@tenantId and id=@parentId and coalesce(reg_status,'A')='A')",
+                    new { tenantId, parentId = vm.ParentId.Value },
+                    tx,
+                    cancellationToken: ct));
+
+                if (!parentExists)
+                    throw new InvalidOperationException("Classe pai não encontrada no tenant atual.");
+
+                var createsCycle = await conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
+with recursive tree as (
+  select id
+  from ged.classification_plan
+  where tenant_id=@tenantId and parent_id=@id
+  union all
+  select c.id
+  from ged.classification_plan c
+  join tree t on t.id=c.parent_id
+  where c.tenant_id=@tenantId
+)
+select exists(select 1 from tree where id=@parentId);
+""", new { tenantId, id, parentId = vm.ParentId.Value }, tx, cancellationToken: ct));
+
+                if (createsCycle)
+                    throw new InvalidOperationException("A classe pai escolhida criaria ciclo na hierarquia.");
+            }
+
+            var affected = await conn.ExecuteAsync(new CommandDefinition(sql, new
             {
                 id,
                 tenantId,
@@ -214,7 +258,11 @@ on conflict (id) do update set
                 confidentialityLevel = vm.ConfidentialityLevel,
                 reviewStatus = vm.ReviewStatus,
                 userId
-            }, cancellationToken: ct));
+            }, tx, cancellationToken: ct));
+            if (affected == 0)
+                throw new InvalidOperationException("Classe arquivística não foi gravada; verifique tenant e concorrência.");
+
+            await tx.CommitAsync(ct);
 
             return id;
         }

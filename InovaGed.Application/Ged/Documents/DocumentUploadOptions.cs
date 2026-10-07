@@ -2,6 +2,7 @@ namespace InovaGed.Application.Ged.Documents;
 
 public sealed class DocumentUploadOptions
 {
+    public long? MaxFileSizeBytes { get; set; }
     public int MaxFileSizeMb { get; set; } = 2048;
     public int MaxBatchFiles { get; set; } = 1000;
     public int ChunkSizeMb { get; set; } = 10;

@@ -38,12 +38,32 @@ public sealed class GedClassificationsController : Controller
     {
         await using var con = await _db.OpenAsync(ct);
         var rows = (await con.QueryAsync<QuickClassificationRow>(new CommandDefinition("""
-SELECT id AS "Id", name AS "Name", description AS "Description"
-FROM ged.document_type
-WHERE tenant_id = @TenantId
-  AND reg_status = 'A'
-  AND (@Q IS NULL OR @Q = '' OR name ILIKE '%' || @Q || '%' OR code ILIKE '%' || @Q || '%')
-ORDER BY lower(name)
+SELECT
+  c.id AS "Id",
+  c.code AS "Code",
+  c.name AS "Name",
+  c.description AS "Description",
+  v.id AS "ClassificationVersionId",
+  v.version_no AS "VersionNo"
+FROM ged.classification_plan c
+LEFT JOIN LATERAL (
+    SELECT pv.id, pv.version_no
+    FROM ged.classification_plan_version pv
+    JOIN ged.classification_plan_version_item pvi
+      ON pvi.tenant_id = pv.tenant_id
+     AND pvi.version_id = pv.id
+     AND pvi.classification_id = c.id
+    WHERE pv.tenant_id = c.tenant_id
+      AND COALESCE(pv.reg_status, 'A') = 'A'
+      AND COALESCE(pvi.is_active, true)
+    ORDER BY pv.version_no DESC, pv.published_at DESC NULLS LAST, pv.created_at DESC
+    LIMIT 1
+) v ON true
+WHERE c.tenant_id = @TenantId
+  AND COALESCE(c.reg_status, 'A') = 'A'
+  AND COALESCE(c.is_active, true)
+  AND (@Q IS NULL OR @Q = '' OR c.name ILIKE '%' || @Q || '%' OR c.code ILIKE '%' || @Q || '%' OR COALESCE(c.description, '') ILIKE '%' || @Q || '%')
+ORDER BY c.code, lower(c.name)
 LIMIT 50;
 """, new { TenantId = _currentUser.TenantId, Q = q }, cancellationToken: ct))).ToList();
 
@@ -60,8 +80,11 @@ LIMIT 50;
             items = rows.Select(x => new
             {
                 id = x.Id,
-                name = x.Name,
+                code = x.Code,
+                name = string.IsNullOrWhiteSpace(x.Code) ? x.Name : $"{x.Code} — {x.Name}",
                 description = x.Description,
+                classificationVersionId = x.ClassificationVersionId,
+                versionNo = x.VersionNo,
                 color = ColorFor(x.Name),
                 icon = IconFor(x.Name),
                 suggestedByOcr = suggestedId == x.Id
@@ -70,7 +93,7 @@ LIMIT 50;
     }
 
     [HttpPost("/Ged/Documents/{id:guid}/Classification")]
-    [IgnoreAntiforgeryToken]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> UpdateDocumentClassification(Guid id, [FromBody] UpdateClassificationRequest? request, CancellationToken ct)
     {
         if (!AllowedRoles.Any(User.IsInRole)) return Forbid();
@@ -79,10 +102,10 @@ LIMIT 50;
 
         await using var con = await _db.OpenAsync(ct);
         var oldClassificationId = await con.ExecuteScalarAsync<Guid?>(new CommandDefinition("""
-SELECT COALESCE(dc.document_type_id, d.type_id)
+SELECT COALESCE(dc.classification_id, d.classification_id)
 FROM ged.document d
 LEFT JOIN LATERAL (
-    SELECT document_type_id
+    SELECT classification_id
     FROM ged.document_classification x
     WHERE x.tenant_id = d.tenant_id AND x.document_id = d.id AND x.reg_status = 'A'
     ORDER BY x.classified_at DESC NULLS LAST, x.created_at DESC NULLS LAST
@@ -99,14 +122,123 @@ LIMIT 1;
         if (newId.HasValue)
         {
             label = await con.ExecuteScalarAsync<string?>(new CommandDefinition("""
-SELECT name FROM ged.document_type
-WHERE tenant_id = @TenantId AND id = @Id AND reg_status = 'A'
+SELECT c.name
+FROM ged.classification_plan c
+WHERE c.tenant_id = @TenantId
+  AND c.id = @Id
+  AND COALESCE(c.reg_status, 'A') = 'A'
+  AND COALESCE(c.is_active, true)
+  AND EXISTS (
+      SELECT 1
+      FROM ged.classification_plan_version v
+      JOIN ged.classification_plan_version_item i
+        ON i.tenant_id = v.tenant_id
+       AND i.version_id = v.id
+       AND i.classification_id = c.id
+      WHERE v.tenant_id = c.tenant_id
+        AND COALESCE(v.reg_status, 'A') = 'A'
+        AND COALESCE(i.is_active, true)
+      ORDER BY v.version_no DESC
+      LIMIT 1
+  )
 LIMIT 1;
 """, new { TenantId = _currentUser.TenantId, Id = newId.Value }, cancellationToken: ct));
             if (string.IsNullOrWhiteSpace(label)) return BadRequest(new { success = false, message = "Classificação não encontrada." });
         }
 
-        await _commands.SaveManualAsync(_currentUser.TenantId, id, newId, _currentUser.UserId, null, null, ct);
+        await using var tx = con.BeginTransaction();
+        var applied = await con.ExecuteScalarAsync<int>(new CommandDefinition("""
+WITH selected_version AS (
+    SELECT v.id
+    FROM ged.classification_plan_version v
+    JOIN ged.classification_plan_version_item i
+      ON i.tenant_id = v.tenant_id
+     AND i.version_id = v.id
+     AND i.classification_id = @ClassificationId
+    WHERE v.tenant_id = @TenantId
+      AND @ClassificationId IS NOT NULL
+      AND COALESCE(v.reg_status, 'A') = 'A'
+      AND COALESCE(i.is_active, true)
+    ORDER BY v.version_no DESC, v.published_at DESC NULLS LAST, v.created_at DESC
+    LIMIT 1
+),
+updated_document AS (
+    UPDATE ged.document d
+    SET classification_id = @ClassificationId,
+        classification_version_id = (SELECT id FROM selected_version),
+        updated_at = now(),
+        updated_by = @UserId
+    WHERE d.tenant_id = @TenantId
+      AND d.id = @DocumentId
+      AND COALESCE(d.reg_status, 'A') = 'A'
+      AND (@ClassificationId IS NULL OR EXISTS (SELECT 1 FROM selected_version))
+    RETURNING d.id, d.current_version_id
+),
+upsert_classification AS (
+    INSERT INTO ged.document_classification
+      (document_id, tenant_id, document_version_id, classification_id, classification_version_id, confidence, method, summary, classified_at, classified_by, source, updated_at, reg_status)
+    SELECT id, @TenantId, current_version_id, @ClassificationId, (SELECT id FROM selected_version), NULL, 'MANUAL', @Reason, now(), @UserId, 'WEB_QUICK_CLASSIFICATION', now(), 'A'
+    FROM updated_document
+    WHERE @ClassificationId IS NOT NULL
+    ON CONFLICT (document_id)
+    DO UPDATE SET
+      tenant_id = EXCLUDED.tenant_id,
+      document_version_id = EXCLUDED.document_version_id,
+      classification_id = EXCLUDED.classification_id,
+      classification_version_id = EXCLUDED.classification_version_id,
+      confidence = NULL,
+      method = 'MANUAL',
+      summary = EXCLUDED.summary,
+      classified_at = now(),
+      classified_by = @UserId,
+      source = 'WEB_QUICK_CLASSIFICATION',
+      updated_at = now(),
+      reg_status = 'A'
+    WHERE ged.document_classification.tenant_id = EXCLUDED.tenant_id
+    RETURNING document_id
+),
+removed_classification AS (
+    UPDATE ged.document_classification dc
+    SET classification_id = NULL,
+        classification_version_id = NULL,
+        confidence = NULL,
+        method = 'MANUAL',
+        summary = @Reason,
+        classified_at = now(),
+        classified_by = @UserId,
+        source = 'WEB_QUICK_CLASSIFICATION',
+        updated_at = now(),
+        reg_status = 'A'
+    WHERE dc.tenant_id = @TenantId
+      AND dc.document_id = @DocumentId
+      AND @ClassificationId IS NULL
+      AND EXISTS (SELECT 1 FROM updated_document)
+    RETURNING document_id
+),
+pending_recalc AS (
+    INSERT INTO ged.ai_retention_recalc_pending (id, tenant_id, document_id, application_id, reason, attempts, next_attempt_at)
+    SELECT gen_random_uuid(), @TenantId, @DocumentId, NULL, 'QUICK_CLASSIFICATION_RECALC', 0, now()
+    WHERE EXISTS (SELECT 1 FROM updated_document)
+      AND NOT EXISTS (
+          SELECT 1 FROM ged.ai_retention_recalc_pending
+          WHERE tenant_id = @TenantId
+            AND document_id = @DocumentId
+            AND application_id IS NULL
+            AND resolved_at IS NULL
+      )
+    RETURNING id
+)
+SELECT count(*) FROM updated_document;
+""", new
+        {
+            TenantId = _currentUser.TenantId,
+            DocumentId = id,
+            ClassificationId = newId,
+            UserId = _currentUser.UserId,
+            Reason = string.IsNullOrWhiteSpace(request.Reason) ? "Classificação rápida pela listagem" : request.Reason
+        }, tx, cancellationToken: ct));
+        await tx.CommitAsync(ct);
+        if (applied == 0) return BadRequest(new { success = false, message = "Documento ou classificação indisponível para este tenant." });
 
         await _audit.WriteAsync(
             _currentUser.TenantId,
@@ -192,7 +324,10 @@ LIMIT 1;
     private sealed class QuickClassificationRow
     {
         public Guid Id { get; set; }
+        public string? Code { get; set; }
         public string Name { get; set; } = string.Empty;
         public string? Description { get; set; }
+        public Guid? ClassificationVersionId { get; set; }
+        public int? VersionNo { get; set; }
     }
 }
