@@ -1037,6 +1037,17 @@
       "requiresVerifiedBackup": false
     },
     {
+      "id": "2026_10_07_ged_upload_chunk_schema_hardening",
+      "path": "database/migrations/2026_10_07_ged_upload_chunk_schema_hardening.sql",
+      "module": "GedUploadChunk",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "minimumApplicationVersion": "04.1.31",
+      "maximumApplicationVersion": "04.1.99",
+      "requiresMaintenanceWindow": false,
+      "requiresVerifiedBackup": false
+    },
+    {
       "id": "2026_09_30_ged_physical_transit",
       "path": "database/migrations/2026_09_30_ged_physical_transit.sql",
       "module": "GedPhysicalTransit",

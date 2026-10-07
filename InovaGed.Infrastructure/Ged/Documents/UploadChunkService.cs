@@ -88,13 +88,16 @@ UPDATE ged.upload_batch SET status='PROCESSING', started_at=COALESCE(started_at,
         try
         {
             await using var conn = await _db.OpenAsync(ct);
-            await conn.ExecuteAsync(new CommandDefinition(sql, new { uploadId, tenantId, userId, batchId = request.BatchId, itemId, folderId = request.FolderId, requestedFolderId = request.RequestedFolderId ?? request.FolderId, fileName = safeName, request.ContentType, totalSizeBytes = request.TotalSizeBytes, chunkSize, totalChunks, tempPath, metadataJson, correlationId }, cancellationToken: ct));
+            using var tx = conn.BeginTransaction();
+            await conn.ExecuteAsync(new CommandDefinition(sql, new { uploadId, tenantId, userId, batchId = request.BatchId, itemId, folderId = request.FolderId, requestedFolderId = request.RequestedFolderId ?? request.FolderId, fileName = safeName, request.ContentType, totalSizeBytes = request.TotalSizeBytes, chunkSize, totalChunks, tempPath, metadataJson, correlationId }, tx, cancellationToken: ct));
+            tx.Commit();
             _logger.LogInformation("Chunk upload session start Tenant={TenantId} User={UserId} Upload={UploadId} Batch={BatchId} File={FileName} Size={SizeBytes} Chunks={TotalChunks} CorrelationId={CorrelationId}", tenantId, userId, uploadId, request.BatchId, safeName, request.TotalSizeBytes, totalChunks, correlationId);
             return Result<UploadChunkSessionDto>.Ok(new UploadChunkSessionDto { UploadId = uploadId, BatchId = request.BatchId, ChunkSizeBytes = chunkSize, TotalChunks = totalChunks, NextChunk = 0, MissingChunks = Enumerable.Range(0, totalChunks).ToArray(), Status = "OPEN", CorrelationId = correlationId });
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable || ex.SqlState == PostgresErrorCodes.UndefinedColumn)
         {
-            _logger.LogError(ex, "Tabelas de upload chunked ausentes. Execute a migration 20260603_upload_chunk.sql. Tenant={TenantId} User={UserId}", tenantId, userId);
+            TryDeleteTempPath(tempPath);
+            _logger.LogError(ex, "Estrutura de upload chunked ausente. SQLSTATE={SqlState} Table={TableName} Column={ColumnName} Constraint={ConstraintName} Migration=2026_10_07_ged_upload_chunk_schema_hardening Tenant={TenantId} User={UserId} CorrelationId={CorrelationId}", ex.SqlState, ex.TableName, ex.ColumnName, ex.ConstraintName, tenantId, userId, correlationId);
             return Result<UploadChunkSessionDto>.Fail("UPLOAD_CHUNK_SCHEMA_MISSING", "Upload em partes indisponível. Estrutura de banco pendente.");
         }
     }
@@ -129,6 +132,11 @@ WHERE s.tenant_id=@tenantId AND s.id=@uploadId;
     {
         var session = await LoadSessionAsync(tenantId, userId, uploadId, ct);
         if (session is null) return Result<UploadBatchFileResultDto>.Fail("NOT_FOUND", "Sessão de upload não encontrada.");
+        if (session.Status == "COMPLETED" && session.DocumentId.HasValue)
+        {
+            var completedVersion = session.VersionId.HasValue ? await GetCurrentVersionAsync(tenantId, session.DocumentId.Value, ct) : null;
+            return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = session.BatchItemId ?? uploadId, DocumentId = session.DocumentId, VersionId = session.VersionId, RequestedFolderId = session.RequestedFolderId, ResolvedFolderId = session.FolderId, FolderName = session.Metadata.FolderName, FileName = completedVersion?.FileName ?? session.OriginalFileName, UploadedAtUtc = completedVersion?.UploadedAtUtc, UploadedAtLocalFormatted = completedVersion?.UploadedAtUtc?.ToUniversalTime().ToString("dd/MM/yyyy HH:mm"), Status = "COMPLETED", Message = "Upload em partes já concluído.", CorrelationId = session.CorrelationId });
+        }
         var status = await BuildStatusAsync(session, ct);
         if (status.MissingChunks.Count > 0) return Result<UploadBatchFileResultDto>.Fail("MISSING_CHUNKS", "Ainda existem partes pendentes para concluir o upload.");
         var sw = Stopwatch.StartNew();
@@ -217,6 +225,18 @@ UPDATE ged.upload_batch b SET success_files=c.success, failed_files=c.failed, sk
         await using var conn = await _db.OpenAsync(ct);
         await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, session.UploadId, message, step, elapsedMs }, cancellationToken: ct));
         _logger.LogWarning("Chunk upload failed Tenant={TenantId} Upload={UploadId} Step={Step} Message={Message}", tenantId, session.UploadId, step, message);
+    }
+
+    private void TryDeleteTempPath(string tempPath)
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(tempPath) && Directory.Exists(tempPath)) Directory.Delete(tempPath, recursive: true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Não foi possível remover diretório temporário de upload chunked após falha de início. TempPath={TempPath}", tempPath);
+        }
     }
 
     private async Task<VersionInfo?> GetCurrentVersionAsync(Guid tenantId, Guid documentId, CancellationToken ct)

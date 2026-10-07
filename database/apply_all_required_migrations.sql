@@ -3144,6 +3144,7 @@ where coalesce(reg_status, 'A') = 'A';
 \ir migrations/20260601_upload_batch.sql
 \ir migrations/20260603_upload_chunk.sql
 \ir migrations/2026_09_29_ged_upload_chunk_compatibility.sql
+\ir migrations/2026_10_07_ged_upload_chunk_schema_hardening.sql
 \ir migrations/2026_09_30_ged_physical_transit.sql
 \ir migrations/2026_10_01_ged_retention_c2.sql
 \ir migrations/2026_09_protocol_custody_index_preflight.sql

@@ -3,7 +3,9 @@ using Dapper;
 using InovaGed.Infrastructure.PhysicalArchive2;
 using InovaGed.Application.PhysicalArchive2;
 using InovaGed.Application.Common.Database;
+using InovaGed.Infrastructure.Common.Database;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 
 namespace InovaGed.Application.Tests.Infrastructure.Sql;
 
@@ -17,9 +19,8 @@ public sealed class PhysicalArchive2DashboardSqlTests
         services.AddLogging();
         services.AddScoped<IPhysicalArchive2Service, PhysicalArchive2Service>();
         services.AddScoped<IDbConnectionFactory>(sp =>
-            new DefaultDbConnectionFactory(
-                "Host=localhost;Port=5432;Database=inovaged_test;Username=postgres;Password=postgres",
-                "Npgsql"));
+            new NpgsqlConnectionFactory(
+                "Host=localhost;Port=5432;Database=inovaged_test;Username=postgres;Password=postgres"));
         _provider = services.BuildServiceProvider();
     }
 
@@ -83,7 +84,10 @@ public sealed class PhysicalArchive2DashboardSqlTests
 
     private sealed class MockDbConnectionFactory : IDbConnectionFactory
     {
-        public Task<System.Data.IDbConnection> OpenAsync(CancellationToken ct)
+        public System.Data.IDbConnection CreateConnection()
+            => throw new NotImplementedException("Mock only");
+
+        public Task<NpgsqlConnection> OpenAsync(CancellationToken ct)
             => throw new NotImplementedException("Mock only");
     }
 }

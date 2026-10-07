@@ -34,6 +34,48 @@ public sealed class LabelsLogoAndPhysicalSchemaContractTests
     }
 
     [Fact]
+    public void Physical_dashboard_aliases_do_not_escape_double_quotes_in_raw_sql()
+    {
+        var service = Read("InovaGed.Infrastructure/PhysicalArchive2/PhysicalArchive2Service.cs");
+        Assert.DoesNotContain("as \\\"Boxes\\\"", service, StringComparison.Ordinal);
+        Assert.Contains("as \"Boxes\"", service, StringComparison.Ordinal);
+        Assert.Contains("as \"PendingChecks\"", service, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Physical_archive_joins_are_tenant_scoped()
+    {
+        var service = Read("InovaGed.Infrastructure/PhysicalArchive2/PhysicalArchive2Service.cs");
+        Assert.Contains("b.tenant_id=m.tenant_id and b.id=m.box_id", service, StringComparison.Ordinal);
+        Assert.Contains("l.tenant_id=s.tenant_id and l.id=s.location_id", service, StringComparison.Ordinal);
+        Assert.Contains("b.tenant_id=p.tenant_id and b.id=p.box_id", service, StringComparison.Ordinal);
+        Assert.Contains("s.tenant_id=i.tenant_id and s.id=i.session_id", service, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Upload_chunk_errors_keep_code_step_correlation_and_retry_contract()
+    {
+        var controller = Read("InovaGed.Web/Controller/UploadChunkController.cs");
+        Assert.Contains("success = false, code, message, errorStep, correlationId, canRetry", controller, StringComparison.Ordinal);
+        Assert.Contains("\"UPLOAD_CHUNK_SCHEMA_MISSING\" => StatusCodes.Status503ServiceUnavailable", controller, StringComparison.Ordinal);
+        Assert.Contains("code is not \"UPLOAD_CHUNK_SCHEMA_MISSING\"", controller, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Upload_chunk_schema_hardening_is_registered()
+    {
+        var migration = Read("database/migrations/2026_10_07_ged_upload_chunk_schema_hardening.sql");
+        var manifest = Read("database/migrations.manifest.json");
+        var consolidated = Read("database/apply_all_required_migrations.sql");
+
+        Assert.Contains("ALTER TABLE ged.upload_session ADD COLUMN IF NOT EXISTS batch_item_id", migration, StringComparison.Ordinal);
+        Assert.Contains("ALTER TABLE ged.upload_session ADD COLUMN IF NOT EXISTS metadata_json", migration, StringComparison.Ordinal);
+        Assert.Contains("ALTER TABLE ged.upload_batch_item ADD COLUMN IF NOT EXISTS error_step", migration, StringComparison.Ordinal);
+        Assert.Contains("2026_10_07_ged_upload_chunk_schema_hardening", manifest, StringComparison.Ordinal);
+        Assert.Contains(@"\ir migrations/2026_10_07_ged_upload_chunk_schema_hardening.sql", consolidated, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Wizard_posts_selected_asset_and_has_four_clear_stages()
     {
         var wizard = Read("InovaGed.Web/Views/Labels/PrintWizard.cshtml");

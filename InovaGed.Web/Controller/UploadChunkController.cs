@@ -58,12 +58,12 @@ public sealed class UploadChunkController : Controller
         var correlationId = HttpContext.TraceIdentifier;
         try
         {
-            if (request is null) return BadRequest(Error("Dados do upload em partes não foram informados.", "Validação", false, correlationId));
-            if (!_currentUser.IsAuthenticated) return Unauthorized(Error("Sua sessão expirou. Faça login novamente.", "Autenticação", false, correlationId));
+            if (request is null) return BadRequest(Error("VALIDATION", "Dados do upload em partes não foram informados.", "Validação", false, correlationId));
+            if (!_currentUser.IsAuthenticated) return Unauthorized(Error("AUTHENTICATION", "Sua sessão expirou. Faça login novamente.", "Autenticação", false, correlationId));
             var isAdmin = await _accessPolicy.IsAdminAsync(_currentUser.TenantId, _currentUser.UserId, User, ct);
             var folder = await ResolveUploadFolderAsync(request.FolderId ?? request.RequestedFolderId, request.RequestedFolderId ?? request.FolderId, isAdmin, correlationId, ct);
-            if (!folder.Success) return BadRequest(new { success = false, message = folder.Message, errorStep = "Resolução da pasta", correlationId });
-            if (!isAdmin && !await _accessPolicy.CanUploadDocumentToFolderAsync(_currentUser.TenantId, _currentUser.UserId, folder.ResolvedFolderId, User, ct)) return StatusCode(403, Error("Você não possui permissão para adicionar documentos nesta pasta.", "Autorização", false, correlationId));
+            if (!folder.Success) return BadRequest(Error("FOLDER_RESOLUTION", folder.Message ?? "Não foi possível resolver a pasta de destino.", "Resolução da pasta", false, correlationId));
+            if (!isAdmin && !await _accessPolicy.CanUploadDocumentToFolderAsync(_currentUser.TenantId, _currentUser.UserId, folder.ResolvedFolderId, User, ct)) return StatusCode(403, Error("AUTHORIZATION", "Você não possui permissão para adicionar documentos nesta pasta.", "Autorização", false, correlationId));
 
             var appRequest = new StartUploadChunkRequestDto
             {
@@ -88,12 +88,12 @@ public sealed class UploadChunkController : Controller
             };
 
             var result = await _chunks.StartAsync(_currentUser.TenantId, _currentUser.UserId, isAdmin, User.Identity?.Name, appRequest, ct);
-            return result.Success ? Ok(new { success = true, session = result.Value, uploadId = result.Value!.UploadId, result.Value.ChunkSizeBytes, result.Value.TotalChunks, result.Value.NextChunk, result.Value.ReceivedChunks, result.Value.MissingChunks, result.Value.Percent, requestedFolderId = folder.RequestedFolderId, folderId = folder.ResolvedFolderId, resolvedFolderId = folder.ResolvedFolderId, folderName = folder.FolderName, correlationId }) : BadRequest(Error(result.Error?.Message ?? "Falha ao iniciar upload em partes.", result.Error?.Code ?? "UploadChunkStart", true, correlationId));
+            return result.Success ? Ok(new { success = true, session = result.Value, uploadId = result.Value!.UploadId, result.Value.ChunkSizeBytes, result.Value.TotalChunks, result.Value.NextChunk, result.Value.ReceivedChunks, result.Value.MissingChunks, result.Value.Percent, requestedFolderId = folder.RequestedFolderId, folderId = folder.ResolvedFolderId, resolvedFolderId = folder.ResolvedFolderId, folderName = folder.FolderName, correlationId }) : UploadFailure(result.Error?.Code, result.Error?.Message, "Início do upload em partes", correlationId);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro ao iniciar upload chunked. Tenant={TenantId} User={UserId} File={FileName} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, request?.OriginalFileName, correlationId);
-            return StatusCode(500, Error("Não foi possível iniciar upload em partes.", "Servidor", true, correlationId));
+            return StatusCode(500, Error("INTERNAL_ERROR", "Não foi possível iniciar upload em partes.", "Servidor", true, correlationId));
         }
     }
 
@@ -103,11 +103,11 @@ public sealed class UploadChunkController : Controller
     public async Task<IActionResult> Part(Guid uploadId, int chunkIndex, string? checksumSha256, IFormFile chunk, CancellationToken ct)
     {
         var correlationId = HttpContext.TraceIdentifier;
-        if (!_currentUser.IsAuthenticated) return Unauthorized(Error("Sua sessão expirou. Faça login novamente.", "Autenticação", false, correlationId));
-        if (chunk is null || chunk.Length <= 0) return BadRequest(Error("Parte inválida.", "Validação", true, correlationId));
+        if (!_currentUser.IsAuthenticated) return Unauthorized(Error("AUTHENTICATION", "Sua sessão expirou. Faça login novamente.", "Autenticação", false, correlationId));
+        if (chunk is null || chunk.Length <= 0) return BadRequest(Error("VALIDATION", "Parte inválida.", "Validação", true, correlationId));
         await using var stream = chunk.OpenReadStream();
         var result = await _chunks.SavePartAsync(_currentUser.TenantId, _currentUser.UserId, new UploadChunkPartRequestDto { UploadId = uploadId, ChunkIndex = chunkIndex, Content = stream, SizeBytes = chunk.Length, ChecksumSha256 = checksumSha256, CorrelationId = correlationId }, ct);
-        return result.Success ? Ok(new { success = true, status = result.Value, correlationId }) : BadRequest(Error(result.Error?.Message ?? "Falha ao receber parte.", result.Error?.Code ?? "UploadChunkPart", true, correlationId));
+        return result.Success ? Ok(new { success = true, status = result.Value, correlationId }) : UploadFailure(result.Error?.Code, result.Error?.Message, "Recebimento da parte", correlationId);
     }
 
     [HttpPost("Complete")]
@@ -116,14 +116,14 @@ public sealed class UploadChunkController : Controller
     {
         var correlationId = HttpContext.TraceIdentifier;
         var result = await _chunks.CompleteAsync(_currentUser.TenantId, _currentUser.UserId, request.UploadId, ct);
-        return result.Success ? Ok(new { success = true, itemId = result.Value!.ItemId, documentId = result.Value.DocumentId, versionId = result.Value.VersionId, status = result.Value.Status, message = result.Value.Message, ocrQueued = result.Value.OcrQueued, previewQueued = result.Value.PreviewQueued, requestedFolderId = result.Value.RequestedFolderId, folderId = result.Value.ResolvedFolderId, resolvedFolderId = result.Value.ResolvedFolderId, folderName = result.Value.FolderName, uploadedAtUtc = result.Value.UploadedAtUtc, uploadedAtLocalFormatted = result.Value.UploadedAtLocalFormatted, createdDocuments = result.Value.DocumentId.HasValue ? new object[] { new { documentId = result.Value.DocumentId, versionId = result.Value.VersionId, title = result.Value.Title, fileName = result.Value.FileName, uploadedAtUtc = result.Value.UploadedAtUtc, uploadedAtLocalFormatted = result.Value.UploadedAtLocalFormatted } } : Array.Empty<object>(), correlationId = result.Value.CorrelationId ?? correlationId }) : BadRequest(Error(result.Error?.Message ?? "Falha ao concluir upload em partes.", result.Error?.Code ?? "UploadChunkComplete", true, correlationId));
+        return result.Success ? Ok(new { success = true, itemId = result.Value!.ItemId, documentId = result.Value.DocumentId, versionId = result.Value.VersionId, status = result.Value.Status, message = result.Value.Message, ocrQueued = result.Value.OcrQueued, previewQueued = result.Value.PreviewQueued, requestedFolderId = result.Value.RequestedFolderId, folderId = result.Value.ResolvedFolderId, resolvedFolderId = result.Value.ResolvedFolderId, folderName = result.Value.FolderName, uploadedAtUtc = result.Value.UploadedAtUtc, uploadedAtLocalFormatted = result.Value.UploadedAtLocalFormatted, createdDocuments = result.Value.DocumentId.HasValue ? new object[] { new { documentId = result.Value.DocumentId, versionId = result.Value.VersionId, title = result.Value.Title, fileName = result.Value.FileName, uploadedAtUtc = result.Value.UploadedAtUtc, uploadedAtLocalFormatted = result.Value.UploadedAtLocalFormatted } } : Array.Empty<object>(), correlationId = result.Value.CorrelationId ?? correlationId }) : UploadFailure(result.Error?.Code, result.Error?.Message, "Conclusão do upload em partes", correlationId);
     }
 
     [HttpGet("Status/{uploadId:guid}")]
     public async Task<IActionResult> Status(Guid uploadId, CancellationToken ct)
     {
         var result = await _chunks.GetStatusAsync(_currentUser.TenantId, _currentUser.UserId, uploadId, ct);
-        return result.Success ? Ok(new { success = true, status = result.Value }) : BadRequest(Error(result.Error?.Message ?? "Falha ao consultar upload.", result.Error?.Code ?? "UploadChunkStatus", true, HttpContext.TraceIdentifier));
+        return result.Success ? Ok(new { success = true, status = result.Value }) : UploadFailure(result.Error?.Code, result.Error?.Message, "Consulta do upload em partes", HttpContext.TraceIdentifier);
     }
 
     [HttpPost("Cancel/{uploadId:guid}")]
@@ -131,7 +131,7 @@ public sealed class UploadChunkController : Controller
     public async Task<IActionResult> Cancel(Guid uploadId, CancellationToken ct)
     {
         var result = await _chunks.CancelAsync(_currentUser.TenantId, _currentUser.UserId, uploadId, ct);
-        return result.Success ? Ok(new { success = true, status = result.Value }) : BadRequest(Error(result.Error?.Message ?? "Falha ao cancelar upload.", result.Error?.Code ?? "UploadChunkCancel", true, HttpContext.TraceIdentifier));
+        return result.Success ? Ok(new { success = true, status = result.Value }) : UploadFailure(result.Error?.Code, result.Error?.Message, "Cancelamento do upload em partes", HttpContext.TraceIdentifier);
     }
 
     private async Task<UploadFolderResolutionResult> ResolveUploadFolderAsync(Guid? folderId, Guid? requestedFolderId, bool isAdmin, string correlationId, CancellationToken ct)
@@ -143,5 +143,23 @@ public sealed class UploadChunkController : Controller
         return resolution;
     }
 
-    private static object Error(string message, string errorStep, bool canRetry, string correlationId, string? code = null) => new { success = false, message, errorStep, canRetry, correlationId, code };
+    private IActionResult UploadFailure(string? code, string? message, string errorStep, string correlationId)
+    {
+        code = string.IsNullOrWhiteSpace(code) ? "ERR" : code;
+        message = string.IsNullOrWhiteSpace(message) ? "Falha no upload em partes." : message;
+        var canRetry = code is not "UPLOAD_CHUNK_SCHEMA_MISSING" and not "VALIDATION" and not "AUTHORIZATION" and not "LIMIT" and not "EXTENSION";
+        var status = code switch
+        {
+            "UPLOAD_CHUNK_SCHEMA_MISSING" => StatusCodes.Status503ServiceUnavailable,
+            "LIMIT" => StatusCodes.Status413PayloadTooLarge,
+            "AUTHORIZATION" => StatusCodes.Status403Forbidden,
+            "NOT_FOUND" => StatusCodes.Status404NotFound,
+            "CONCURRENCY" => StatusCodes.Status409Conflict,
+            "MISSING_CHUNKS" or "VALIDATION" or "EXTENSION" => StatusCodes.Status400BadRequest,
+            _ => StatusCodes.Status500InternalServerError
+        };
+        return StatusCode(status, Error(code, message, errorStep, canRetry, correlationId));
+    }
+
+    private static object Error(string code, string message, string errorStep, bool canRetry, string correlationId) => new { success = false, code, message, errorStep, correlationId, canRetry };
 }
