@@ -130,7 +130,7 @@
     } catch (err) {
       if (sequence !== activeSequence) return;
       if (err.name === 'AbortError') {
-        showError('Operação cancelada pelo usuário. Nenhuma ação foi registrada.');
+        showError('Espera cancelada pelo usuário. A geração pode ter sido registrada no servidor; atualize o histórico ou gere novamente se necessário.');
       } else {
         showError('Falha na comunicação com o servidor: ' + (err.message || 'Erro de rede.'));
       }
@@ -250,6 +250,9 @@
       }
 
       showSuccess(data.message || 'Decisão registrada com sucesso.');
+      if (typeof data.concurrencyToken === 'number') {
+        currentConcurrencyToken = data.concurrencyToken;
+      }
       if (accepted && ui.subjectCurrent) {
         ui.subjectCurrent.textContent = data.appliedContent;
       }
@@ -300,6 +303,9 @@
       }
 
       showSuccess(data.message || 'Minuta salva como rascunho com sucesso.');
+      if (typeof data.concurrencyToken === 'number') {
+        currentConcurrencyToken = data.concurrencyToken;
+      }
       loadHistory(1);
     } catch (err) {
       showError('Erro ao comunicar com o servidor: ' + err.message);
@@ -324,7 +330,7 @@
       }
 
       ui.historyList.innerHTML = data.items.map(r => {
-        const badgeClass = r.decisionType === 'ACCEPTED' ? 'bg-success' : 'bg-secondary';
+        const badgeClass = (r.decisionType === 'ACCEPTED' || r.decisionType === 'Aceita') ? 'bg-success' : 'bg-secondary';
         const d = new Date(r.reviewedAt).toLocaleString('pt-BR');
         return `
           <li class="list-group-item">

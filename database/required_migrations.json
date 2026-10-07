@@ -880,5 +880,12 @@
     "area": "ProtocolAi",
     "required": true,
     "description": "Persistência e decisões humanas de assistência de IA no Protocolo institucional."
+  },
+  {
+    "name": "2026_10_10_protocol_ai_integrity_hardening",
+    "path": "database/migrations/2026_10_10_protocol_ai_integrity_hardening.sql",
+    "area": "ProtocolAi",
+    "required": true,
+    "description": "Preserva duplicatas historicas detectadas e bloqueia novas decisões duplicadas por execução e tarefa."
   }
 ]

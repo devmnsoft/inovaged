@@ -12,6 +12,22 @@ O avanço e liberação operacional das decisões assistidas obedecem rigorosame
 - **Isolamento de ambiente:** execução em contêiner de homologação descartável `inovaged-ai-operational-pg` sem intervir no PostgreSQL do host;
 - **Fora de escopo / Provedores reais:** credenciais de provedores externos (Groq, Gemini, DeepSeek) não configuradas no ambiente local, permanecendo categorizados como não testados. O provedor determinístico é restrito a `Homologation` com flag `INOVAGED_AI_DETERMINISTIC=1`.
 
+### Atualização de integridade — 2026-10-06
+
+Foi aplicado hardening adicional na assistência de Protocolo:
+
+- a aplicação de assunto/minuta passou a exigir execução persistida em `ged.ai_execution`, pertencente ao mesmo tenant, usuário e tarefa `SupportProtocol`, em estado `Completed` e com resultado não expirado;
+- foi removida a compensação que criava manualmente execução `Completed/Deterministic` quando o gateway não persistia a execução;
+- fontes GED são vinculadas à versão OCR efetivamente consultada; documento sem OCR é reportado como cobertura parcial, sem afirmar análise por metadados;
+- `Guid.Empty` deixou de representar versão inexistente nas fontes de execução;
+- a concorrência de assunto e minuta passou a exigir token exato e revalidação dentro da unidade de gravação;
+- replay idempotente retorna o conteúdo persistido, não conteúdo reconstruído do novo request;
+- `original_suggestion_json` e `applied_content_json` são persistidos separadamente;
+- auditoria de assunto/minuta é gravada na mesma transação em `ged.app_audit_log`;
+- a migration `2026_10_10_protocol_ai_integrity_hardening.sql` registra duplicatas históricas em preflight e bloqueia novas decisões duplicadas por `(tenant_id, execution_id, task)`.
+
+Evidência local desta atualização: `dotnet test InovaGed.Application.Tests\InovaGed.Application.Tests.csproj --filter ProtocolAiAssistPostgresTests --no-restore` compilou, mas os 5 testes PostgreSQL foram ignorados pelo `PgGate` local. Portanto, estes 5 cenários não devem ser contabilizados como aprovados nesta execução.
+
 ## Resumo dos Blocos e Resultados
 
 ### BLOCO A — ESTABILIZAÇÃO OPERACIONAL, MIGRAÇÕES E CLASSIFICAÇÃO EM LOTE

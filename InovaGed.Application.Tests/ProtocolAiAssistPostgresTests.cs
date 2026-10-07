@@ -118,7 +118,26 @@ create table if not exists ged.ai_execution (
     provider text not null, model text not null, idempotency_key text, input_fingerprint text,
     policy_revision int default 1, state text not null default 'Completed', reserved_tokens bigint default 0,
     reservation_period date default current_date, expires_at timestamptz default now() + interval '1 day',
-    source_documents jsonb not null default '[]'::jsonb, document_refs jsonb not null default '[]'::jsonb
+    source_documents jsonb not null default '[]'::jsonb, document_refs jsonb not null default '[]'::jsonb,
+    started_at timestamptz, sent_at timestamptz, completed_at timestamptz, settled_at timestamptz,
+    duration_ms bigint, reported_input_tokens bigint, reported_output_tokens bigint, reported_total_tokens bigint,
+    settled_tokens bigint, usage_estimated boolean, result_json jsonb, result_expires_at timestamptz,
+    failure_kind text, limitation text, correlation_id text,
+    usage_reconciled_at timestamptz, reconciled_delta bigint,
+    unique(tenant_id,user_id,task,idempotency_key)
+);
+
+create table if not exists ged.ai_tenant_policy (
+    tenant_id uuid primary key, revision bigint not null default 1, enabled boolean not null default true,
+    allowed_tasks jsonb not null default '[]'::jsonb, allowed_providers jsonb not null default '[]'::jsonb,
+    task_models jsonb not null default '{}'::jsonb, monthly_token_limit bigint not null default 1000000,
+    maximum_input_characters int not null default 50000
+);
+
+create table if not exists ged.ai_monthly_usage (
+    tenant_id uuid not null, period_start date not null, consumed_tokens bigint not null default 0,
+    reserved_tokens bigint not null default 0, updated_at timestamptz not null default now(),
+    primary key(tenant_id, period_start)
 );
 """;
         await _admin.ExecuteAsync(schema);
@@ -163,6 +182,11 @@ create table if not exists ged.ai_execution (
 
         // 1. Tenant, User, Setor e Vínculo
         await _admin!.ExecuteAsync("insert into ged.tenant(id,name,code) values(@tenant,'Tenant AI',@tenant::text) on conflict do nothing", new { tenant });
+        await _admin!.ExecuteAsync("""
+insert into ged.ai_tenant_policy(tenant_id,revision,enabled,allowed_tasks,allowed_providers,task_models,monthly_token_limit,maximum_input_characters)
+values(@tenant,1,true,'["SupportProtocol"]'::jsonb,'["Deterministic"]'::jsonb,'{"SupportProtocol":"deterministic-v1"}'::jsonb,1000000,50000)
+on conflict (tenant_id) do update set enabled=true, allowed_tasks=excluded.allowed_tasks, allowed_providers=excluded.allowed_providers, task_models=excluded.task_models
+""", new { tenant });
         await _admin!.ExecuteAsync("insert into ged.app_user(id,tenant_id,name,email,password_hash,is_active) values(@user,@tenant,'Revisor AI','revisor@inovaged.local','hash',true) on conflict do nothing", new { user, tenant });
         await _admin!.ExecuteAsync("insert into ged.protocolo_setor(id,tenant_id,nome,sigla,ativo,reg_status) values(@setor,@tenant,'Gabinete','GAB',true,'A')", new { setor, tenant });
         await _admin!.ExecuteAsync("insert into ged.protocolo_usuario_setor(id,tenant_id,usuario_id,setor_id,ativo,reg_status) values(@id,@tenant,@user,@setor,true,'A')", new { id = Guid.NewGuid(), tenant, user, setor });
@@ -218,9 +242,11 @@ values(@id,@tenant,@proto,@doc,@user,now(),'A')
         var options = Options.Create(new DocumentAiOptions
         {
             Enabled = true,
-            Provider = "Deterministic"
+            Provider = "Deterministic",
+            TaskModels = { ["SupportProtocol"] = "deterministic-v1" }
         });
-        var gateway = new DocumentAiGateway(new System.Net.Http.HttpClient(), options, NullLogger<DocumentAiGateway>.Instance);
+        var rawGateway = new DocumentAiGateway(new System.Net.Http.HttpClient(), options, NullLogger<DocumentAiGateway>.Instance);
+        var gateway = new GovernedDocumentAiGateway(rawGateway, new PostgresAiGovernanceStore(factory));
         var protocolAccess = new ProtocolAccessService(factory);
         var auth = new AbacAuthorizationService(factory);
         var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build();

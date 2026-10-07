@@ -43,7 +43,7 @@ public sealed class ProtocolAiAssistService(
         return new System.Security.Claims.ClaimsPrincipal(identity);
     }
 
-    private async Task<bool> CanOperateProtocolAsync(System.Data.Common.DbConnection conn, Guid tenantId, Guid protocolId, Guid userId, CancellationToken ct)
+    private async Task<bool> CanOperateProtocolAsync(System.Data.Common.DbConnection conn, Guid tenantId, Guid protocolId, Guid userId, CancellationToken ct, IDbTransaction? tx = null)
     {
         var principal = GetPrincipal();
         if (principal.IsInRole("ADMIN") || principal.IsInRole("ADMINISTRADOR") || principal.IsInRole("ADMINISTRADOROPHIR"))
@@ -63,7 +63,7 @@ SELECT EXISTS (
     WHERE ur.user_id=@userId AND r.code IN ('ADMIN', 'ADMINISTRADOR', 'ADMINISTRADOROPHIR')
 );
 """;
-        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition(sql, new { tenantId, protocolId, userId }, cancellationToken: ct));
+        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition(sql, new { tenantId, protocolId, userId }, tx, cancellationToken: ct));
     }
 
     public async Task<ProtocolAiAssistResultDto> AssistAsync(ProtocolAiAssistRequest request, CancellationToken ct)
@@ -116,7 +116,7 @@ SELECT g.ged_document_id AS "DocumentId", d.title AS "Title", d.is_confidential 
 FROM ged.protocolo_documento_ged g
 JOIN ged.document d ON d.tenant_id=g.tenant_id AND d.id=g.ged_document_id
 LEFT JOIN ged.document_version v ON v.tenant_id=d.tenant_id AND v.id=COALESCE(d.current_version_id, (SELECT vx.id FROM ged.document_version vx WHERE vx.tenant_id=d.tenant_id AND vx.document_id=d.id ORDER BY vx.version_number DESC LIMIT 1))
-LEFT JOIN ged.document_search s ON s.tenant_id=d.tenant_id AND s.document_id=d.id
+LEFT JOIN ged.document_search s ON s.tenant_id=d.tenant_id AND s.document_id=d.id AND s.version_id=v.id
 WHERE g.tenant_id=@tenantId AND g.protocolo_id=@protocoloId AND g.reg_status='A' AND coalesce(d.reg_status,'A')='A'
 """;
         var docs = (await conn.QueryAsync<VinculoDocRow>(new CommandDefinition(sqlVinculos, new { tenantId, protocoloId = request.ProtocoloId }, cancellationToken: ct))).ToList();
@@ -146,12 +146,13 @@ WHERE g.tenant_id=@tenantId AND g.protocolo_id=@protocoloId AND g.reg_status='A'
             }
         }
 
-        contextItems.Add(new AiContextItem($"PROCESSO-{proto.Numero}", sbProtoContext.ToString()));
+        contextItems.Add(new AiContextItem($"PROTOCOLO-{proto.Id:N}", sbProtoContext.ToString()));
         sourcesList.Add(new ProtocolAiSourceDto
         {
+            ProtocolId = proto.Id,
             Title = $"Protocolo {proto.Numero}",
             SourceType = "PROTOCOLO",
-            HasOcr = true,
+            HasOcr = false,
             Evidence = $"Processo {proto.Numero} - {proto.Assunto}"
         });
 
@@ -184,13 +185,16 @@ WHERE g.tenant_id=@tenantId AND g.protocolo_id=@protocoloId AND g.reg_status='A'
             else
             {
                 partial = true;
-                coverageNotes.Add($"Documento '{doc.Title}' sem texto OCR disponível; analisado por metadados.");
+                coverageNotes.Add($"Documento '{doc.Title}' sem texto OCR disponível; conteúdo documental não analisado.");
             }
         }
 
         // 5. Chamar Gateway Governado com AiTask.SupportProtocol
         var idempotencyKey = string.IsNullOrWhiteSpace(request.IdempotencyKey) ? Guid.NewGuid().ToString() : request.IdempotencyKey;
-        var aiSources = sourcesList.Where(s => s.DocumentId.HasValue).Select(s => new AiExecutionSource(s.DocumentId!.Value, s.VersionId ?? Guid.Empty)).ToList();
+        var aiSources = sourcesList
+            .Where(s => s.DocumentId.HasValue && s.VersionId.HasValue)
+            .Select(s => new AiExecutionSource(s.DocumentId!.Value, s.VersionId!.Value))
+            .ToList();
 
         var aiRequest = new AiRequest(
             tenantId,
@@ -200,7 +204,7 @@ WHERE g.tenant_id=@tenantId AND g.protocolo_id=@protocoloId AND g.reg_status='A'
             "Produza: 1. Resumo consultivo; 2. Pendências sustentadas em evidências; 3. Sugestão de assunto conciso; 4. Minuta de despacho fundamentada. " +
             "Não invente normas, prazos ou exigências inexistentes. Não execute nenhuma tramitação automaticamente.",
             contextItems,
-            null,
+            ProtocolAssistSchema.Value,
             idempotencyKey,
             Sources: aiSources
         );
@@ -223,75 +227,65 @@ WHERE g.tenant_id=@tenantId AND g.protocolo_id=@protocoloId AND g.reg_status='A'
             };
         }
 
-        // 6. Interpretar saída estruturada
-        string summaryText = "Processo institucional em tramitação.";
-        string suggestedSubject = proto.Assunto;
-        string suggestedDescription = !string.IsNullOrWhiteSpace(proto.Descricao) ? proto.Descricao : "Análise processual com base nas peças instrutórias.";
-        string dispatchDraft = "Encaminho os presentes autos para manifestação da área técnica.";
-        var pendingItems = new List<ProtocolAiPendingItemDto>();
-        var limitations = new List<string> { "Decisões de tramitação, despacho e assunto exigem revisão humana." };
-
-        if (aiResult.StructuredData is not null)
+        // 6. Interpretar saída estruturada. Resultado incompleto não vira sucesso.
+        if (!TryReadProtocolAssist(aiResult.StructuredData, out var parsed, out var validationError))
         {
-            var root = aiResult.StructuredData.RootElement;
-            if (root.TryGetProperty("summary", out var sProp) && sProp.ValueKind == JsonValueKind.String)
-                summaryText = sProp.GetString() ?? summaryText;
-            if (root.TryGetProperty("suggestedSubject", out var subProp) && subProp.ValueKind == JsonValueKind.String)
-                suggestedSubject = subProp.GetString() ?? suggestedSubject;
-            if (root.TryGetProperty("suggestedDescription", out var descProp) && descProp.ValueKind == JsonValueKind.String)
-                suggestedDescription = descProp.GetString() ?? suggestedDescription;
-            if (root.TryGetProperty("dispatchDraft", out var dProp) && dProp.ValueKind == JsonValueKind.String)
-                dispatchDraft = dProp.GetString() ?? dispatchDraft;
-            if (root.TryGetProperty("limitations", out var limProp) && limProp.ValueKind == JsonValueKind.Array)
+            return new ProtocolAiAssistResultDto
             {
-                foreach (var l in limProp.EnumerateArray())
-                    if (l.ValueKind == JsonValueKind.String) limitations.Add(l.GetString()!);
-            }
-            if (root.TryGetProperty("pending", out var penProp) && penProp.ValueKind == JsonValueKind.Array)
+                Success = false,
+                ErrorMessage = validationError,
+                CorrelationId = aiResult.CorrelationId,
+                ProtocolNumber = proto.Numero,
+                CurrentSubject = proto.Assunto,
+                CurrentSector = proto.SetorAtualNome,
+                CurrentStatus = proto.Status,
+                ConcurrencyToken = concurrencyToken,
+                Sources = sourcesList,
+                Coverage = new ProtocolAiCoverageDto { Partial = true, Notes = coverageNotes.Concat(["A resposta da IA não atendeu ao contrato estruturado."]).ToArray(), TotalSources = sourcesList.Count, ProcessedSources = contextItems.Count }
+            };
+        }
+
+        string summaryText = parsed.Summary;
+        string suggestedSubject = parsed.SuggestedSubject;
+        string suggestedDescription = parsed.SuggestedDescription;
+        string dispatchDraft = parsed.DispatchDraft;
+        var pendingItems = parsed.Pending;
+        var limitations = parsed.Limitations.Count == 0
+            ? new List<string> { "Decisões de tramitação, despacho e assunto exigem revisão humana." }
+            : parsed.Limitations;
+
+        foreach (var pending in pendingItems)
+        {
+            if (pending.Status.Equals("CONFIRMADO", StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrWhiteSpace(pending.Evidence))
             {
-                foreach (var p in penProp.EnumerateArray())
-                {
-                    var item = p.TryGetProperty("item", out var ip) ? ip.GetString() : "Item pendente";
-                    var status = p.TryGetProperty("status", out var stp) ? stp.GetString() : "CONFERENCIA_HUMANA";
-                    var ev = p.TryGetProperty("evidence", out var ep) ? ep.GetString() : null;
-                    var reqCheck = p.TryGetProperty("requiresHumanCheck", out var rcp) && rcp.GetBoolean();
-                    pendingItems.Add(new ProtocolAiPendingItemDto
-                    {
-                        Item = item ?? "Item",
-                        Status = status ?? "CONFERENCIA_HUMANA",
-                        Evidence = ev,
-                        RequiresHumanCheck = reqCheck
-                    });
-                }
+                pending.Status = "CONFERENCIA_HUMANA";
+                pending.RequiresHumanCheck = true;
             }
         }
 
-        var executionId = aiResult.ExecutionId ?? Guid.NewGuid();
-        var execExists = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
-            "SELECT EXISTS(SELECT 1 FROM ged.ai_execution WHERE tenant_id=@tenantId AND id=@executionId)",
-            new { tenantId, executionId }, cancellationToken: ct));
-
-        if (!execExists)
+        var executionId = aiResult.ExecutionId;
+        if (!executionId.HasValue)
         {
-            var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{tenantId}:{userId}:SupportProtocol:{idempotencyKey}"))).ToLowerInvariant()[..64];
-            var sourcesJson = JsonSerializer.Serialize(aiSources.Select(s => new { document_id = s.DocumentId, version_id = s.VersionId }));
-            await conn.ExecuteAsync(new CommandDefinition("""
-INSERT INTO ged.ai_execution (
-    id, tenant_id, user_id, task, provider, model, idempotency_key, input_fingerprint,
-    policy_revision, state, reservation_period, document_refs, source_documents, expires_at, created_at
-) VALUES (
-    @executionId, @tenantId, @userId, 'SupportProtocol', 'Deterministic', 'deterministic-v1',
-    @idempotencyKey, @fingerprint, 1, 'Completed', date_trunc('month', now())::date,
-    '[]'::jsonb, cast(@sourcesJson as jsonb),
-    now() + interval '1 day', now()
-) ON CONFLICT DO NOTHING
-""", new { executionId, tenantId, userId, idempotencyKey, fingerprint, sourcesJson }, cancellationToken: ct));
+            return new ProtocolAiAssistResultDto
+            {
+                Success = false,
+                ErrorMessage = "A execução governada não foi persistida. Nenhuma decisão pode ser aplicada.",
+                CorrelationId = aiResult.CorrelationId,
+                ProtocolNumber = proto.Numero,
+                CurrentSubject = proto.Assunto,
+                CurrentSector = proto.SetorAtualNome,
+                CurrentStatus = proto.Status,
+                ConcurrencyToken = concurrencyToken,
+                Sources = sourcesList,
+                Coverage = new ProtocolAiCoverageDto { Partial = true, Notes = coverageNotes.Concat(["Gateway não retornou executionId persistido."]).ToArray(), TotalSources = sourcesList.Count, ProcessedSources = contextItems.Count }
+            };
         }
 
         return new ProtocolAiAssistResultDto
         {
             Success = true,
-            ExecutionId = executionId,
+            ExecutionId = executionId.Value,
             State = "Completed",
             CorrelationId = aiResult.CorrelationId,
             ReviewRequired = true,
@@ -340,8 +334,10 @@ INSERT INTO ged.ai_execution (
         if (!canOperate)
             throw new UnauthorizedAccessException("Usuário não possui vínculo ativo com o setor responsável pelo protocolo.");
 
+        var execution = await LoadValidExecutionAsync(conn, tenantId, userId, request.ProtocoloId, request.ExecutionId, "SUGGEST_SUBJECT", ct);
+
         // 2. Checar concorrência e status de fechamento
-        var proto = await conn.QuerySingleOrDefaultAsync<ProtocolRow>("SELECT id AS \"Id\", assunto AS \"Assunto\", descricao AS \"Descricao\", status AS \"Status\", updated_at AS \"UpdatedAt\", created_at AS \"CreatedAt\" FROM ged.protocolo WHERE tenant_id=@tenantId AND id=@protocoloId AND reg_status='A'", new { tenantId, protocoloId = request.ProtocoloId });
+        var proto = await conn.QuerySingleOrDefaultAsync<ProtocolRow>("SELECT id AS \"Id\", assunto AS \"Assunto\", descricao AS \"Descricao\", status AS \"Status\", setor_atual_id AS \"SetorAtualId\", updated_at AS \"UpdatedAt\", created_at AS \"CreatedAt\" FROM ged.protocolo WHERE tenant_id=@tenantId AND id=@protocoloId AND reg_status='A'", new { tenantId, protocoloId = request.ProtocoloId });
         if (proto is null)
             throw new KeyNotFoundException("Protocolo não encontrado.");
 
@@ -352,8 +348,8 @@ INSERT INTO ged.ai_execution (
         var currentToken = ((DateTimeOffset)(proto.UpdatedAt ?? proto.CreatedAt)).ToUnixTimeMilliseconds();
 
         // 3. Idempotência e replay
-        var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{request.ExecutionId}:{request.Subject.Trim()}:{request.Accepted}"))).ToLowerInvariant();
-        var existing = await conn.QuerySingleOrDefaultAsync<RevisionRow>("SELECT id AS \"Id\", decision_fingerprint AS \"DecisionFingerprint\" FROM ged.protocolo_ai_revisao WHERE tenant_id=@tenantId AND execution_id=@executionId AND task='SUGGEST_SUBJECT'", new { tenantId, executionId = request.ExecutionId });
+        var fingerprint = DecisionFingerprint(request.ExecutionId, "SUGGEST_SUBJECT", request.Accepted, request.Subject, request.Description);
+        var existing = await conn.QuerySingleOrDefaultAsync<RevisionRow>("SELECT id AS \"Id\", decision_fingerprint AS \"DecisionFingerprint\", applied_content_json::text AS \"AppliedContent\", concurrency_token AS \"ConcurrencyToken\" FROM ged.protocolo_ai_revisao WHERE tenant_id=@tenantId AND execution_id=@executionId AND task='SUGGEST_SUBJECT'", new { tenantId, executionId = request.ExecutionId });
         if (existing is not null)
         {
             if (existing.DecisionFingerprint == fingerprint)
@@ -363,21 +359,30 @@ INSERT INTO ged.ai_execution (
                     Success = true,
                     AlreadyApplied = true,
                     RevisionId = existing.Id,
-                    ConcurrencyToken = currentToken,
+                    ConcurrencyToken = existing.ConcurrencyToken,
                     Message = "Esta revisão já foi registrada com a mesma decisão; nenhum efeito foi duplicado.",
-                    AppliedContent = request.Subject
+                    AppliedContent = ExtractAppliedText(existing.AppliedContent, "subject")
                 };
             }
             throw new InvalidOperationException("Conflito: esta execução já possui outra decisão humana registrada.");
         }
 
-        if (request.ConcurrencyToken > 0 && Math.Abs(currentToken - request.ConcurrencyToken) > 1000)
+        if (request.ConcurrencyToken <= 0 || currentToken != request.ConcurrencyToken)
             throw new InvalidOperationException("Conflito de concorrência: o protocolo foi alterado por outro usuário.");
 
         // 4. Transação atômica de gravação
         await using var tx = await conn.BeginTransactionAsync(ct);
         try
         {
+            var locked = await conn.QuerySingleOrDefaultAsync<ProtocolRow>("SELECT id AS \"Id\", status AS \"Status\", setor_atual_id AS \"SetorAtualId\", updated_at AS \"UpdatedAt\", created_at AS \"CreatedAt\" FROM ged.protocolo WHERE tenant_id=@tenantId AND id=@protocoloId AND reg_status='A' FOR UPDATE", new { tenantId, protocoloId = request.ProtocoloId }, tx);
+            if (locked is null)
+                throw new KeyNotFoundException("Protocolo não encontrado.");
+            var lockedToken = ((DateTimeOffset)(locked.UpdatedAt ?? locked.CreatedAt)).ToUnixTimeMilliseconds();
+            if (lockedToken != request.ConcurrencyToken)
+                throw new InvalidOperationException("Conflito de concorrência: o protocolo foi alterado por outro usuário.");
+            if (!await CanOperateProtocolAsync(conn, tenantId, request.ProtocoloId, userId, ct, tx))
+                throw new UnauthorizedAccessException("Usuário não possui vínculo ativo com o setor responsável pelo protocolo.");
+
             if (request.Accepted)
             {
                 if (!string.IsNullOrWhiteSpace(request.Description))
@@ -391,6 +396,7 @@ INSERT INTO ged.ai_execution (
             }
 
             var revisionId = Guid.NewGuid();
+            var originalJson = execution.OriginalSuggestionJson;
             var appliedJson = JsonSerializer.Serialize(new { subject = request.Subject.Trim(), description = request.Description?.Trim(), accepted = request.Accepted });
 
             const string insertRevisionSql = """
@@ -400,7 +406,7 @@ INSERT INTO ged.protocolo_ai_revisao (
     concurrency_token, notes, created_at
 ) VALUES (
     @revisionId, @tenantId, @protocoloId, @executionId, 'SUGGEST_SUBJECT', @userId,
-    @decisionType, @decisionFingerprint, @appliedJson::jsonb, @appliedJson::jsonb,
+    @decisionType, @decisionFingerprint, @originalJson::jsonb, @appliedJson::jsonb,
     @concurrencyToken, @notes, now()
 )
 """;
@@ -413,21 +419,23 @@ INSERT INTO ged.protocolo_ai_revisao (
                 userId,
                 decisionType = request.Accepted ? "ACCEPTED" : "REJECTED",
                 decisionFingerprint = fingerprint,
+                originalJson,
                 appliedJson,
                 concurrencyToken = currentToken,
                 notes = request.Notes
             }, tx);
 
-            await audit.WriteAsync(tenantId, userId, "AI_PROTOCOL_SUBJECT_APPLY", "PROTOCOLO", request.ProtocoloId, "Assunto do protocolo revisado com assistência de IA", null, null, new { executionId = request.ExecutionId, subject = request.Subject, accepted = request.Accepted }, ct);
+            await WriteProtocolAuditAsync(conn, tx, tenantId, userId, "AI_PROTOCOL_SUBJECT_APPLY", request.ProtocoloId, "Assunto do protocolo revisado com assistência de IA", new { executionId = request.ExecutionId, subject = request.Subject, accepted = request.Accepted }, ct);
 
             await tx.CommitAsync(ct);
+            var updatedToken = await GetProtocolTokenAsync(conn, tenantId, request.ProtocoloId, ct);
 
             return new ProtocolAiApplyResultDto
             {
                 Success = true,
                 AlreadyApplied = false,
                 RevisionId = revisionId,
-                ConcurrencyToken = currentToken,
+                ConcurrencyToken = updatedToken,
                 Message = request.Accepted ? "Assunto do protocolo atualizado com sucesso." : "Sugestão de assunto rejeitada pelo revisor.",
                 AppliedContent = request.Subject
             };
@@ -461,6 +469,8 @@ INSERT INTO ged.protocolo_ai_revisao (
         if (!canOperate)
             throw new UnauthorizedAccessException("Usuário não possui vínculo ativo com o setor responsável pelo protocolo.");
 
+        var execution = await LoadValidExecutionAsync(conn, tenantId, userId, request.ProtocoloId, request.ExecutionId, "PREPARE_DISPATCH_DRAFT", ct);
+
         // 2. Checar concorrência e setor atual
         var proto = await conn.QuerySingleOrDefaultAsync<ProtocolRow>("SELECT id AS \"Id\", status AS \"Status\", setor_atual_id AS \"SetorAtualId\", updated_at AS \"UpdatedAt\", created_at AS \"CreatedAt\" FROM ged.protocolo WHERE tenant_id=@tenantId AND id=@protocoloId AND reg_status='A'", new { tenantId, protocoloId = request.ProtocoloId });
         if (proto is null)
@@ -473,8 +483,8 @@ INSERT INTO ged.protocolo_ai_revisao (
         var currentToken = ((DateTimeOffset)(proto.UpdatedAt ?? proto.CreatedAt)).ToUnixTimeMilliseconds();
 
         // 3. Idempotência e replay
-        var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{request.ExecutionId}:{request.DraftText.Trim()}:{request.Accepted}"))).ToLowerInvariant();
-        var existing = await conn.QuerySingleOrDefaultAsync<RevisionRow>("SELECT id AS \"Id\", decision_fingerprint AS \"DecisionFingerprint\" FROM ged.protocolo_ai_revisao WHERE tenant_id=@tenantId AND execution_id=@executionId AND task='PREPARE_DISPATCH_DRAFT'", new { tenantId, executionId = request.ExecutionId });
+        var fingerprint = DecisionFingerprint(request.ExecutionId, "PREPARE_DISPATCH_DRAFT", request.Accepted, request.DraftText, null);
+        var existing = await conn.QuerySingleOrDefaultAsync<RevisionRow>("SELECT id AS \"Id\", decision_fingerprint AS \"DecisionFingerprint\", applied_content_json::text AS \"AppliedContent\", concurrency_token AS \"ConcurrencyToken\" FROM ged.protocolo_ai_revisao WHERE tenant_id=@tenantId AND execution_id=@executionId AND task='PREPARE_DISPATCH_DRAFT'", new { tenantId, executionId = request.ExecutionId });
         if (existing is not null)
         {
             if (existing.DecisionFingerprint == fingerprint)
@@ -484,25 +494,30 @@ INSERT INTO ged.protocolo_ai_revisao (
                     Success = true,
                     AlreadyApplied = true,
                     RevisionId = existing.Id,
-                    ConcurrencyToken = currentToken,
+                    ConcurrencyToken = existing.ConcurrencyToken,
                     Message = "Esta minuta já foi registrada com a mesma decisão; nenhum efeito foi duplicado.",
-                    AppliedContent = request.DraftText
+                    AppliedContent = ExtractAppliedText(existing.AppliedContent, "draft")
                 };
             }
             throw new InvalidOperationException("Conflito: esta execução já possui outra decisão humana registrada.");
         }
 
-        var hasRelatedRevision = await conn.ExecuteScalarAsync<bool>(
-            "SELECT EXISTS(SELECT 1 FROM ged.protocolo_ai_revisao WHERE tenant_id=@tenantId AND execution_id=@executionId AND protocolo_id=@protocoloId)",
-            new { tenantId, executionId = request.ExecutionId, protocoloId = request.ProtocoloId });
-
-        if (!hasRelatedRevision && request.ConcurrencyToken > 0 && Math.Abs(currentToken - request.ConcurrencyToken) > 1000)
+        if (request.ConcurrencyToken <= 0 || currentToken != request.ConcurrencyToken)
             throw new InvalidOperationException("Conflito de concorrência: o protocolo foi alterado por outro usuário.");
 
         // 4. Transação de gravação: minuta salva como rascunho de observação/despacho
         await using var tx = await conn.BeginTransactionAsync(ct);
         try
         {
+            var locked = await conn.QuerySingleOrDefaultAsync<ProtocolRow>("SELECT id AS \"Id\", status AS \"Status\", setor_atual_id AS \"SetorAtualId\", updated_at AS \"UpdatedAt\", created_at AS \"CreatedAt\" FROM ged.protocolo WHERE tenant_id=@tenantId AND id=@protocoloId AND reg_status='A' FOR UPDATE", new { tenantId, protocoloId = request.ProtocoloId }, tx);
+            if (locked is null)
+                throw new KeyNotFoundException("Protocolo não encontrado.");
+            var lockedToken = ((DateTimeOffset)(locked.UpdatedAt ?? locked.CreatedAt)).ToUnixTimeMilliseconds();
+            if (lockedToken != request.ConcurrencyToken)
+                throw new InvalidOperationException("Conflito de concorrência: o protocolo foi alterado por outro usuário.");
+            if (!await CanOperateProtocolAsync(conn, tenantId, request.ProtocoloId, userId, ct, tx))
+                throw new UnauthorizedAccessException("Usuário não possui vínculo ativo com o setor responsável pelo protocolo.");
+
             if (request.Accepted)
             {
                 // Salvar como anotação/rascunho de despacho do setor atual
@@ -527,6 +542,7 @@ INSERT INTO ged.protocolo_observacao (
             }
 
             var revisionId = Guid.NewGuid();
+            var originalJson = execution.OriginalSuggestionJson;
             var appliedJson = JsonSerializer.Serialize(new { draft = request.DraftText.Trim(), accepted = request.Accepted });
 
             const string insertRevisionSql = """
@@ -536,7 +552,7 @@ INSERT INTO ged.protocolo_ai_revisao (
     concurrency_token, notes, created_at
 ) VALUES (
     @revisionId, @tenantId, @protocoloId, @executionId, 'PREPARE_DISPATCH_DRAFT', @userId,
-    @decisionType, @decisionFingerprint, @appliedJson::jsonb, @appliedJson::jsonb,
+    @decisionType, @decisionFingerprint, @originalJson::jsonb, @appliedJson::jsonb,
     @concurrencyToken, @notes, now()
 )
 """;
@@ -549,21 +565,23 @@ INSERT INTO ged.protocolo_ai_revisao (
                 userId,
                 decisionType = request.Accepted ? "ACCEPTED" : "REJECTED",
                 decisionFingerprint = fingerprint,
+                originalJson,
                 appliedJson,
                 concurrencyToken = currentToken,
                 notes = request.Notes
             }, tx);
 
-            await audit.WriteAsync(tenantId, userId, "AI_PROTOCOL_DRAFT_APPLY", "PROTOCOLO", request.ProtocoloId, "Minuta de despacho revisada com assistência de IA", null, null, new { executionId = request.ExecutionId, draft = request.DraftText, accepted = request.Accepted }, ct);
+            await WriteProtocolAuditAsync(conn, tx, tenantId, userId, "AI_PROTOCOL_DRAFT_APPLY", request.ProtocoloId, "Minuta de despacho revisada com assistência de IA", new { executionId = request.ExecutionId, draft = request.DraftText, accepted = request.Accepted }, ct);
 
             await tx.CommitAsync(ct);
+            var updatedToken = await GetProtocolTokenAsync(conn, tenantId, request.ProtocoloId, ct);
 
             return new ProtocolAiApplyResultDto
             {
                 Success = true,
                 AlreadyApplied = false,
                 RevisionId = revisionId,
-                ConcurrencyToken = currentToken,
+                ConcurrencyToken = updatedToken,
                 Message = request.Accepted ? "Minuta de despacho salva como rascunho com sucesso." : "Minuta de despacho descartada pelo revisor.",
                 AppliedContent = request.DraftText
             };
@@ -598,8 +616,15 @@ INSERT INTO ged.protocolo_ai_revisao (
 
         const string sqlRows = """
 SELECT r.id AS "Id", r.protocolo_id AS "ProtocoloId", r.execution_id AS "ExecutionId",
-       r.task AS "Task", r.decision_type AS "DecisionType", u.name AS "ReviewerName",
-       r.created_at AS "ReviewedAt", r.applied_content_json::text AS "AppliedContent", r.notes AS "Notes"
+       case r.task when 'SUGGEST_SUBJECT' then 'Sugestão de assunto' when 'PREPARE_DISPATCH_DRAFT' then 'Minuta de despacho' else r.task end AS "Task",
+       case r.decision_type when 'ACCEPTED' then 'Aceita' when 'REJECTED' then 'Descartada' else r.decision_type end AS "DecisionType", u.name AS "ReviewerName",
+       r.created_at AS "ReviewedAt",
+       case
+         when r.task='SUGGEST_SUBJECT' then coalesce(r.applied_content_json->>'subject', r.applied_content_json::text)
+         when r.task='PREPARE_DISPATCH_DRAFT' then coalesce(r.applied_content_json->>'draft', r.applied_content_json::text)
+         else r.applied_content_json::text
+       end AS "AppliedContent",
+       r.notes AS "Notes"
 FROM ged.protocolo_ai_revisao r
 LEFT JOIN ged.app_user u ON u.tenant_id=r.tenant_id AND u.id=r.reviewer_id
 WHERE r.tenant_id=@tenantId AND r.protocolo_id=@protocoloId
@@ -616,6 +641,314 @@ LIMIT @pageSize OFFSET @offset
             PageSize = pageSize,
             Items = items
         };
+    }
+
+    private static readonly Lazy<JsonDocument> ProtocolAssistSchema = new(() => JsonDocument.Parse("""
+{
+  "type": "object",
+  "required": ["summary", "pending", "suggestedSubject", "suggestedDescription", "dispatchDraft", "limitations"],
+  "additionalProperties": false,
+  "properties": {
+    "summary": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "pending": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "required": ["item", "status", "evidence", "requiresHumanCheck"],
+        "additionalProperties": false,
+        "properties": {
+          "item": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "status": { "type": "string", "enum": ["CONFIRMADO", "CONFERENCIA_HUMANA"] },
+          "evidence": { "type": "string", "maxLength": 1000 },
+          "requiresHumanCheck": { "type": "boolean" }
+        }
+      }
+    },
+    "suggestedSubject": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "suggestedDescription": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "dispatchDraft": { "type": "string", "minLength": 1, "maxLength": 12000 },
+    "limitations": { "type": "array", "maxItems": 20, "items": { "type": "string", "minLength": 1, "maxLength": 1000 } }
+  }
+}
+"""));
+
+    private static bool TryReadProtocolAssist(JsonDocument? document, out ParsedProtocolAssist parsed, out string error)
+    {
+        parsed = new ParsedProtocolAssist();
+        error = "A IA não retornou JSON estruturado válido para o Protocolo.";
+        if (document is null || document.RootElement.ValueKind != JsonValueKind.Object)
+            return false;
+
+        var root = document.RootElement;
+        if (!ReadRequiredString(root, "summary", 4000, out var summary) ||
+            !ReadRequiredString(root, "suggestedSubject", 500, out var suggestedSubject) ||
+            !ReadRequiredString(root, "suggestedDescription", 4000, out var suggestedDescription) ||
+            !ReadRequiredString(root, "dispatchDraft", 12000, out var dispatchDraft))
+        {
+            error = "A resposta da IA está incompleta ou excede os limites do contrato.";
+            return false;
+        }
+
+        parsed.Summary = summary;
+        parsed.SuggestedSubject = suggestedSubject;
+        parsed.SuggestedDescription = suggestedDescription;
+        parsed.DispatchDraft = dispatchDraft;
+
+        if (!root.TryGetProperty("pending", out var pending) || pending.ValueKind != JsonValueKind.Array || pending.GetArrayLength() > 20)
+        {
+            error = "A lista de pendências da IA está ausente ou inválida.";
+            return false;
+        }
+
+        foreach (var item in pending.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object ||
+                !ReadRequiredString(item, "item", 500, out var label) ||
+                !ReadRequiredString(item, "status", 64, out var status) ||
+                !item.TryGetProperty("requiresHumanCheck", out var human) ||
+                human.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                error = "Uma pendência retornada pela IA não respeita o contrato.";
+                return false;
+            }
+
+            if (!status.Equals("CONFIRMADO", StringComparison.OrdinalIgnoreCase) &&
+                !status.Equals("CONFERENCIA_HUMANA", StringComparison.OrdinalIgnoreCase))
+            {
+                error = "A IA retornou status de pendência não reconhecido.";
+                return false;
+            }
+
+            var evidence = item.TryGetProperty("evidence", out var evidenceElement) && evidenceElement.ValueKind == JsonValueKind.String
+                ? evidenceElement.GetString()
+                : null;
+            if (evidence?.Length > 1000)
+            {
+                error = "Uma evidência retornada pela IA excede o limite permitido.";
+                return false;
+            }
+
+            parsed.Pending.Add(new ProtocolAiPendingItemDto
+            {
+                Item = label,
+                Status = status.ToUpperInvariant(),
+                Evidence = evidence,
+                RequiresHumanCheck = human.GetBoolean()
+            });
+        }
+
+        if (root.TryGetProperty("limitations", out var limitations))
+        {
+            if (limitations.ValueKind != JsonValueKind.Array || limitations.GetArrayLength() > 20)
+            {
+                error = "As limitações retornadas pela IA estão inválidas.";
+                return false;
+            }
+
+            foreach (var limitation in limitations.EnumerateArray())
+            {
+                if (limitation.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(limitation.GetString()))
+                    parsed.Limitations.Add(limitation.GetString()!);
+            }
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
+    private static bool ReadRequiredString(JsonElement root, string property, int maxLength, out string value)
+    {
+        value = string.Empty;
+        if (!root.TryGetProperty(property, out var element) || element.ValueKind != JsonValueKind.String)
+            return false;
+        value = element.GetString()?.Trim() ?? string.Empty;
+        return value.Length > 0 && value.Length <= maxLength;
+    }
+
+    private async Task<ExecutionValidation> LoadValidExecutionAsync(
+        System.Data.Common.DbConnection conn,
+        Guid tenantId,
+        Guid userId,
+        Guid protocoloId,
+        Guid executionId,
+        string decisionTask,
+        CancellationToken ct)
+    {
+        if (executionId == Guid.Empty)
+            throw new UnauthorizedAccessException("Execução de IA inválida.");
+
+        const string sql = """
+SELECT id AS "ExecutionId", task AS "Task", state AS "State", result_expires_at AS "ResultExpiresAt",
+       source_documents::text AS "SourcesJson", result_json::text AS "ResultJson"
+FROM ged.ai_execution
+WHERE tenant_id=@tenantId AND user_id=@userId AND id=@executionId
+""";
+        var execution = await conn.QuerySingleOrDefaultAsync<ExecutionRow>(new CommandDefinition(sql, new { tenantId, userId, executionId }, cancellationToken: ct));
+        if (execution is null)
+            throw new UnauthorizedAccessException("Execução de IA não encontrada para este usuário e tenant.");
+        if (!execution.Task.Equals(AiTask.SupportProtocol.ToString(), StringComparison.OrdinalIgnoreCase))
+            throw new UnauthorizedAccessException("Execução de IA pertence a outra tarefa.");
+        if (!execution.State.Equals(AiExecutionState.Completed.ToString(), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Execução de IA ainda não possui resultado concluído.");
+        if (execution.ResultExpiresAt is null || execution.ResultExpiresAt <= DateTimeOffset.UtcNow)
+            throw new InvalidOperationException("Resultado de IA expirado; gere nova assistência antes de aplicar.");
+
+        var sources = ReadExecutionSources(execution.SourcesJson);
+        if (sources.Count > 0)
+        {
+            const string sourceSql = """
+SELECT EXISTS (
+SELECT 1
+FROM ged.protocolo_documento_ged g
+JOIN ged.document d ON d.tenant_id=g.tenant_id AND d.id=g.ged_document_id AND coalesce(d.reg_status,'A')='A'
+JOIN ged.document_version v ON v.tenant_id=d.tenant_id AND v.document_id=d.id
+WHERE g.tenant_id=@tenantId AND g.protocolo_id=@protocoloId AND g.reg_status='A'
+  AND g.ged_document_id=@documentId AND v.id=@versionId
+)
+""";
+            foreach (var source in sources)
+            {
+                var linked = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(sourceSql, new { tenantId, protocoloId, documentId = source.DocumentId, versionId = source.VersionId }, cancellationToken: ct));
+                if (!linked)
+                    throw new UnauthorizedAccessException("Execução de IA não corresponde aos documentos vinculados ao protocolo atual.");
+                var canAccessDoc = await authorization.CanAccessDocumentAsync(tenantId, userId, source.DocumentId, "VIEW", new Dictionary<string, string>(), ct);
+                if (!canAccessDoc)
+                    throw new UnauthorizedAccessException("Acesso atual aos documentos da execução foi revogado.");
+            }
+        }
+
+        var original = ExtractOriginalSuggestion(execution.ResultJson, decisionTask);
+        if (original is null)
+            throw new InvalidOperationException("Resultado persistido da IA está ausente ou malformado.");
+
+        return new ExecutionValidation(JsonSerializer.Serialize(original));
+    }
+
+    private static IReadOnlyList<AiExecutionSource> ReadExecutionSources(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return [];
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+                return [];
+            var result = new List<AiExecutionSource>();
+            foreach (var item in document.RootElement.EnumerateArray())
+            {
+                var docText = item.TryGetProperty("documentId", out var doc) ? doc.GetString() : item.TryGetProperty("document_id", out var legacyDoc) ? legacyDoc.GetString() : null;
+                var versionText = item.TryGetProperty("versionId", out var version) ? version.GetString() : item.TryGetProperty("version_id", out var legacyVersion) ? legacyVersion.GetString() : null;
+                if (Guid.TryParse(docText, out var documentId) && Guid.TryParse(versionText, out var versionId) && versionId != Guid.Empty)
+                    result.Add(new AiExecutionSource(documentId, versionId));
+            }
+            return result;
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static object? ExtractOriginalSuggestion(string? resultJson, string decisionTask)
+    {
+        if (string.IsNullOrWhiteSpace(resultJson))
+            return null;
+        try
+        {
+            using var stored = JsonDocument.Parse(resultJson);
+            JsonElement root = stored.RootElement;
+            JsonDocument? structuredDocument = null;
+            if (root.TryGetProperty("Structured", out var structured) && structured.ValueKind == JsonValueKind.String)
+            {
+                var raw = structured.GetString();
+                if (string.IsNullOrWhiteSpace(raw))
+                    return null;
+                structuredDocument = JsonDocument.Parse(raw);
+                root = structuredDocument.RootElement;
+            }
+
+            using (structuredDocument)
+            {
+                return decisionTask switch
+                {
+                    "SUGGEST_SUBJECT" => new
+                    {
+                        subject = root.TryGetProperty("suggestedSubject", out var subject) ? subject.GetString() : null,
+                        description = root.TryGetProperty("suggestedDescription", out var description) ? description.GetString() : null
+                    },
+                    "PREPARE_DISPATCH_DRAFT" => new
+                    {
+                        draft = root.TryGetProperty("dispatchDraft", out var draft) ? draft.GetString() : null
+                    },
+                    _ => null
+                };
+            }
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string DecisionFingerprint(Guid executionId, string task, bool accepted, string content, string? description)
+    {
+        var canonical = JsonSerializer.Serialize(new
+        {
+            executionId,
+            task,
+            accepted,
+            content = content.Trim(),
+            description = description?.Trim()
+        });
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
+
+    private static string? ExtractAppliedText(string? json, string property)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : json;
+        }
+        catch (JsonException)
+        {
+            return json;
+        }
+    }
+
+    private static async Task<long> GetProtocolTokenAsync(System.Data.Common.DbConnection conn, Guid tenantId, Guid protocoloId, CancellationToken ct)
+    {
+        var row = await conn.QuerySingleAsync<ProtocolRow>(new CommandDefinition("SELECT created_at AS \"CreatedAt\", updated_at AS \"UpdatedAt\" FROM ged.protocolo WHERE tenant_id=@tenantId AND id=@protocoloId", new { tenantId, protocoloId }, cancellationToken: ct));
+        return ((DateTimeOffset)(row.UpdatedAt ?? row.CreatedAt)).ToUnixTimeMilliseconds();
+    }
+
+    private static async Task WriteProtocolAuditAsync(System.Data.Common.DbConnection conn, IDbTransaction tx, Guid tenantId, Guid userId, string action, Guid protocoloId, string message, object details, CancellationToken ct)
+    {
+        var rows = await conn.ExecuteAsync(new CommandDefinition("""
+INSERT INTO ged.app_audit_log (
+    id, tenant_id, user_id, user_name, action, event_type, source, entity_name, entity_id,
+    message, details, created_at, reg_status
+) VALUES (
+    gen_random_uuid(), @tenantId, @userId, @userName, @action, 'INFO', 'ProtocolAiAssistService',
+    'PROTOCOLO', @entityId, @message, @details::jsonb, now(), 'A'
+)
+""", new
+        {
+            tenantId,
+            userId,
+            userName = userId.ToString(),
+            action,
+            entityId = protocoloId.ToString(),
+            message,
+            details = JsonSerializer.Serialize(details)
+        }, tx, cancellationToken: ct));
+        if (rows != 1)
+            throw new InvalidOperationException("Falha ao registrar auditoria transacional da decisão de IA.");
     }
 
     private sealed class ProtocolRow
@@ -657,5 +990,29 @@ LIMIT @pageSize OFFSET @offset
     {
         public Guid Id { get; set; }
         public string DecisionFingerprint { get; set; } = string.Empty;
+        public string? AppliedContent { get; set; }
+        public long ConcurrencyToken { get; set; }
+    }
+
+    private sealed class ExecutionRow
+    {
+        public Guid ExecutionId { get; set; }
+        public string Task { get; set; } = string.Empty;
+        public string State { get; set; } = string.Empty;
+        public DateTimeOffset? ResultExpiresAt { get; set; }
+        public string? SourcesJson { get; set; }
+        public string? ResultJson { get; set; }
+    }
+
+    private sealed record ExecutionValidation(string OriginalSuggestionJson);
+
+    private sealed class ParsedProtocolAssist
+    {
+        public string Summary { get; set; } = string.Empty;
+        public string SuggestedSubject { get; set; } = string.Empty;
+        public string SuggestedDescription { get; set; } = string.Empty;
+        public string DispatchDraft { get; set; } = string.Empty;
+        public List<ProtocolAiPendingItemDto> Pending { get; } = [];
+        public List<string> Limitations { get; } = [];
     }
 }

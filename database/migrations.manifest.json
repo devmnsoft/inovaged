@@ -1199,6 +1199,14 @@
       "transactional": true,
       "deploymentSafety": "Additive",
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_10_10_protocol_ai_integrity_hardening",
+      "path": "database/migrations/2026_10_10_protocol_ai_integrity_hardening.sql",
+      "module": "ProtocolAi",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
     }
   ]
 }

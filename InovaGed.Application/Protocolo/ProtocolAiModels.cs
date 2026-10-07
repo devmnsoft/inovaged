@@ -20,6 +20,7 @@ public sealed class ProtocolAiAssistRequest
 
 public sealed class ProtocolAiSourceDto
 {
+    public Guid? ProtocolId { get; set; }
     public Guid? DocumentId { get; set; }
     public Guid? VersionId { get; set; }
     public string Title { get; set; } = string.Empty;
