@@ -13,6 +13,7 @@
   let currentConcurrencyToken = 0;
   let currentSuggestedSubject = '';
   let currentDraftText = '';
+  let isBusy = false;
 
   const ui = {
     container: document.getElementById('protocolAiContainer'),
@@ -46,11 +47,16 @@
 
   const getProtocoloId = () => ui.container.dataset.protocolId;
 
-  const setBusy = (isBusy, text = 'Processando com IA governada…') => {
+  const setBusy = (busy, text = 'Processando com IA governada…') => {
+    isBusy = Boolean(busy);
     if (ui.loading) ui.loading.hidden = !isBusy;
     if (ui.loadingText) ui.loadingText.textContent = text;
     if (ui.cancelBtn) ui.cancelBtn.hidden = !isBusy;
     ui.actionButtons.forEach(btn => { btn.disabled = isBusy; });
+    [ui.btnApplySubject, ui.btnRejectSubject, ui.btnApplyDraft, ui.btnRejectDraft].forEach(btn => {
+      if (btn) btn.disabled = isBusy;
+    });
+    ui.pendingList?.querySelectorAll('[data-ai-confirm-pending]').forEach(btn => { btn.disabled = isBusy; });
     ui.container.setAttribute('aria-busy', isBusy ? 'true' : 'false');
   };
 
@@ -76,6 +82,7 @@
   };
 
   const runAiAssist = async (taskKind) => {
+    if (isBusy) return;
     clearAlerts();
     if (currentAbortController) {
       currentAbortController.abort();
@@ -144,6 +151,17 @@
 
   const renderResults = (data) => {
     if (ui.resultPanels) ui.resultPanels.hidden = false;
+    const requested = String(data.requestedTaskKind || 'ALL').toUpperCase();
+    const task = ({
+      SUMMARIZEPROCESS: 'SUMMARY',
+      DOCUMENTPENDING: 'PENDING',
+      SUGGESTSUBJECT: 'SUBJECT',
+      PREPAREDISPATCHDRAFT: 'DRAFT'
+    })[requested] || requested;
+    ui.container.querySelectorAll('[data-protocol-ai-result]').forEach(panel => {
+      const visible = task === 'ALL' || task === panel.dataset.protocolAiResult;
+      panel.hidden = !visible;
+    });
 
     // Cobertura e limitações
     if (data.coverage && data.coverage.partial) {
@@ -164,10 +182,13 @@
       if (!data.pendingItems || data.pendingItems.length === 0) {
         ui.pendingList.innerHTML = '<li class="list-group-item text-muted">Nenhuma pendência identificada no momento.</li>';
       } else {
-        ui.pendingList.innerHTML = data.pendingItems.map(p => {
-          const badgeClass = p.requiresHumanCheck ? 'bg-warning text-dark' : 'bg-info text-dark';
-          const badgeText = p.requiresHumanCheck ? 'Conferência Humana' : escapeHtml(p.status);
-          const evHtml = p.evidence ? `<div class="small text-muted mt-1"><em>Evidência:</em> ${escapeHtml(p.evidence)}</div>` : '';
+        ui.pendingList.innerHTML = data.pendingItems.map((p, index) => {
+          const badgeClass = p.evidenceSource ? 'bg-info text-dark' : 'bg-warning text-dark';
+          const badgeText = p.evidenceSource ? 'Sugestão com fonte · confirme' : 'Conferência Humana';
+          const evHtml = p.evidence ? `<div class="small text-muted mt-1"><em>Evidência${p.evidenceSource ? ` · ${escapeHtml(p.evidenceSource)}` : ''}:</em> ${escapeHtml(p.evidence)}</div>` : '';
+          const confirmAction = p.requiresHumanCheck && ui.container.dataset.canManagePending === 'true'
+            ? `<button type="button" class="btn btn-sm btn-outline-primary mt-2" data-ai-confirm-pending="${index}">Confirmar como pendência</button>`
+            : '';
           return `
             <li class="list-group-item">
               <div class="d-flex justify-content-between align-items-center">
@@ -175,6 +196,7 @@
                 <span class="badge ${badgeClass}">${badgeText}</span>
               </div>
               ${evHtml}
+              ${confirmAction}
             </li>
           `;
         }).join('');
@@ -212,6 +234,7 @@
   };
 
   const applySubject = async (accepted) => {
+    if (isBusy) return;
     if (!currentExecutionId) {
       showError('Nenhuma execução de IA ativa para confirmar a decisão.');
       return;
@@ -265,6 +288,7 @@
   };
 
   const applyDraft = async (accepted) => {
+    if (isBusy) return;
     if (!currentExecutionId) {
       showError('Nenhuma execução de IA ativa para confirmar a minuta.');
       return;
@@ -307,8 +331,43 @@
         currentConcurrencyToken = data.concurrencyToken;
       }
       loadHistory(1);
+      if (accepted && data.draftId) {
+        window.setTimeout(() => window.location.reload(), 900);
+      }
     } catch (err) {
       showError('Erro ao comunicar com o servidor: ' + err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmPending = async (pendingIndex, button) => {
+    if (isBusy || !currentExecutionId) {
+      showError('Gere a modalidade de pendências antes de confirmar uma sugestão.');
+      return;
+    }
+    clearAlerts();
+    setBusy(true, 'Registrando a pendência confirmada…');
+    const formData = new FormData();
+    formData.append('protocoloId', getProtocoloId());
+    formData.append('executionId', currentExecutionId);
+    formData.append('concurrencyToken', currentConcurrencyToken);
+    formData.append('pendingIndex', pendingIndex);
+    formData.append('__RequestVerificationToken', getToken());
+
+    try {
+      const response = await fetch('/Protocolo/AiConfirmPending', { method: 'POST', body: formData });
+      const data = await readJson(response);
+      if (!response.ok || !data.success) {
+        showError(data.message || 'Não foi possível confirmar a sugestão como pendência.');
+        return;
+      }
+      showSuccess(data.message || 'Pendência confirmada e registrada.');
+      button.textContent = data.alreadyApplied ? 'Já registrada' : 'Pendência registrada';
+      button.disabled = true;
+      window.setTimeout(() => window.location.reload(), 900);
+    } catch (err) {
+      showError('Erro ao comunicar com o servidor: ' + (err.message || 'Erro de rede.'));
     } finally {
       setBusy(false);
     }
@@ -322,7 +381,10 @@
       const response = await fetch(`/Protocolo/AiHistory?protocoloId=${protocoloId}&page=${page}&pageSize=5`);
       const data = await readJson(response);
 
-      if (!response.ok || !data.success) return;
+      if (!response.ok || !data.success) {
+        ui.historyList.innerHTML = '<li class="list-group-item text-danger" role="status">Não foi possível consultar o histórico. Tente atualizar novamente.</li>';
+        return;
+      }
 
       if (!data.items || data.items.length === 0) {
         ui.historyList.innerHTML = '<li class="list-group-item text-muted">Nenhuma revisão humana registrada até o momento.</li>';
@@ -347,7 +409,7 @@
         `;
       }).join('');
     } catch {
-      // Ignorar erro silenciosamente para histórico
+      ui.historyList.innerHTML = '<li class="list-group-item text-danger" role="status">Falha de comunicação ao consultar o histórico.</li>';
     }
   };
 
@@ -375,6 +437,12 @@
   if (ui.btnRejectSubject) ui.btnRejectSubject.addEventListener('click', () => applySubject(false));
   if (ui.btnApplyDraft) ui.btnApplyDraft.addEventListener('click', () => applyDraft(true));
   if (ui.btnRejectDraft) ui.btnRejectDraft.addEventListener('click', () => applyDraft(false));
+  if (ui.pendingList) {
+    ui.pendingList.addEventListener('click', event => {
+      const button = event.target.closest('[data-ai-confirm-pending]');
+      if (button) confirmPending(Number(button.dataset.aiConfirmPending), button);
+    });
+  }
 
   // Carga inicial do histórico ao abrir
   loadHistory(1);

@@ -241,7 +241,7 @@ ORDER BY b.created_at DESC LIMIT 1;
         var ids = await LoadBatchDocumentIdsAsync(batchId, request.DocumentIds, ct);
         if (ids.Count == 0) return BadRequest(new { success = false, message = "Selecione pelo menos um documento." });
         var result = await _classifications.ApplyAsync(_currentUser.TenantId, _currentUser.UserId, ids, request.ClassificationId, ct);
-        return Json(new { success = result.Failed == 0, result.Requested, result.Succeeded, result.Failed, result.Items });
+        return Json(new { success = result.Failed == 0 && result.Denied == 0, result.Requested, result.Succeeded, result.Failed, result.Applied, result.Pending, result.Denied, result.AuditStatus, result.Items });
     }
 
     [HttpPost("{batchId:guid}/LabelSelection")]

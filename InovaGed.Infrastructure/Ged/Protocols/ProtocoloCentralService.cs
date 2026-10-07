@@ -1,5 +1,6 @@
 using System.Data;
 using System.Text;
+using System.Text.Json;
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Protocols;
@@ -107,7 +108,7 @@ offset @Offset limit @Limit;
         }
     }
 
-    public Task<ProtocoloCommandResult> ForwardAsync(ProtocoloActor actor, Guid protocoloId, Guid? documentoId, Guid destinoSetorId, string? despacho, string? observacao, string? idempotencyKey, DateTime? prazo, Guid? responsavelId, string? entregueA, CancellationToken ct)
+    public Task<ProtocoloCommandResult> ForwardAsync(ProtocoloActor actor, Guid protocoloId, Guid? documentoId, Guid destinoSetorId, string? despacho, string? observacao, string? idempotencyKey, DateTime? prazo, Guid? responsavelId, string? entregueA, CancellationToken ct, Guid? minutaId = null)
         => MutateAsync(actor, async (conn, tx) =>
         {
             if (destinoSetorId == Guid.Empty) return ProtocoloCommandResult.Fail("Informe o setor de destino.");
@@ -127,16 +128,38 @@ offset @Offset limit @Limit;
             if (!ProtocolCustodyRules.CanAct(actor.CanSeeAll, grants.Any(g => g.SetorId == holder && g.PodeTramitar), true))
                 return ProtocoloCommandResult.Fail("Você não tem direito de tramitar a custódia atual deste protocolo.");
 
+            var effectiveDespacho = despacho;
+            ProtocolDraftForDispatch? draft = null;
+            if (minutaId.HasValue)
+            {
+                draft = await conn.QuerySingleOrDefaultAsync<ProtocolDraftForDispatch>(new CommandDefinition("""
+select id as Id, protocolo_id as ProtocoloId, setor_id as SetorId, titulo as Titulo,
+       conteudo as Conteudo, status as Status, versao as Versao
+from ged.protocolo_minuta
+where tenant_id=@TenantId and id=@MinutaId and reg_status='A'
+for update;
+""", new { actor.TenantId, MinutaId = minutaId }, tx, cancellationToken: ct));
+                if (draft is null || draft.ProtocoloId != protocoloId)
+                    return ProtocoloCommandResult.Fail("Minuta não encontrada para este protocolo.");
+                if (!string.Equals(draft.Status, "CONFIRMADA", StringComparison.Ordinal))
+                    return ProtocoloCommandResult.Fail("Confirme a minuta antes de encaminhá-la.");
+                if (draft.SetorId != holder)
+                    return ProtocoloCommandResult.Fail("A minuta pertence a outro setor e não pode ser encaminhada pela custódia atual.");
+                effectiveDespacho = draft.Conteudo;
+            }
+
             var active = await LockActiveAsync(conn, tx, actor.TenantId, protocoloId, documentoId, ct);
             if (active is not null)
             {
-                if (ProtocolCustodyRules.IsSameDestinationRepeat(active.Situacao, active.DestinoId, destinoSetorId))
+                if (ProtocolCustodyRules.IsSameDestinationRepeat(active.Situacao, active.DestinoId, destinoSetorId) && !minutaId.HasValue)
                     return ProtocoloCommandResult.Ok("Este encaminhamento já está pendente de recebimento.", active.Id, true);
                 var block = ProtocolCustodyRules.SecondForwardBlock(active.Situacao, active.DestinoId, destinoSetorId);
                 if (block is not null) return ProtocoloCommandResult.Fail(block);
+                if (minutaId.HasValue)
+                    return ProtocoloCommandResult.Fail("Há um encaminhamento pendente. A minuta permanece confirmada e não foi encaminhada.");
             }
 
-            var id = await InsertMovementAsync(conn, tx, actor, protocol, documentoId, destino.Id, destino.Nome, "TRAMITACAO", ProtocolCustodyRules.Waiting, despacho, observacao, null, idempotencyKey, prazo, responsavelId, entregueA, true, ct);
+            var id = await InsertMovementAsync(conn, tx, actor, protocol, documentoId, destino.Id, destino.Nome, "TRAMITACAO", ProtocolCustodyRules.Waiting, effectiveDespacho, observacao, null, idempotencyKey, prazo, responsavelId, entregueA, true, ct);
             await conn.ExecuteAsync(new CommandDefinition("""
 update ged.protocolo
 set status=case when upper(status) in ('RASCUNHO','ABERTO') then 'EM_TRAMITACAO' else status end,
@@ -144,6 +167,19 @@ set status=case when upper(status) in ('RASCUNHO','ABERTO') then 'EM_TRAMITACAO'
 where tenant_id=@TenantId and id=@Id;
 """, new { Situacao = ProtocolCustodyRules.Waiting, actor.UserId, actor.TenantId, Id = protocoloId }, tx, cancellationToken: ct));
             await UpsertParticipantAsync(conn, tx, actor.TenantId, protocoloId, destinoSetorId, false, ct);
+            if (draft is not null)
+            {
+                var updated = await conn.ExecuteAsync(new CommandDefinition("""
+update ged.protocolo_minuta
+set status='ENCAMINHADA', encaminhada_por=@UserId, encaminhada_em=now(),
+    movimento_id=@MovimentoId, atualizado_por=@UserId, atualizado_por_nome=@UserName,
+    updated_at=now()
+where tenant_id=@TenantId and id=@MinutaId and status='CONFIRMADA' and versao=@Versao;
+""", new { actor.UserId, actor.UserName, MovimentoId = id, actor.TenantId, MinutaId = draft.Id, draft.Versao }, tx, cancellationToken: ct));
+                if (updated != 1)
+                    throw new InvalidOperationException("A minuta mudou durante o encaminhamento; nenhuma tramitação foi confirmada.");
+                await WriteDraftHistoryAsync(conn, tx, actor, protocoloId, draft, "ENCAMINHADA", new { movementId = id, destinationSectorId = destinoSetorId }, ct);
+            }
             return ProtocoloCommandResult.Ok($"Protocolo encaminhado para {destino.Nome}. O destino ainda precisa receber.", id);
         }, ct);
 
@@ -816,6 +852,54 @@ do update set pode_visualizar=true, pode_editar=ged.protocolo_setor_participante
     {
         var value = (tipo ?? "").ToUpperInvariant();
         return value.Contains("PRONT") || value.Contains("PACIENT") || value.Contains("HOSPITAL") || value.Contains("CLINIC");
+    }
+
+    private static async Task WriteDraftHistoryAsync(
+        System.Data.Common.DbConnection conn,
+        System.Data.Common.DbTransaction tx,
+        ProtocoloActor actor,
+        Guid protocoloId,
+        ProtocolDraftForDispatch draft,
+        string status,
+        object details,
+        CancellationToken ct)
+    {
+        var rows = await conn.ExecuteAsync(new CommandDefinition("""
+insert into ged.protocolo_minuta_historico (
+    id, tenant_id, protocolo_id, minuta_id, versao, evento, status, titulo,
+    conteudo, usuario_id, usuario_nome, detalhes, created_at
+) values (
+    @Id, @TenantId, @ProtocoloId, @MinutaId, @Versao, @Evento, @Status, @Titulo,
+    @Conteudo, @UserId, @UserName, @Details::jsonb, now()
+);
+""", new
+        {
+            Id = Guid.NewGuid(),
+            actor.TenantId,
+            ProtocoloId = protocoloId,
+            MinutaId = draft.Id,
+            draft.Versao,
+            Evento = status,
+            Status = status,
+            draft.Titulo,
+            draft.Conteudo,
+            actor.UserId,
+            actor.UserName,
+            Details = JsonSerializer.Serialize(details)
+        }, tx, cancellationToken: ct));
+        if (rows != 1)
+            throw new InvalidOperationException("Falha ao registrar o histórico da minuta na tramitação.");
+    }
+
+    private sealed class ProtocolDraftForDispatch
+    {
+        public Guid Id { get; set; }
+        public Guid ProtocoloId { get; set; }
+        public Guid SetorId { get; set; }
+        public string Titulo { get; set; } = string.Empty;
+        public string Conteudo { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public int Versao { get; set; }
     }
 
     private sealed class Grant

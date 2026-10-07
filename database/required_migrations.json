@@ -887,5 +887,26 @@
     "area": "ProtocolAi",
     "required": true,
     "description": "Preserva duplicatas historicas detectadas e bloqueia novas decisões duplicadas por execução e tarefa."
+  },
+  {
+    "name": "2026_10_11_protocol_ai_execution_context",
+    "path": "database/migrations/2026_10_11_protocol_ai_execution_context.sql",
+    "area": "ProtocolAi",
+    "required": true,
+    "description": "Vincula execução de IA ao protocolo, modalidade e fontes; serializa decisões concorrentes e torna o preflight reaplicável."
+  },
+  {
+    "name": "2026_10_12_protocol_canonical_drafts",
+    "path": "database/migrations/2026_10_12_protocol_canonical_drafts.sql",
+    "area": "Protocol",
+    "required": true,
+    "description": "Cria minutas versionadas do Protocolo com ciclo humano de revisão, encaminhamento e histórico."
+  },
+  {
+    "name": "2026_10_13_protocol_operational_pending",
+    "path": "database/migrations/2026_10_13_protocol_operational_pending.sql",
+    "area": "Protocol",
+    "required": true,
+    "description": "Cria pendências documentais confirmadas por humanos, com atribuição, resolução comprovada e histórico."
   }
 ]

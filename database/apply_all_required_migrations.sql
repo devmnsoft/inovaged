@@ -3167,3 +3167,6 @@ COMMIT;
 \ir migrations/2026_10_08_protocol_ai_assist.sql
 \ir migrations/2026_10_09_signature_validation_check_compat_hardening.sql
 \ir migrations/2026_10_10_protocol_ai_integrity_hardening.sql
+\ir migrations/2026_10_11_protocol_ai_execution_context.sql
+\ir migrations/2026_10_12_protocol_canonical_drafts.sql
+\ir migrations/2026_10_13_protocol_operational_pending.sql

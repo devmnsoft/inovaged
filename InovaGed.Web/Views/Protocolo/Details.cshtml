@@ -19,6 +19,217 @@
     </div></div>
 }
 <div class="row g-3 mb-3"><div class="col-md-3"><div class="card shadow-sm border-0"><div class="card-body"><div class="text-muted small">Status</div><b>@Model.Status</b></div></div></div><div class="col-md-3"><div class="card shadow-sm border-0"><div class="card-body"><div class="text-muted small">Setor atual</div><b>@Model.SetorAtual</b></div></div></div><div class="col-md-3"><div class="card shadow-sm border-0"><div class="card-body"><div class="text-muted small">Emissão</div><b>@Model.CreatedAt.ToString("dd/MM/yyyy HH:mm")</b></div></div></div><div class="col-md-3"><div class="card shadow-sm border-0"><div class="card-body"><div class="text-muted small">Anexos</div><b>@Model.Documentos.Count</b></div></div></div></div>
+<section class="card border-0 shadow-sm mb-3" aria-labelledby="protocolDraftsHeading">
+    <div class="card-header bg-white"><h5 class="mb-0" id="protocolDraftsHeading">Minutas de despacho</h5></div>
+    <div class="card-body">
+        <p class="small text-muted">As minutas ficam vinculadas ao setor que as criou. A confirmação não tramita o protocolo; o encaminhamento só ocorre pela ação de tramitação canônica.</p>
+        @if (Model.PodeGerenciarMinutas)
+        {
+            <form asp-action="SalvarMinuta" method="post" class="border rounded p-3 mb-3">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="protocoloId" value="@Model.Id" />
+                <label class="form-label" for="newDraftTitle">Nova minuta</label>
+                <input id="newDraftTitle" name="titulo" class="form-control mb-2" maxlength="200" required placeholder="Título" />
+                <textarea name="conteudo" class="form-control mb-2" rows="4" maxlength="12000" required placeholder="Texto do despacho"></textarea>
+                <button class="btn btn-sm btn-outline-primary">Salvar rascunho</button>
+            </form>
+        }
+        @if (Model.Minutas.Count == 0)
+        {
+            <div class="text-muted">Nenhuma minuta registrada.</div>
+        }
+        @foreach (var minuta in Model.Minutas)
+        {
+            <article class="border rounded p-3 mb-3">
+                <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+                    <div><strong>@minuta.Titulo</strong> <span class="badge bg-secondary">@minuta.Status</span></div>
+                    <small class="text-muted">v@minuta.Versao · @minuta.SetorNome · @minuta.AtualizadoPorNome · @minuta.UpdatedAt.ToString("dd/MM/yyyy HH:mm")</small>
+                </div>
+                @if (minuta.PodeEditar)
+                {
+                    <form asp-action="SalvarMinuta" method="post" class="mb-2">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="protocoloId" value="@Model.Id" />
+                        <input type="hidden" name="minutaId" value="@minuta.Id" />
+                        <input type="hidden" name="versao" value="@minuta.Versao" />
+                        <label class="form-label small" for="draft-title-@minuta.Id">Título</label>
+                        <input id="draft-title-@minuta.Id" name="titulo" class="form-control mb-2" maxlength="200" required value="@minuta.Titulo" />
+                        <label class="form-label small" for="draft-content-@minuta.Id">Conteúdo</label>
+                        <textarea id="draft-content-@minuta.Id" name="conteudo" class="form-control mb-2" rows="4" maxlength="12000" required>@minuta.Conteudo</textarea>
+                        <button class="btn btn-sm btn-outline-primary">Salvar edição</button>
+                    </form>
+                }
+                else
+                {
+                    <pre class="border rounded p-2 mb-2 text-wrap">@minuta.Conteudo</pre>
+                }
+                <div class="d-flex flex-wrap gap-2">
+                    @if (minuta.PodeConfirmar)
+                    {
+                        <form asp-action="ConfirmarMinuta" method="post">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="protocoloId" value="@Model.Id" />
+                            <input type="hidden" name="minutaId" value="@minuta.Id" />
+                            <input type="hidden" name="versao" value="@minuta.Versao" />
+                            <button class="btn btn-sm btn-success">Confirmar minuta</button>
+                        </form>
+                    }
+                    @if (minuta.PodeEncaminhar)
+                    {
+                        <form asp-action="EncaminharMinuta" method="post" class="d-flex flex-wrap gap-2">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="protocoloId" value="@Model.Id" />
+                            <input type="hidden" name="minutaId" value="@minuta.Id" />
+                            <select name="setorDestinoId" asp-items="Model.SetoresDestino" class="form-select form-select-sm" required>
+                                <option value="">Setor de destino</option>
+                            </select>
+                            <button class="btn btn-sm btn-primary">Encaminhar pelo fluxo oficial</button>
+                        </form>
+                    }
+                    @if (minuta.PodeDescartar)
+                    {
+                        <form asp-action="DescartarMinuta" method="post">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="protocoloId" value="@Model.Id" />
+                            <input type="hidden" name="minutaId" value="@minuta.Id" />
+                            <input type="hidden" name="versao" value="@minuta.Versao" />
+                            <button class="btn btn-sm btn-outline-danger">Descartar</button>
+                        </form>
+                    }
+                </div>
+                @{
+                    var history = Model.HistoricoMinutas.Where(item => item.MinutaId == minuta.Id).ToList();
+                }
+                @if (history.Count > 0)
+                {
+                    <details class="mt-2">
+                        <summary class="small">Histórico de alterações e decisões</summary>
+                        <ul class="small mb-0 mt-2">
+                            @foreach (var item in history)
+                            {
+                                <li>v@item.Versao · @item.Evento (@item.Status) · @item.UsuarioNome · @item.CreatedAt.ToString("dd/MM/yyyy HH:mm")</li>
+                            }
+                        </ul>
+                    </details>
+                }
+            </article>
+        }
+    </div>
+</section>
+<section class="card border-0 shadow-sm mb-3" aria-labelledby="protocolPendingHeading">
+    <div class="card-header bg-white"><h5 class="mb-0" id="protocolPendingHeading">Pendências documentais</h5></div>
+    <div class="card-body">
+        <p class="small text-muted">Sugestões da IA só entram nesta fila após confirmação humana. Para resolver, registre a justificativa e selecione um documento já vinculado ao protocolo como comprovante.</p>
+        @if (Model.PodeGerenciarPendencias)
+        {
+            <form asp-action="CriarPendencia" method="post" class="row g-2 border rounded p-3 mb-3">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="protocoloId" value="@Model.Id" />
+                <div class="col-md-10"><label class="visually-hidden" for="newPendingItem">Descrição da pendência</label><input id="newPendingItem" name="descricao" class="form-control" maxlength="500" required placeholder="Nova pendência documental" /></div>
+                <div class="col-md-2"><button class="btn btn-sm btn-outline-primary w-100">Registrar pendência</button></div>
+            </form>
+        }
+        @if (Model.Pendencias.Count == 0)
+        {
+            <div class="text-muted">Nenhuma pendência operacional registrada.</div>
+        }
+        @foreach (var pendencia in Model.Pendencias)
+        {
+            <article class="border rounded p-3 mb-3">
+                <div class="d-flex flex-wrap justify-content-between gap-2">
+                    <strong>@pendencia.Descricao</strong>
+                    <span class="badge bg-secondary">@pendencia.Status</span>
+                </div>
+                <div class="small text-muted mt-1">Origem: @pendencia.Origem · @pendencia.CreatedAt.ToString("dd/MM/yyyy HH:mm")</div>
+                @if (!string.IsNullOrWhiteSpace(pendencia.Evidencia))
+                {
+                    <div class="small mt-2">Evidência sugerida: @pendencia.Evidencia</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(pendencia.FonteEvidencia))
+                {
+                    <div class="small text-muted">Fonte da sugestão: @pendencia.FonteEvidencia</div>
+                }
+                <div class="small mt-2">Responsável: @(pendencia.ResponsavelNome ?? "Não atribuído")</div>
+                @if (pendencia.Status == "RESOLVIDA")
+                {
+                    <div class="small mt-2"><strong>Resolução:</strong> @pendencia.Resolucao</div>
+                    @if (pendencia.ComprovanteDocumentoId.HasValue)
+                    {
+                        <a asp-action="VisualizarDocumento" asp-route-id="@pendencia.ComprovanteDocumentoId" class="btn btn-sm btn-outline-secondary mt-2">Ver comprovante: @pendencia.ComprovanteNome</a>
+                    }
+                }
+                @if (pendencia.PodeAtribuir)
+                {
+                    <form asp-action="AtribuirPendencia" method="post" class="row g-2 mt-2">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="protocoloId" value="@Model.Id" />
+                        <input type="hidden" name="pendenciaId" value="@pendencia.Id" />
+                        <div class="col-md-8">
+                            <label class="visually-hidden" for="assignee-@pendencia.Id">Responsável</label>
+                            <select id="assignee-@pendencia.Id" name="responsavelId" asp-items="Model.ResponsaveisPendencia" class="form-select form-select-sm" required>
+                                <option value="">Atribuir a</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4"><button class="btn btn-sm btn-outline-primary">Atribuir</button></div>
+                    </form>
+                }
+                @if (pendencia.PodeResolver)
+                {
+                    @if (Model.Documentos.Count > 0)
+                    {
+                        <form asp-action="ResolverPendencia" method="post" class="row g-2 mt-2">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="protocoloId" value="@Model.Id" />
+                            <input type="hidden" name="pendenciaId" value="@pendencia.Id" />
+                            <div class="col-12"><label class="form-label small" for="resolution-@pendencia.Id">Justificativa da resolução</label><textarea id="resolution-@pendencia.Id" name="resolucao" class="form-control form-control-sm" maxlength="2000" required></textarea></div>
+                            <div class="col-md-8">
+                                <label class="visually-hidden" for="proof-@pendencia.Id">Comprovante vinculado</label>
+                                <select id="proof-@pendencia.Id" name="comprovanteDocumentoId" class="form-select form-select-sm" required>
+                                    <option value="">Documento comprovante já vinculado</option>
+                                    @foreach (var documento in Model.Documentos)
+                                    {
+                                        <option value="@documento.Id">@documento.NomeArquivo</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-4"><button class="btn btn-sm btn-success">Resolver com comprovante</button></div>
+                        </form>
+                    }
+                    else
+                    {
+                        <div class="small text-warning mt-2">Anexe e vincule o comprovante na aba Anexos antes de resolver.</div>
+                    }
+                }
+                @if (pendencia.PodeDescartar)
+                {
+                    <form asp-action="DescartarPendencia" method="post" class="d-flex gap-2 mt-2">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="protocoloId" value="@Model.Id" />
+                        <input type="hidden" name="pendenciaId" value="@pendencia.Id" />
+                        <label class="visually-hidden" for="discard-@pendencia.Id">Motivo do descarte</label>
+                        <input id="discard-@pendencia.Id" name="motivo" class="form-control form-control-sm" maxlength="1000" required placeholder="Motivo do descarte" />
+                        <button class="btn btn-sm btn-outline-danger">Descartar</button>
+                    </form>
+                }
+                @{
+                    var pendingHistory = Model.HistoricoPendencias.Where(item => item.PendenciaId == pendencia.Id).ToList();
+                }
+                @if (pendingHistory.Count > 0)
+                {
+                    <details class="mt-2">
+                        <summary class="small">Histórico</summary>
+                        <ul class="small mb-0 mt-2">
+                            @foreach (var item in pendingHistory)
+                            {
+                                <li>@item.Evento (@item.Status) · @item.UsuarioNome · @item.CreatedAt.ToString("dd/MM/yyyy HH:mm")</li>
+                            }
+                        </ul>
+                    </details>
+                }
+            </article>
+        }
+    </div>
+</section>
 <ul class="nav nav-tabs mb-3"><li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#dados" type="button">Dados</button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#anexos" type="button">Anexos</button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tram" type="button">Tramitação</button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#obs" type="button">Observações</button></li>@if(Model.PodeOperar){<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#acoes" type="button">Ações</button></li>}<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#iaAssist" type="button"><span class="badge bg-primary text-white me-1">IA</span> Assistência</button></li></ul>
 <div class="tab-content"><div class="tab-pane fade show active" id="dados"><div class="card border-0 shadow-sm"><div class="card-body row g-3"><div class="col-md-3"><small class="text-muted">Espécie</small><div>@Model.Especie</div></div><div class="col-md-3"><small class="text-muted">Tipo</small><div>@Model.TipoSolicitacao</div></div><div class="col-md-3"><small class="text-muted">Procedência</small><div>@Model.Procedencia</div></div><div class="col-md-3"><small class="text-muted">Origem</small><div>@Model.OrigemPedido</div></div><div class="col-md-4"><small class="text-muted">Solicitante</small><div>@Model.SolicitanteNome</div></div><div class="col-md-4"><small class="text-muted">Interessado</small><div>@Model.Interessado</div></div><div class="col-md-4"><small class="text-muted">Contato</small><div>@Model.Email @Model.Telefone</div></div><div class="col-md-12"><small class="text-muted">Descrição</small><div class="border rounded p-3 bg-light">@Model.Descricao</div></div><div class="col-md-12"><small class="text-muted">Informações complementares</small><div class="border rounded p-3 bg-light">@Model.InformacoesComplementares</div></div></div></div></div>
 <div class="tab-pane fade" id="anexos">@if(Model.PodeAnexar){<div class="card border-0 shadow-sm mb-3"><div class="card-body"><form asp-action="Anexar" method="post" enctype="multipart/form-data" class="row g-2">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><div class="col-md-3"><select name="tipoDocumentoId" asp-items="Model.TiposDocumento" class="form-select"><option value="">Tipo</option></select></div><div class="col-md-4"><input name="descricao" class="form-control" placeholder="Descrição" /></div><div class="col-md-4"><input type="file" name="arquivos" multiple class="form-control" /></div><div class="col-md-1"><button class="btn btn-primary w-100">+</button></div></form></div></div>}<div class="card border-0 shadow-sm"><table class="table mb-0"><thead><tr><th>Arquivo</th><th>Tipo</th><th>Setor</th><th>Data</th><th></th></tr></thead><tbody>@foreach(var d in Model.Documentos){<tr><td>@d.NomeArquivo<br /><small>@d.ContentType - @d.TamanhoBytes bytes</small></td><td>@d.TipoDocumento</td><td>@d.SetorNome</td><td>@d.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td><td class="text-end"><a asp-action="VisualizarDocumento" asp-route-id="@d.Id" class="btn btn-sm btn-outline-primary">Ver</a>@if(d.PodeExcluir){<form asp-action="ExcluirDocumento" method="post" class="d-inline">@Html.AntiForgeryToken()<input type="hidden" name="id" value="@d.Id" /><input type="hidden" name="motivo" value="Exclusão pelo setor responsável" /><button class="btn btn-sm btn-outline-danger">Excluir</button></form>}</td></tr>}@if(!Model.Documentos.Any()){<tr><td colspan="5" class="text-center text-muted">Nenhum anexo.</td></tr>}</tbody></table></div></div>
@@ -28,7 +239,7 @@
 
 <!-- ABA ASSISTÊNCIA DE IA -->
 <div class="tab-pane fade" id="iaAssist">
-    <div id="protocolAiContainer" data-protocol-id="@Model.Id" class="card border-0 shadow-sm">
+    <div id="protocolAiContainer" data-protocol-id="@Model.Id" data-can-manage-pending="@Model.PodeGerenciarPendencias.ToString().ToLowerInvariant()" class="card border-0 shadow-sm">
         <div class="card-body">
             <!-- Guia "Como Usar" -->
             <div class="alert alert-light border d-flex align-items-start gap-2 mb-3">
@@ -89,7 +300,7 @@
                 <div class="row g-3">
                     <!-- Resumo Consultivo -->
                     <div class="col-md-6">
-                        <div class="card h-100 border">
+                        <div class="card h-100 border" data-protocol-ai-result="SUMMARY">
                             <div class="card-header bg-light py-2 fw-semibold small">
                                 <i class="bi bi-card-text me-1"></i> Resumo Consultivo
                             </div>
@@ -101,7 +312,7 @@
 
                     <!-- Pendências Documentais -->
                     <div class="col-md-6">
-                        <div class="card h-100 border">
+                        <div class="card h-100 border" data-protocol-ai-result="PENDING">
                             <div class="card-header bg-light py-2 fw-semibold small">
                                 <i class="bi bi-list-check me-1"></i> Pendências Documentais
                             </div>
@@ -111,7 +322,7 @@
 
                     <!-- Sugestão de Assunto -->
                     <div class="col-md-6">
-                        <div class="card border">
+                        <div class="card border" data-protocol-ai-result="SUBJECT">
                             <div class="card-header bg-light py-2 fw-semibold small">
                                 <i class="bi bi-tag me-1"></i> Sugestão de Assunto
                             </div>
@@ -140,7 +351,7 @@
 
                     <!-- Minuta de Despacho -->
                     <div class="col-md-6">
-                        <div class="card border">
+                        <div class="card border" data-protocol-ai-result="DRAFT">
                             <div class="card-header bg-light py-2 fw-semibold small">
                                 <i class="bi bi-file-earmark-text me-1"></i> Minuta de Despacho
                             </div>
@@ -191,4 +402,3 @@
 @section Scripts {
     <script src="~/js/protocol-assist.js" asp-append-version="true"></script>
 }
-

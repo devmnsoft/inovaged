@@ -205,7 +205,7 @@ public interface IProtocoloCentralService
 {
     Task<ProtocoloCentralPage> SearchAsync(ProtocoloCentralQuery query, CancellationToken ct);
     Task<IReadOnlyList<ProtocoloSetorOption>> ListSectorsAsync(Guid tenantId, CancellationToken ct);
-    Task<ProtocoloCommandResult> ForwardAsync(ProtocoloActor actor, Guid protocoloId, Guid? documentoId, Guid destinoSetorId, string? despacho, string? observacao, string? idempotencyKey, DateTime? prazo, Guid? responsavelId, string? entregueA, CancellationToken ct);
+    Task<ProtocoloCommandResult> ForwardAsync(ProtocoloActor actor, Guid protocoloId, Guid? documentoId, Guid destinoSetorId, string? despacho, string? observacao, string? idempotencyKey, DateTime? prazo, Guid? responsavelId, string? entregueA, CancellationToken ct, Guid? minutaId = null);
     Task<ProtocoloCommandResult> ReceiveAsync(ProtocoloActor actor, Guid? movimentoId, Guid? protocoloId, CancellationToken ct);
     Task<ProtocoloCommandResult> ReturnAsync(ProtocoloActor actor, Guid protocoloId, string? observacao, string? idempotencyKey, CancellationToken ct);
     Task<ProtocoloCommandResult> ConfirmReturnAsync(ProtocoloActor actor, Guid? movimentoId, Guid? protocoloId, CancellationToken ct);

@@ -1,6 +1,7 @@
 using System.Data;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Protocols;
@@ -110,6 +111,75 @@ public sealed class ProtocoloController : GedControllerBase
                 vm.PodeOperar = vm.PodeOperar || vm.Custodia.PodeReceber || vm.Custodia.PodeDevolver || vm.Custodia.PodeEstornar || vm.Custodia.PodeConfirmarRetorno || vm.Custodia.PodeTramitar;
             }
         }
+        vm.Minutas = (await db.QueryAsync<ProtocoloMinutaVM>("""
+select m.id Id, m.setor_id SetorId, coalesce(s.nome, 'Setor') SetorNome,
+       m.titulo Titulo, m.conteudo Conteudo, m.status Status, m.versao Versao,
+       m.updated_at UpdatedAt, m.atualizado_por_nome AtualizadoPorNome
+from ged.protocolo_minuta m
+left join ged.protocolo_setor s on s.tenant_id=m.tenant_id and s.id=m.setor_id
+where m.tenant_id=@TenantId and m.protocolo_id=@Id and m.reg_status='A'
+order by m.updated_at desc;
+""", new { TenantId, Id = id })).ToList();
+        vm.HistoricoMinutas = (await db.QueryAsync<ProtocoloMinutaHistoricoVM>("""
+select minuta_id MinutaId, versao Versao, evento Evento, status Status,
+       usuario_nome UsuarioNome, created_at CreatedAt
+from ged.protocolo_minuta_historico
+where tenant_id=@TenantId and protocolo_id=@Id
+order by created_at desc
+limit 100;
+""", new { TenantId, Id = id })).ToList();
+        var currentSectorOperator = (await GetSetorOperacaoAsync(db, vm.SetorAtualId)).HasValue && !fechado;
+vm.PodeGerenciarMinutas = currentSectorOperator;
+vm.PodeGerenciarPendencias = currentSectorOperator;
+foreach (var minuta in vm.Minutas)
+{
+            var currentSector = currentSectorOperator && minuta.SetorId == vm.SetorAtualId;
+            minuta.PodeEditar = currentSector && minuta.Status == "RASCUNHO";
+            minuta.PodeConfirmar = currentSector && minuta.Status == "RASCUNHO";
+            minuta.PodeEncaminhar = currentSector && minuta.Status == "CONFIRMADA";
+            minuta.PodeDescartar = currentSector && minuta.Status is "RASCUNHO" or "CONFIRMADA";
+        }
+        vm.Pendencias = (await db.QueryAsync<ProtocoloPendenciaVM>("""
+select p.id Id, p.setor_id SetorId, p.descricao Descricao, p.evidencia Evidencia,
+       p.fonte_evidencia FonteEvidencia, p.origem Origem, p.status Status,
+       p.atribuida_para AtribuidaPara, u.name ResponsavelNome, p.resolucao Resolucao,
+       p.comprovante_documento_id ComprovanteDocumentoId, d.nome_arquivo ComprovanteNome,
+       p.created_at CreatedAt
+from ged.protocolo_pendencia p
+left join ged.app_user u on u.tenant_id=p.tenant_id and u.id=p.atribuida_para
+left join ged.protocolo_documento d on d.tenant_id=p.tenant_id and d.protocolo_id=p.protocolo_id
+    and d.id=p.comprovante_documento_id
+where p.tenant_id=@TenantId and p.protocolo_id=@Id and p.reg_status='A'
+order by p.created_at desc;
+""", new { TenantId, Id = id })).ToList();
+        vm.HistoricoPendencias = (await db.QueryAsync<ProtocoloPendenciaHistoricoVM>("""
+select pendencia_id PendenciaId, evento Evento, status Status,
+       usuario_nome UsuarioNome, created_at CreatedAt
+from ged.protocolo_pendencia_historico
+where tenant_id=@TenantId and protocolo_id=@Id
+order by created_at desc
+limit 100;
+""", new { TenantId, Id = id })).ToList();
+        if (currentSectorOperator && vm.SetorAtualId.HasValue)
+        {
+            vm.ResponsaveisPendencia = (await db.QueryAsync<SelectListItem>("""
+select u.id Value, coalesce(nullif(btrim(u.name), ''), u.email) Text
+from ged.protocolo_usuario_setor us
+join ged.app_user u on u.tenant_id=us.tenant_id and u.id=us.usuario_id
+where us.tenant_id=@TenantId and us.setor_id=@SetorId and us.ativo=true and us.reg_status='A'
+  and u.is_active=true and u.deleted_at_utc is null
+order by Text;
+""", new { TenantId, SetorId = vm.SetorAtualId })).ToList();
+        }
+        foreach (var pendencia in vm.Pendencias)
+        {
+            var currentSector = currentSectorOperator && pendencia.SetorId == vm.SetorAtualId;
+            var active = pendencia.Status is "ABERTA" or "ATRIBUIDA";
+            pendencia.PodeAtribuir = currentSector && active;
+            pendencia.PodeResolver = currentSector && active &&
+                (!pendencia.AtribuidaPara.HasValue || pendencia.AtribuidaPara == UserId || IsAdminOrGestor());
+            pendencia.PodeDescartar = currentSector && active;
+        }
         return View(vm);
     }
 
@@ -124,6 +194,436 @@ public sealed class ProtocoloController : GedControllerBase
         var result = await _central.ForwardAsync(Actor(), protocoloId, null, setorDestinoId, despacho, observacao, null, null, null, null, HttpContext.RequestAborted);
         TempData[result.Success ? "ok" : "erro"] = result.Message;
         return RedirectToAction(nameof(Details), new { id = protocoloId });
+    }
+
+    [Authorize(Policy = AppPolicies.ProtocolManage)]
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> SalvarMinuta(Guid protocoloId, Guid? minutaId, string? titulo, string? conteudo, int? versao)
+    {
+        var normalizedTitle = (titulo ?? "").Trim();
+        var normalizedContent = (conteudo ?? "").Trim();
+        if (normalizedTitle.Length is 0 or > 200 || normalizedContent.Length is 0 or > 12000)
+        {
+            TempData["erro"] = "Informe título (até 200 caracteres) e conteúdo (até 12.000 caracteres) para a minuta.";
+            return RedirectToAction(nameof(Details), new { id = protocoloId });
+        }
+        if (minutaId.HasValue && (!versao.HasValue || versao.Value < 1))
+        {
+            TempData["erro"] = "A versão da minuta está ausente. Recarregue o protocolo e tente novamente.";
+            return RedirectToAction(nameof(Details), new { id = protocoloId });
+        }
+
+        using var db = await OpenAsync();
+        var protocol = await GetBasicoAsync(db, protocoloId);
+        if (protocol is null) return NotFound();
+        var setorId = await GetSetorOperacaoAsync(db, protocol.SetorAtualId);
+        if (!setorId.HasValue || StatusEncerrado(protocol.Status))
+        {
+            TempData["erro"] = "Sem permissão para alterar minutas neste protocolo.";
+            return RedirectToAction(nameof(Details), new { id = protocoloId });
+        }
+
+        using var tx = db.BeginTransaction();
+        try
+        {
+            var lockedProtocol = await db.QuerySingleOrDefaultAsync<Basico>(
+                "select id Id,status Status,setor_atual_id SetorAtualId from ged.protocolo where tenant_id=@TenantId and id=@Id and reg_status='A' for update",
+                new { TenantId, Id = protocoloId }, tx);
+            if (lockedProtocol is null || lockedProtocol.SetorAtualId != setorId || StatusEncerrado(lockedProtocol.Status))
+            {
+                tx.Rollback();
+                TempData["erro"] = "A custódia do protocolo mudou. Recarregue a página antes de salvar a minuta.";
+                return RedirectToAction(nameof(Details), new { id = protocoloId });
+            }
+
+            if (!minutaId.HasValue)
+            {
+                var id = Guid.NewGuid();
+                await db.ExecuteAsync("""
+insert into ged.protocolo_minuta (
+    id, tenant_id, protocolo_id, setor_id, titulo, conteudo, status, versao,
+    criado_por, criado_por_nome, atualizado_por, atualizado_por_nome, created_at, updated_at, reg_status
+) values (
+    @Id, @TenantId, @ProtocoloId, @SetorId, @Titulo, @Conteudo, 'RASCUNHO', 1,
+    @UserId, @UserName, @UserId, @UserName, now(), now(), 'A'
+);
+""", new { Id = id, TenantId, ProtocoloId = protocoloId, SetorId = setorId, Titulo = normalizedTitle, Conteudo = normalizedContent, UserId, UserName = UserNameSafe }, tx);
+                await WriteMinutaHistoryAsync(db, tx, id, protocoloId, 1, "CRIADA", "RASCUNHO", normalizedTitle, normalizedContent, new { source = "manual" });
+            }
+            else
+            {
+                var draft = await db.QuerySingleOrDefaultAsync<ProtocolDraftEditRow>("""
+select id Id, setor_id SetorId, titulo Titulo, conteudo Conteudo, status Status, versao Versao
+from ged.protocolo_minuta
+where tenant_id=@TenantId and protocolo_id=@ProtocoloId and id=@MinutaId and reg_status='A'
+for update;
+""", new { TenantId, ProtocoloId = protocoloId, MinutaId = minutaId }, tx);
+                if (draft is null || draft.SetorId != setorId || draft.Status != "RASCUNHO")
+                {
+                    tx.Rollback();
+                    TempData["erro"] = "Esta minuta não pode mais ser editada no setor atual.";
+                    return RedirectToAction(nameof(Details), new { id = protocoloId });
+                }
+                if (draft.Versao != versao)
+                {
+                    tx.Rollback();
+                    TempData["erro"] = "A minuta foi alterada por outra pessoa. Recarregue a página antes de salvar.";
+                    return RedirectToAction(nameof(Details), new { id = protocoloId });
+                }
+
+                var nextVersion = draft.Versao + 1;
+                var updated = await db.ExecuteAsync("""
+update ged.protocolo_minuta
+set titulo=@Titulo, conteudo=@Conteudo, versao=@NextVersion,
+    atualizado_por=@UserId, atualizado_por_nome=@UserName, updated_at=now()
+where tenant_id=@TenantId and id=@MinutaId and status='RASCUNHO' and versao=@CurrentVersion;
+""", new { Titulo = normalizedTitle, Conteudo = normalizedContent, NextVersion = nextVersion, UserId, UserName = UserNameSafe, TenantId, MinutaId = minutaId, CurrentVersion = versao }, tx);
+                if (updated != 1)
+                {
+                    tx.Rollback();
+                    TempData["erro"] = "A minuta foi alterada por outra pessoa. Recarregue a página antes de salvar.";
+                    return RedirectToAction(nameof(Details), new { id = protocoloId });
+                }
+                await WriteMinutaHistoryAsync(db, tx, minutaId.Value, protocoloId, nextVersion, "EDITADA", "RASCUNHO", normalizedTitle, normalizedContent, new { previousVersion = draft.Versao });
+            }
+
+            tx.Commit();
+            TempData["ok"] = minutaId.HasValue ? "Minuta atualizada." : "Minuta criada como rascunho.";
+            return RedirectToAction(nameof(Details), new { id = protocoloId });
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    [Authorize(Policy = AppPolicies.ProtocolManage)]
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> ConfirmarMinuta(Guid protocoloId, Guid minutaId, int versao)
+    {
+        using var db = await OpenAsync();
+        var protocol = await GetBasicoAsync(db, protocoloId);
+        if (protocol is null) return NotFound();
+        var setorId = await GetSetorOperacaoAsync(db, protocol.SetorAtualId);
+        if (!setorId.HasValue || StatusEncerrado(protocol.Status))
+        {
+            TempData["erro"] = "Sem permissão para confirmar minutas neste protocolo.";
+            return RedirectToAction(nameof(Details), new { id = protocoloId });
+        }
+
+        using var tx = db.BeginTransaction();
+        try
+        {
+            var lockedProtocol = await db.QuerySingleOrDefaultAsync<Basico>(
+                "select id Id,status Status,setor_atual_id SetorAtualId from ged.protocolo where tenant_id=@TenantId and id=@Id and reg_status='A' for update",
+                new { TenantId, Id = protocoloId }, tx);
+            var draft = await db.QuerySingleOrDefaultAsync<ProtocolDraftEditRow>("""
+select id Id, setor_id SetorId, titulo Titulo, conteudo Conteudo, status Status, versao Versao
+from ged.protocolo_minuta
+where tenant_id=@TenantId and protocolo_id=@ProtocoloId and id=@MinutaId and reg_status='A'
+for update;
+""", new { TenantId, ProtocoloId = protocoloId, MinutaId = minutaId }, tx);
+            if (lockedProtocol is null || lockedProtocol.SetorAtualId != setorId || StatusEncerrado(lockedProtocol.Status) ||
+                draft is null || draft.SetorId != setorId || draft.Status != "RASCUNHO" || draft.Versao != versao)
+            {
+                tx.Rollback();
+                TempData["erro"] = "A minuta não está mais elegível para confirmação. Recarregue o protocolo.";
+                return RedirectToAction(nameof(Details), new { id = protocoloId });
+            }
+
+            var updated = await db.ExecuteAsync("""
+update ged.protocolo_minuta
+set status='CONFIRMADA', confirmada_por=@UserId, confirmada_em=now(),
+    atualizado_por=@UserId, atualizado_por_nome=@UserName, updated_at=now()
+where tenant_id=@TenantId and id=@MinutaId and status='RASCUNHO' and versao=@Versao;
+""", new { UserId, UserName = UserNameSafe, TenantId, MinutaId = minutaId, Versao = versao }, tx);
+            if (updated != 1)
+                throw new InvalidOperationException("A minuta não foi confirmada porque seu estado mudou.");
+            await WriteMinutaHistoryAsync(db, tx, minutaId, protocoloId, draft.Versao, "CONFIRMADA", "CONFIRMADA", draft.Titulo, draft.Conteudo, new { version = versao });
+            tx.Commit();
+            TempData["ok"] = "Minuta confirmada. Ela pode ser encaminhada pelo fluxo normal de tramitação.";
+            return RedirectToAction(nameof(Details), new { id = protocoloId });
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    [Authorize(Policy = AppPolicies.ProtocolManage)]
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> DescartarMinuta(Guid protocoloId, Guid minutaId, int versao)
+    {
+        using var db = await OpenAsync();
+        var protocol = await GetBasicoAsync(db, protocoloId);
+        if (protocol is null) return NotFound();
+        var setorId = await GetSetorOperacaoAsync(db, protocol.SetorAtualId);
+        if (!setorId.HasValue || StatusEncerrado(protocol.Status))
+        {
+            TempData["erro"] = "Sem permissão para descartar minutas neste protocolo.";
+            return RedirectToAction(nameof(Details), new { id = protocoloId });
+        }
+
+        using var tx = db.BeginTransaction();
+        try
+        {
+            var lockedProtocol = await db.QuerySingleOrDefaultAsync<Basico>(
+                "select id Id,status Status,setor_atual_id SetorAtualId from ged.protocolo where tenant_id=@TenantId and id=@Id and reg_status='A' for update",
+                new { TenantId, Id = protocoloId }, tx);
+            var draft = await db.QuerySingleOrDefaultAsync<ProtocolDraftEditRow>("""
+select id Id, setor_id SetorId, titulo Titulo, conteudo Conteudo, status Status, versao Versao
+from ged.protocolo_minuta
+where tenant_id=@TenantId and protocolo_id=@ProtocoloId and id=@MinutaId and reg_status='A'
+for update;
+""", new { TenantId, ProtocoloId = protocoloId, MinutaId = minutaId }, tx);
+            if (lockedProtocol is null || lockedProtocol.SetorAtualId != setorId || StatusEncerrado(lockedProtocol.Status) ||
+                draft is null || draft.SetorId != setorId || draft.Status is not ("RASCUNHO" or "CONFIRMADA") || draft.Versao != versao)
+            {
+                tx.Rollback();
+                TempData["erro"] = "A minuta não está mais elegível para descarte. Recarregue o protocolo.";
+                return RedirectToAction(nameof(Details), new { id = protocoloId });
+            }
+
+            var updated = await db.ExecuteAsync("""
+update ged.protocolo_minuta
+set status='DESCARTADA', descartada_por=@UserId, descartada_em=now(),
+    atualizado_por=@UserId, atualizado_por_nome=@UserName, updated_at=now()
+where tenant_id=@TenantId and id=@MinutaId and status in ('RASCUNHO','CONFIRMADA') and versao=@Versao;
+""", new { UserId, UserName = UserNameSafe, TenantId, MinutaId = minutaId, Versao = versao }, tx);
+            if (updated != 1)
+                throw new InvalidOperationException("A minuta não foi descartada porque seu estado mudou.");
+            await WriteMinutaHistoryAsync(db, tx, minutaId, protocoloId, draft.Versao, "DESCARTADA", "DESCARTADA", draft.Titulo, draft.Conteudo, new { previousStatus = draft.Status });
+            tx.Commit();
+            TempData["ok"] = "Minuta descartada; o histórico foi preservado.";
+            return RedirectToAction(nameof(Details), new { id = protocoloId });
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    [Authorize(Policy = AppPolicies.ProtocolManage)]
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> EncaminharMinuta(Guid protocoloId, Guid minutaId, Guid setorDestinoId)
+    {
+        var result = await _central.ForwardAsync(
+            Actor(), protocoloId, null, setorDestinoId, null, null,
+            $"protocolo-minuta:{minutaId:N}", null, null, null,
+            HttpContext.RequestAborted, minutaId);
+        TempData[result.Success ? "ok" : "erro"] = result.Message;
+        return RedirectToAction(nameof(Details), new { id = protocoloId });
+    }
+
+    [Authorize(Policy = AppPolicies.ProtocolManage)]
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> CriarPendencia(Guid protocoloId, string? descricao)
+    {
+        var item = (descricao ?? "").Trim();
+        if (item.Length is 0 or > 500)
+            return PendingActionError(protocoloId, "Informe a descrição da pendência (até 500 caracteres).");
+
+        using var db = await OpenAsync();
+        var protocol = await GetBasicoAsync(db, protocoloId);
+        if (protocol is null) return NotFound();
+        var setorId = await GetSetorOperacaoAsync(db, protocol.SetorAtualId);
+        if (!setorId.HasValue || StatusEncerrado(protocol.Status))
+            return PendingActionError(protocoloId, "Sem permissão para registrar pendências neste protocolo.");
+
+        using var tx = db.BeginTransaction();
+        try
+        {
+            var lockedProtocol = await LockCurrentProtocolForPendingAsync(db, tx, protocoloId, setorId.Value);
+            if (lockedProtocol is null)
+            {
+                tx.Rollback();
+                return PendingActionError(protocoloId, "A custódia do protocolo mudou. Recarregue a página e tente novamente.");
+            }
+            var pendingId = Guid.NewGuid();
+            await db.ExecuteAsync("""
+insert into ged.protocolo_pendencia (
+    id, tenant_id, protocolo_id, setor_id, descricao, origem, status,
+    confirmada_por, confirmada_em, created_at, updated_at, reg_status
+) values (
+    @Id, @TenantId, @ProtocolId, @SectorId, @Description, 'HUMANA', 'ABERTA',
+    @UserId, now(), now(), now(), 'A'
+);
+""", new { Id = pendingId, TenantId, ProtocolId = protocoloId, SectorId = setorId, Description = item, UserId }, tx);
+            await WritePendenciaHistoryAsync(db, tx, pendingId, protocoloId, "CRIADA", "ABERTA", item, null, null, null, new { origin = "human" });
+            tx.Commit();
+            TempData["ok"] = "Pendência documental registrada.";
+            return RedirectToAction(nameof(Details), new { id = protocoloId });
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    [Authorize(Policy = AppPolicies.ProtocolManage)]
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> AtribuirPendencia(Guid protocoloId, Guid pendenciaId, Guid responsavelId)
+    {
+        using var db = await OpenAsync();
+        var protocol = await GetBasicoAsync(db, protocoloId);
+        if (protocol is null) return NotFound();
+        var setorId = await GetSetorOperacaoAsync(db, protocol.SetorAtualId);
+        if (!setorId.HasValue || StatusEncerrado(protocol.Status) || responsavelId == Guid.Empty)
+            return PendingActionError(protocoloId, "Sem permissão ou responsável inválido para atribuir a pendência.");
+
+        using var tx = db.BeginTransaction();
+        try
+        {
+            var lockedProtocol = await LockCurrentProtocolForPendingAsync(db, tx, protocoloId, setorId.Value);
+            var pending = await LockPendingForUpdateAsync(db, tx, protocoloId, pendenciaId);
+            if (lockedProtocol is null || pending is null || pending.SetorId != setorId ||
+                pending.Status is not ("ABERTA" or "ATRIBUIDA"))
+            {
+                tx.Rollback();
+                return PendingActionError(protocoloId, "A pendência não está mais disponível para atribuição neste setor.");
+            }
+            var activeMember = await db.ExecuteScalarAsync<bool>("""
+select exists (
+    select 1 from ged.protocolo_usuario_setor us
+    join ged.app_user u on u.tenant_id=us.tenant_id and u.id=us.usuario_id
+    where us.tenant_id=@TenantId and us.usuario_id=@Assignee and us.setor_id=@SectorId
+      and us.ativo=true and us.reg_status='A' and u.is_active=true and u.deleted_at_utc is null
+);
+""", new { TenantId, Assignee = responsavelId, SectorId = setorId }, tx);
+            if (!activeMember)
+            {
+                tx.Rollback();
+                return PendingActionError(protocoloId, "O responsável precisa ser um usuário ativo do setor atual.");
+            }
+            var updated = await db.ExecuteAsync("""
+update ged.protocolo_pendencia
+set status='ATRIBUIDA', atribuida_para=@Assignee, atribuida_por=@UserId,
+    atribuida_em=now(), updated_at=now()
+where tenant_id=@TenantId and id=@PendingId and protocolo_id=@ProtocolId
+  and setor_id=@SectorId and status in ('ABERTA','ATRIBUIDA');
+""", new { Assignee = responsavelId, UserId, TenantId, PendingId = pendenciaId, ProtocolId = protocoloId, SectorId = setorId }, tx);
+            if (updated != 1)
+                throw new InvalidOperationException("A pendência mudou durante a atribuição.");
+            await WritePendenciaHistoryAsync(db, tx, pendenciaId, protocoloId, "ATRIBUIDA", "ATRIBUIDA", pending.Descricao, responsavelId, null, null, new { assigneeId = responsavelId });
+            tx.Commit();
+            TempData["ok"] = "Pendência atribuída ao responsável selecionado.";
+            return RedirectToAction(nameof(Details), new { id = protocoloId });
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    [Authorize(Policy = AppPolicies.ProtocolManage)]
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> ResolverPendencia(Guid protocoloId, Guid pendenciaId, string? resolucao, Guid comprovanteDocumentoId)
+    {
+        var resolution = (resolucao ?? "").Trim();
+        if (resolution.Length is 0 or > 2000 || comprovanteDocumentoId == Guid.Empty)
+            return PendingActionError(protocoloId, "Informe a justificativa e selecione um comprovante vinculado ao protocolo.");
+
+        using var db = await OpenAsync();
+        var protocol = await GetBasicoAsync(db, protocoloId);
+        if (protocol is null) return NotFound();
+        var setorId = await GetSetorOperacaoAsync(db, protocol.SetorAtualId);
+        if (!setorId.HasValue || StatusEncerrado(protocol.Status))
+            return PendingActionError(protocoloId, "Sem permissão para resolver pendências neste protocolo.");
+
+        using var tx = db.BeginTransaction();
+        try
+        {
+            var lockedProtocol = await LockCurrentProtocolForPendingAsync(db, tx, protocoloId, setorId.Value);
+            var pending = await LockPendingForUpdateAsync(db, tx, protocoloId, pendenciaId);
+            if (lockedProtocol is null || pending is null || pending.SetorId != setorId ||
+                pending.Status is not ("ABERTA" or "ATRIBUIDA") ||
+                (pending.AtribuidaPara.HasValue && pending.AtribuidaPara != UserId && !IsAdminOrGestor()))
+            {
+                tx.Rollback();
+                return PendingActionError(protocoloId, "A pendência não está mais elegível para resolução por este usuário.");
+            }
+            var proofExists = await db.ExecuteScalarAsync<bool>("""
+select exists (
+    select 1 from ged.protocolo_documento
+    where tenant_id=@TenantId and protocolo_id=@ProtocolId and id=@ProofId and reg_status='A'
+);
+""", new { TenantId, ProtocolId = protocoloId, ProofId = comprovanteDocumentoId }, tx);
+            if (!proofExists)
+            {
+                tx.Rollback();
+                return PendingActionError(protocoloId, "O comprovante precisa ser um documento ativo já vinculado a este protocolo.");
+            }
+            var updated = await db.ExecuteAsync("""
+update ged.protocolo_pendencia
+set status='RESOLVIDA', resolucao=@Resolution, comprovante_documento_id=@ProofId,
+    resolvida_por=@UserId, resolvida_em=now(), updated_at=now()
+where tenant_id=@TenantId and id=@PendingId and protocolo_id=@ProtocolId
+  and setor_id=@SectorId and status in ('ABERTA','ATRIBUIDA');
+""", new { Resolution = resolution, ProofId = comprovanteDocumentoId, UserId, TenantId, PendingId = pendenciaId, ProtocolId = protocoloId, SectorId = setorId }, tx);
+            if (updated != 1)
+                throw new InvalidOperationException("A pendência mudou durante a resolução.");
+            await WritePendenciaHistoryAsync(db, tx, pendenciaId, protocoloId, "RESOLVIDA", "RESOLVIDA", pending.Descricao, pending.AtribuidaPara, resolution, comprovanteDocumentoId, new { proofDocumentId = comprovanteDocumentoId });
+            tx.Commit();
+            TempData["ok"] = "Pendência resolvida com justificativa e comprovante vinculados.";
+            return RedirectToAction(nameof(Details), new { id = protocoloId });
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    [Authorize(Policy = AppPolicies.ProtocolManage)]
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> DescartarPendencia(Guid protocoloId, Guid pendenciaId, string? motivo)
+    {
+        var reason = (motivo ?? "").Trim();
+        if (reason.Length is 0 or > 1000)
+            return PendingActionError(protocoloId, "Informe o motivo do descarte (até 1.000 caracteres).");
+
+        using var db = await OpenAsync();
+        var protocol = await GetBasicoAsync(db, protocoloId);
+        if (protocol is null) return NotFound();
+        var setorId = await GetSetorOperacaoAsync(db, protocol.SetorAtualId);
+        if (!setorId.HasValue || StatusEncerrado(protocol.Status))
+            return PendingActionError(protocoloId, "Sem permissão para descartar pendências neste protocolo.");
+
+        using var tx = db.BeginTransaction();
+        try
+        {
+            var lockedProtocol = await LockCurrentProtocolForPendingAsync(db, tx, protocoloId, setorId.Value);
+            var pending = await LockPendingForUpdateAsync(db, tx, protocoloId, pendenciaId);
+            if (lockedProtocol is null || pending is null || pending.SetorId != setorId ||
+                pending.Status is not ("ABERTA" or "ATRIBUIDA"))
+            {
+                tx.Rollback();
+                return PendingActionError(protocoloId, "A pendência não está mais elegível para descarte.");
+            }
+            var updated = await db.ExecuteAsync("""
+update ged.protocolo_pendencia
+set status='DESCARTADA', motivo_descarte=@Reason, descartada_por=@UserId,
+    descartada_em=now(), updated_at=now()
+where tenant_id=@TenantId and id=@PendingId and protocolo_id=@ProtocolId
+  and setor_id=@SectorId and status in ('ABERTA','ATRIBUIDA');
+""", new { Reason = reason, UserId, TenantId, PendingId = pendenciaId, ProtocolId = protocoloId, SectorId = setorId }, tx);
+            if (updated != 1)
+                throw new InvalidOperationException("A pendência mudou durante o descarte.");
+            await WritePendenciaHistoryAsync(db, tx, pendenciaId, protocoloId, "DESCARTADA", "DESCARTADA", pending.Descricao, pending.AtribuidaPara, reason, null, new { reason });
+            tx.Commit();
+            TempData["ok"] = "Pendência descartada; o motivo e o histórico foram preservados.";
+            return RedirectToAction(nameof(Details), new { id = protocoloId });
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
     }
 
     [Authorize(Policy = AppPolicies.ProtocolManage)]
@@ -277,6 +777,85 @@ order by coalesce(ordem, 0), nome;";
     private async Task<Guid?> GetSetorOperacaoAsync(IDbConnection db, Guid? setorAtualId) { if (!setorAtualId.HasValue) return null; if (IsAdminOrGestor()) return setorAtualId; return (await GetSetoresUsuarioAsync(db)).Any(x => x.SetorId == setorAtualId) ? setorAtualId : null; }
     private Task<bool> PodeVisualizarAsync(IDbConnection db, Guid id) => _protocolAccess.CanViewProtocolAsync(TenantId, id, UserId, User, HttpContext.RequestAborted);
     private async Task<Basico?> GetBasicoAsync(IDbConnection db, Guid id) => await db.QuerySingleOrDefaultAsync<Basico>("select id Id,status Status,setor_atual_id SetorAtualId from ged.protocolo where tenant_id=@TenantId and id=@Id and reg_status='A'", new { TenantId, Id = id });
+    private async Task<Basico?> LockCurrentProtocolForPendingAsync(IDbConnection db, IDbTransaction tx, Guid protocoloId, Guid expectedSectorId)
+    {
+        var protocol = await db.QuerySingleOrDefaultAsync<Basico>(
+            "select id Id,status Status,setor_atual_id SetorAtualId from ged.protocolo where tenant_id=@TenantId and id=@Id and reg_status='A' for update",
+            new { TenantId, Id = protocoloId }, tx);
+        return protocol is not null && protocol.SetorAtualId == expectedSectorId && !StatusEncerrado(protocol.Status)
+            ? protocol
+            : null;
+    }
+    private Task<ProtocolPendingEditRow?> LockPendingForUpdateAsync(IDbConnection db, IDbTransaction tx, Guid protocoloId, Guid pendenciaId) =>
+        db.QuerySingleOrDefaultAsync<ProtocolPendingEditRow>("""
+select id Id, setor_id SetorId, descricao Descricao, status Status, atribuida_para AtribuidaPara
+from ged.protocolo_pendencia
+where tenant_id=@TenantId and protocolo_id=@ProtocolId and id=@PendingId and reg_status='A'
+for update;
+""", new { TenantId, ProtocolId = protocoloId, PendingId = pendenciaId }, tx);
+    private async Task WritePendenciaHistoryAsync(IDbConnection db, IDbTransaction tx, Guid pendenciaId, Guid protocoloId, string evento, string status, string descricao, Guid? atribuidaPara, string? resolucao, Guid? comprovanteDocumentoId, object details)
+    {
+        var rows = await db.ExecuteAsync("""
+insert into ged.protocolo_pendencia_historico (
+    id, tenant_id, protocolo_id, pendencia_id, evento, status, descricao,
+    atribuida_para, resolucao, comprovante_documento_id, usuario_id, usuario_nome,
+    detalhes, created_at
+) values (
+    @Id, @TenantId, @ProtocolId, @PendingId, @Evento, @Status, @Descricao,
+    @AssignedTo, @Resolution, @ProofId, @UserId, @UserName, @Details::jsonb, now()
+);
+""", new
+        {
+            Id = Guid.NewGuid(),
+            TenantId,
+            ProtocolId = protocoloId,
+            PendingId = pendenciaId,
+            Evento = evento,
+            Status = status,
+            Descricao = descricao,
+            AssignedTo = atribuidaPara,
+            Resolution = resolucao,
+            ProofId = comprovanteDocumentoId,
+            UserId,
+            UserName = UserNameSafe,
+            Details = JsonSerializer.Serialize(details)
+        }, tx);
+        if (rows != 1)
+            throw new InvalidOperationException("Falha ao registrar o histórico da pendência documental.");
+    }
+    private IActionResult PendingActionError(Guid protocoloId, string message)
+    {
+        TempData["erro"] = message;
+        return RedirectToAction(nameof(Details), new { id = protocoloId });
+    }
+    private async Task WriteMinutaHistoryAsync(IDbConnection db, IDbTransaction tx, Guid minutaId, Guid protocoloId, int versao, string evento, string status, string titulo, string conteudo, object details)
+    {
+        var rows = await db.ExecuteAsync("""
+insert into ged.protocolo_minuta_historico (
+    id, tenant_id, protocolo_id, minuta_id, versao, evento, status, titulo,
+    conteudo, usuario_id, usuario_nome, detalhes, created_at
+) values (
+    @Id, @TenantId, @ProtocoloId, @MinutaId, @Versao, @Evento, @Status, @Titulo,
+    @Conteudo, @UserId, @UserName, @Details::jsonb, now()
+);
+""", new
+        {
+            Id = Guid.NewGuid(),
+            TenantId,
+            ProtocoloId = protocoloId,
+            MinutaId = minutaId,
+            Versao = versao,
+            Evento = evento,
+            Status = status,
+            Titulo = titulo,
+            Conteudo = conteudo,
+            UserId,
+            UserName = UserNameSafe,
+            Details = JsonSerializer.Serialize(details)
+        }, tx);
+        if (rows != 1)
+            throw new InvalidOperationException("Falha ao registrar o histórico da minuta.");
+    }
     private async Task<string?> GetSetorNomeAsync(IDbConnection db, Guid id) => await db.ExecuteScalarAsync<string?>("select nome from ged.protocolo_setor where tenant_id=@TenantId and id=@Id", new { TenantId, Id = id });
     private async Task UpsertParticipanteAsync(IDbConnection db, IDbTransaction tx, Guid pid, Guid setor, bool ver, bool editar) => await db.ExecuteAsync("insert into ged.protocolo_setor_participante(tenant_id,protocolo_id,setor_id,pode_visualizar,pode_editar) values(@TenantId,@Pid,@Setor,@Ver,@Editar) on conflict(tenant_id,protocolo_id,setor_id) do update set pode_visualizar=excluded.pode_visualizar,pode_editar=excluded.pode_editar,participou_em=now()", new { TenantId, Pid = pid, Setor = setor, Ver = ver, Editar = editar }, tx);
     private async Task RegistrarTramitacaoAsync(IDbConnection db, IDbTransaction tx, Guid pid, Guid? origem, Guid? destino, string acao, string? ant, string? novo, string? despacho, string? obs, string? just) => await db.ExecuteAsync("insert into ged.protocolo_tramitacao(tenant_id,protocolo_id,setor_origem_id,setor_origem_nome,setor_destino_id,setor_destino_nome,usuario_id,usuario_nome,acao,status_anterior,status_novo,despacho,observacao,justificativa,ip,user_agent) values(@TenantId,@Pid,@Origem,@OrigemNome,@Destino,@DestinoNome,@UserId,@UserName,@Acao,@Ant,@Novo,@Despacho,@Obs,@Just,@Ip,@Ua)", new { TenantId, Pid = pid, Origem = origem, OrigemNome = origem.HasValue ? await GetSetorNomeAsync(db, origem.Value) : null, Destino = destino, DestinoNome = destino.HasValue ? await GetSetorNomeAsync(db, destino.Value) : null, UserId, UserName = UserNameSafe, Acao = acao, Ant = ant, Novo = novo, Despacho = despacho, Obs = obs, Just = just, Ip = HttpContext.Connection.RemoteIpAddress?.ToString(), Ua = Request.Headers.UserAgent.ToString() }, tx);
@@ -307,6 +886,8 @@ order by coalesce(ordem, 0), nome;";
     private static bool StatusEncerrado(string? s) => new[] { "FINALIZADO", "ARQUIVADO", "CANCELADO", "DEFERIDO", "INDEFERIDO" }.Contains((s ?? "").ToUpperInvariant());
     private sealed class NumeroGerado { public int Sequencial { get; set; } public string Numero { get; set; } = ""; }
     private sealed class Basico { public Guid Id { get; set; } public string Status { get; set; } = ""; public Guid? SetorAtualId { get; set; } }
+    private sealed class ProtocolDraftEditRow { public Guid Id { get; set; } public Guid SetorId { get; set; } public string Titulo { get; set; } = ""; public string Conteudo { get; set; } = ""; public string Status { get; set; } = ""; public int Versao { get; set; } }
+    private sealed class ProtocolPendingEditRow { public Guid Id { get; set; } public Guid SetorId { get; set; } public string Descricao { get; set; } = ""; public string Status { get; set; } = ""; public Guid? AtribuidaPara { get; set; } }
     private sealed class DocumentoBasico { public Guid Id { get; set; } public Guid ProtocoloId { get; set; } public Guid? SetorId { get; set; } public string Status { get; set; } = ""; public Guid? SetorAtualId { get; set; } }
     private sealed class DocumentoArquivo { public Guid Id { get; set; } public Guid ProtocoloId { get; set; } public string NomeArquivo { get; set; } = ""; public string? ContentType { get; set; } public byte[]? ArquivoBytes { get; set; } }
 
@@ -318,7 +899,46 @@ order by coalesce(ordem, 0), nome;";
             return Json(res);
         } catch (UnauthorizedAccessException) { return StatusCode(403, new { success = false, message = "Acesso não autorizado ao protocolo ou documentos vinculados." }); }
         catch (KeyNotFoundException ex) { return NotFound(new { success = false, message = ex.Message }); }
-        catch (Exception ex) { return StatusCode(500, new { success = false, message = "Erro ao processar assistência de IA.", error = ex.Message }); }
+        catch (ArgumentException ex) { return BadRequest(new { success = false, message = ex.Message }); }
+        catch (InvalidOperationException ex) { return Conflict(new { success = false, message = ex.Message }); }
+        catch (Exception) { return StatusCode(500, new { success = false, message = "Erro ao processar assistência de IA." }); }
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> AiConfirmPending(Guid protocoloId, Guid executionId, long concurrencyToken, int pendingIndex, CancellationToken ct)
+    {
+        try
+        {
+            var result = await _aiAssist.ConfirmPendingItemAsync(
+                new InovaGed.Application.Protocolo.ProtocolPendingConfirmRequest
+                {
+                    ProtocoloId = protocoloId,
+                    ExecutionId = executionId,
+                    ConcurrencyToken = concurrencyToken,
+                    PendingIndex = pendingIndex
+                }, ct);
+            return Json(result);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return StatusCode(403, new { success = false, message = "Acesso não autorizado." });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { success = false, message = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { success = false, message = ex.Message });
+        }
+        catch (Exception)
+        {
+            return StatusCode(500, new { success = false, message = "Erro ao confirmar a pendência documental." });
+        }
     }
 
     [HttpPost, ValidateAntiForgeryToken]
@@ -331,7 +951,7 @@ order by coalesce(ordem, 0), nome;";
         catch (KeyNotFoundException ex) { return NotFound(new { success = false, message = ex.Message }); }
         catch (InvalidOperationException ex) { return Conflict(new { success = false, message = ex.Message }); }
         catch (ArgumentException ex) { return BadRequest(new { success = false, message = ex.Message }); }
-        catch (Exception ex) { return StatusCode(500, new { success = false, message = "Erro ao aplicar assunto.", error = ex.Message }); }
+        catch (Exception) { return StatusCode(500, new { success = false, message = "Erro ao aplicar assunto." }); }
     }
 
     [HttpPost, ValidateAntiForgeryToken]
@@ -344,7 +964,7 @@ order by coalesce(ordem, 0), nome;";
         catch (KeyNotFoundException ex) { return NotFound(new { success = false, message = ex.Message }); }
         catch (InvalidOperationException ex) { return Conflict(new { success = false, message = ex.Message }); }
         catch (ArgumentException ex) { return BadRequest(new { success = false, message = ex.Message }); }
-        catch (Exception ex) { return StatusCode(500, new { success = false, message = "Erro ao aplicar minuta.", error = ex.Message }); }
+        catch (Exception) { return StatusCode(500, new { success = false, message = "Erro ao aplicar minuta." }); }
     }
 
     [HttpGet]

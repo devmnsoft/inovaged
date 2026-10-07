@@ -1,8 +1,12 @@
 /* Reusable Atlas page templates and controls. */
 .card, .ig-card { border: 1px solid var(--ig-border); border-radius: 14px; background: var(--ig-surface); box-shadow: none; }
 .form-control, .form-select, .btn { min-height: 42px; border-radius: var(--ig-radius-button); }
-.form-control, .form-select { border-color: var(--ig-border-strong); }
-.form-control:focus, .form-select:focus { border-color: var(--ig-primary-600); box-shadow: 0 0 0 3px var(--ig-primary-100); }
+.form-control, .form-select { color: var(--ig-text); border-color: var(--ig-border-strong); background-color: var(--ig-surface); }
+.form-control:focus, .form-select:focus { color: var(--ig-text); border-color: var(--ig-primary-600); background-color: var(--ig-surface); box-shadow: 0 0 0 3px var(--ig-primary-100); }
+.form-control::placeholder { color: var(--ig-text-muted); opacity: 1; }
+.form-control:disabled, .form-select:disabled { color: var(--ig-text-secondary); border-color: var(--ig-border-strong); background-color: var(--ig-surface-muted); opacity: 1; }
+.form-control[readonly] { color: var(--ig-text); background-color: var(--ig-surface); }
+.form-control:-webkit-autofill, .form-control:-webkit-autofill:focus, .form-select:-webkit-autofill, .form-select:-webkit-autofill:focus, .form-control:autofill, .form-control:autofill:focus, .form-select:autofill, .form-select:autofill:focus { -webkit-text-fill-color: var(--ig-text); caret-color: var(--ig-text); box-shadow: inset 0 0 0 1000px var(--ig-surface); }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--ig-space-2); font-weight: 600; }
 .btn-primary { border-color: var(--ig-primary-600); background: var(--ig-primary-600); }
 .table-responsive { border: 1px solid var(--ig-border); border-radius: var(--ig-radius-md); background: var(--ig-surface); }

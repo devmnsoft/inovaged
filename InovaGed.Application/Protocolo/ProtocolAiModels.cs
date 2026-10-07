@@ -42,13 +42,31 @@ public sealed class ProtocolAiPendingItemDto
     public string Item { get; set; } = string.Empty;
     public string Status { get; set; } = "CONFERENCIA_HUMANA"; // CONFIRMADO ou CONFERENCIA_HUMANA
     public string? Evidence { get; set; }
+    public string? EvidenceSource { get; set; }
     public bool RequiresHumanCheck { get; set; } = true;
+}
+
+public sealed class ProtocolPendingConfirmRequest
+{
+    public Guid ProtocoloId { get; set; }
+    public Guid ExecutionId { get; set; }
+    public long ConcurrencyToken { get; set; }
+    public int PendingIndex { get; set; }
+}
+
+public sealed class ProtocolPendingConfirmResultDto
+{
+    public bool Success { get; set; }
+    public bool AlreadyApplied { get; set; }
+    public Guid? PendingId { get; set; }
+    public string Message { get; set; } = string.Empty;
 }
 
 public sealed class ProtocolAiAssistResultDto
 {
     public bool Success { get; set; }
     public Guid ExecutionId { get; set; }
+    public string RequestedTaskKind { get; set; } = "ALL";
     public string State { get; set; } = "Completed";
     public string CorrelationId { get; set; } = string.Empty;
     public bool ReviewRequired { get; set; } = true;
@@ -96,6 +114,7 @@ public sealed class ProtocolAiApplyResultDto
     public bool AlreadyApplied { get; set; }
     public long ConcurrencyToken { get; set; }
     public Guid? RevisionId { get; set; }
+    public Guid? DraftId { get; set; }
     public string Message { get; set; } = string.Empty;
     public string? AppliedContent { get; set; }
 }

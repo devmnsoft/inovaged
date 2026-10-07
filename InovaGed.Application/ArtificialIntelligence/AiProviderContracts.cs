@@ -20,7 +20,8 @@ public sealed record AiRequest(
     JsonDocument? OutputSchema = null,
     string? IdempotencyKey = null,
     IReadOnlyList<AiExecutionSource>? Sources = null,
-    Func<CancellationToken, Task>? OnRequestSent = null)
+    Func<CancellationToken, Task>? OnRequestSent = null,
+    JsonDocument? ExecutionMetadata = null)
 {
     /// <summary>Sources registered server-side. Never trusted from the client.</summary>
     public IReadOnlyList<AiExecutionSource> SourceDocuments => Sources ?? [];

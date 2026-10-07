@@ -1,10 +1,11 @@
-using Dapper;
+﻿using Dapper;
 using InovaGed.Application.Audit;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Documents;
 using InovaGed.Application.Ged.Documents;
 using InovaGed.Application.Retention;
 using InovaGed.Application.Security;
+using Npgsql;
 
 namespace InovaGed.Infrastructure.Ged.Documents;
 
@@ -15,6 +16,8 @@ public sealed class DocumentBulkClassificationService(
     IAuditWriter audit,
     IAbacAuthorizationService authorization) : IDocumentBulkClassificationService
 {
+    private const string PendingReason = "BULK_CLASSIFICATION_RECALC";
+
     public async Task<DocumentBulkClassificationResult> ApplyAsync(Guid tenantId, Guid userId,
         IReadOnlyCollection<Guid> documentIds, Guid classificationId, CancellationToken ct)
     {
@@ -38,67 +41,126 @@ select exists(
 """, new { tenantId, classificationId }, cancellationToken: ct));
         if (!classificationExists) throw new ArgumentException("Classificação ativa não encontrada.");
 
-        var validIds = documentIds.Where(x => x != Guid.Empty).Distinct().ToArray();
-        var accessibleDbSet = validIds.Length > 0
-            ? (await connection.QueryAsync<Guid>(new CommandDefinition("""
-select id from ged.document where tenant_id=@tenantId and id=any(@validIds) and coalesce(reg_status,'A')='A';
-""", new { tenantId, validIds }, cancellationToken: ct))).ToHashSet()
-            : new HashSet<Guid>();
-
-        var authorizedSet = accessibleDbSet.Count > 0
-            ? await authorization.FilterDocumentsAsync(tenantId, userId, accessibleDbSet, "EDIT", ct)
-            : new HashSet<Guid>();
-
         var items = new List<DocumentBulkClassificationItem>(documentIds.Count);
+        var seen = new HashSet<Guid>();
+        var cancelled = false;
         foreach (var id in documentIds)
         {
-            ct.ThrowIfCancellationRequested();
-
-            if (id == Guid.Empty)
+            if (cancelled || ct.IsCancellationRequested)
             {
-                items.Add(new(id, false, "ID inválido.", "INVALID_ID"));
+                cancelled = true;
+                items.Add(Failed(id, "Operação cancelada antes do processamento.", "CANCELLED"));
                 continue;
             }
 
-            if (!authorizedSet.Contains(id))
-            {
-                items.Add(new(id, false, "Documento não encontrado ou inacessível.", "NOT_FOUND"));
-                continue;
-            }
+            if (id == Guid.Empty) { items.Add(Denied(id, "ID inválido.", "INVALID_ID")); continue; }
+            if (!seen.Add(id)) { items.Add(Denied(id, "Documento duplicado no lote; processado apenas uma vez.", "DUPLICATE_ID")); continue; }
 
             try
             {
-                await commands.ApplyClassificationAsync(tenantId, userId, id, classificationId, ct);
-                try
-                {
-                    await retention.RunOneAsync(tenantId, id, 30, ct);
-                    items.Add(new(id, true, "Classificação aplicada.", "APPLIED"));
-                }
-                catch (OperationCanceledException) { throw; }
-                catch (Exception ex)
-                {
-                    var errorMsg = ex.Message;
-                    if (errorMsg.Length > 200) errorMsg = errorMsg[..200];
-                    await connection.ExecuteAsync(new CommandDefinition("""
-insert into ged.ai_retention_recalc_pending (id, tenant_id, document_id, reason, last_error, next_attempt_at, attempts)
-values (gen_random_uuid(), @tenantId, @id, 'BULK_CLASSIFICATION_RECALC', @errorMsg, now(), 0)
-on conflict do nothing;
-""", new { tenantId, id, errorMsg }, cancellationToken: ct));
-
-                    items.Add(new(id, true, "Classificação aplicada com pendência de temporalidade.", "RETENTION_PENDING"));
-                }
+                items.Add(await ApplyOneAsync(connection, tenantId, userId, id, classificationId, ct));
+                if (items[^1].Code == "RETENTION_CANCELLED") cancelled = true;
             }
-            catch (OperationCanceledException) { throw; }
-            catch
+            catch (OperationCanceledException)
             {
-                items.Add(new(id, false, "Não foi possível classificar o documento.", "FAILED"));
+                cancelled = true;
+                items.Add(Failed(id, "Operação cancelada antes da confirmação.", "CANCELLED"));
+            }
+            catch (Exception ex)
+            {
+                var code = ex is PostgresException pg && !string.IsNullOrWhiteSpace(pg.SqlState)
+                    ? "SQL_" + pg.SqlState
+                    : "FAILED";
+                items.Add(Failed(id, "Não foi possível classificar o documento.", code));
             }
         }
 
-        var succeeded = items.Count(x => x.Success);
-        await audit.WriteAsync(tenantId, userId, "DOCUMENT_BULK_CLASSIFIED", "DOCUMENT", null,
-            "Classificação em massa concluída", null, null,
-            new { requested = documentIds.Count, succeeded, failed = documentIds.Count - succeeded, classificationId }, ct);
-        return new(documentIds.Count, succeeded, documentIds.Count - succeeded, items);
+        var result = new DocumentBulkClassificationResult(documentIds.Count, items.Count(x => x.Success),
+            items.Count(x => x.Status == "FAILED"), items);
+        var auditStatus = "RECORDED";
+        try
+        {
+            // Committed work must be audited even when the request was cancelled.
+            var auditResult = await audit.WriteAsync(tenantId, userId, "DOCUMENT_BULK_CLASSIFIED", "DOCUMENT", null,
+                "Classificação em massa concluída", null, null,
+                new { requested = result.Requested, applied = result.Applied, pending = result.Pending, denied = result.Denied, failed = result.Failed, classificationId },
+                CancellationToken.None);
+            if (auditResult.IsFailure) auditStatus = "AUDIT_FAILED";
+        }
+        catch { auditStatus = "AUDIT_FAILED"; }
+        return result with { AuditStatus = auditStatus };
     }
+
+    private async Task<DocumentBulkClassificationItem> ApplyOneAsync(System.Data.Common.DbConnection connection,
+        Guid tenantId, Guid userId, Guid id, Guid classificationId, CancellationToken ct)
+    {
+        // Authorization is evaluated per item, immediately before commit work, so revocations are honored.
+        var allowed = await authorization.FilterDocumentsAsync(tenantId, userId, new[] { id }, "EDIT", ct);
+        if (!allowed.Contains(id)) return Denied(id, "Documento não encontrado ou inacessível.", "NOT_FOUND");
+
+        await using (var tx = await connection.BeginTransactionAsync(ct))
+        {
+            var locked = await connection.ExecuteScalarAsync<Guid?>(new CommandDefinition("""
+select id from ged.document where tenant_id=@tenantId and id=@id and coalesce(reg_status,'A')='A' for update;
+""", new { tenantId, id }, tx, cancellationToken: ct));
+            if (locked is null) return Denied(id, "Documento não encontrado ou inacessível.", "NOT_FOUND");
+
+            var rows = await connection.ExecuteAsync(new CommandDefinition("""
+update ged.document d
+set classification_id=@classificationId, classification_version_id=v.id, updated_at=now(), updated_by=@userId
+from ged.classification_plan_version v
+where d.tenant_id=@tenantId and d.id=@id
+  and v.tenant_id=@tenantId
+  and v.id=(select id from ged.classification_plan_version where tenant_id=@tenantId order by version_no desc limit 1)
+  and exists (select 1 from ged.classification_plan_version_item i
+              where i.tenant_id=@tenantId and i.version_id=v.id and i.classification_id=@classificationId and coalesce(i.is_active,true));
+""", new { tenantId, userId, id, classificationId }, tx, cancellationToken: ct));
+            if (rows != 1) return Denied(id, "A classe não pertence mais ao plano vigente.", "PLAN_CHANGED");
+
+            // Same transaction: the classification cannot commit without durable recalculation work.
+            await connection.ExecuteAsync(new CommandDefinition("""
+insert into ged.ai_retention_recalc_pending (id, tenant_id, document_id, application_id, reason, attempts, next_attempt_at)
+select gen_random_uuid(), @tenantId, @id, null, @PendingReason, 0, now()
+where not exists (select 1 from ged.ai_retention_recalc_pending
+                  where tenant_id=@tenantId and document_id=@id and application_id is null and resolved_at is null);
+""", new { tenantId, id, PendingReason }, tx, cancellationToken: ct));
+            await tx.CommitAsync(ct);
+        }
+
+        try
+        {
+            var calculated = await retention.RunOneAsync(tenantId, id, 30, ct);
+            if (calculated != 1) throw new InvalidOperationException("retention_document_missing");
+        }
+        catch (Exception ex)
+        {
+            var cancelledRecalc = ex is OperationCanceledException;
+            var error = cancelledRecalc ? "temporalidade:cancelada" : ex is PostgresException pg ? "temporalidade:" + pg.SqlState : "temporalidade:falha";
+            try
+            {
+                using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                await connection.ExecuteAsync(new CommandDefinition("""
+update ged.ai_retention_recalc_pending set last_error=@error
+where tenant_id=@tenantId and document_id=@id and application_id is null and resolved_at is null;
+""", new { tenantId, id, error }, cancellationToken: cleanup.Token));
+            }
+            catch { /* the durable row already exists; the worker will retry */ }
+            return new(id, true, "Classificação aplicada; temporalidade pendente de recuperação.", "PENDING",
+                cancelledRecalc ? "RETENTION_CANCELLED" : "RETENTION_PENDING");
+        }
+
+        try
+        {
+            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await connection.ExecuteAsync(new CommandDefinition("""
+update ged.ai_retention_recalc_pending set resolved_at=now(), last_error=null, claimed_at=null, claim_token=null
+where tenant_id=@tenantId and document_id=@id and application_id is null and resolved_at is null;
+""", new { tenantId, id }, cancellationToken: cleanup.Token));
+        }
+        catch { /* a leftover pending row is idempotent and recovered by the worker */ }
+        return new(id, true, "Classificação aplicada.", "APPLIED", "APPLIED");
+    }
+
+    private static DocumentBulkClassificationItem Denied(Guid id, string message, string code) => new(id, false, message, "DENIED", code);
+    private static DocumentBulkClassificationItem Failed(Guid id, string message, string code) => new(id, false, message, "FAILED", code);
 }

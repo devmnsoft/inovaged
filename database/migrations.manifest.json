@@ -1207,6 +1207,30 @@
       "transactional": true,
       "deploymentSafety": "Additive",
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_10_11_protocol_ai_execution_context",
+      "path": "database/migrations/2026_10_11_protocol_ai_execution_context.sql",
+      "module": "ProtocolAi",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_10_12_protocol_canonical_drafts",
+      "path": "database/migrations/2026_10_12_protocol_canonical_drafts.sql",
+      "module": "Protocol",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_10_13_protocol_operational_pending",
+      "path": "database/migrations/2026_10_13_protocol_operational_pending.sql",
+      "module": "Protocol",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
     }
   ]
 }
