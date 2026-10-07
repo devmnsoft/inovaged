@@ -43,7 +43,7 @@ public sealed class UploadChunkService : IUploadChunkService
     {
         if (!request.FolderId.HasValue || request.FolderId.Value == Guid.Empty) return Result<UploadChunkSessionDto>.Fail("VALIDATION", "Selecione uma pasta para enviar documentos.");
         if (request.TotalSizeBytes <= 0) return Result<UploadChunkSessionDto>.Fail("VALIDATION", "Tamanho de arquivo inválido.");
-        if (TryGetMaxFileSizeBytes(out var maxFileSizeBytes) && request.TotalSizeBytes > maxFileSizeBytes) return Result<UploadChunkSessionDto>.Fail("LIMIT", $"O arquivo excede o limite configurado de {FormatBytes(maxFileSizeBytes)}.");
+        if (DocumentUploadSizePolicy.Exceeds(_options, request.TotalSizeBytes, out var maxFileSize)) return Result<UploadChunkSessionDto>.Fail("LIMIT", $"O arquivo excede o limite configurado de {maxFileSize.DisplayText}.");
         var safeName = Path.GetFileName(string.IsNullOrWhiteSpace(request.UploadName) ? request.OriginalFileName : request.UploadName);
         var ext = Path.GetExtension(safeName ?? string.Empty);
         if (_allowedExtensions.Count > 0 && !_allowedExtensions.Contains(ext)) return Result<UploadChunkSessionDto>.Fail("EXTENSION", $"Extensão não permitida: {ext}");
@@ -115,13 +115,15 @@ UPDATE ged.upload_batch SET status='PROCESSING', started_at=COALESCE(started_at,
         var session = await LoadSessionAsync(tenantId, userId, request.UploadId, ct);
         if (session is null) return Result<UploadChunkStatusDto>.Fail("NOT_FOUND", "Sessão de upload não encontrada.");
         if (session.Status is "COMPLETED" or "CANCELLED" or "ERROR" or "COMPLETING") return Result<UploadChunkStatusDto>.Fail("STATE", "Sessão de upload não aceita novas partes neste estado.");
+        if (DocumentUploadSizePolicy.Exceeds(_options, session.TotalSizeBytes, out var sizeLimit)) return Result<UploadChunkStatusDto>.Fail("LIMIT", $"O arquivo excede o limite configurado de {sizeLimit.DisplayText}.");
         if (request.ChunkIndex < 0 || request.ChunkIndex >= session.TotalChunks) return Result<UploadChunkStatusDto>.Fail("VALIDATION", "Parte inválida.");
         var expectedSize = ExpectedChunkSize(session, request.ChunkIndex);
         if (request.SizeBytes != expectedSize) return Result<UploadChunkStatusDto>.Fail("VALIDATION", "Tamanho da parte incompatível com a sessão.");
         Directory.CreateDirectory(session.TempPath);
         var chunkPath = Path.Combine(session.TempPath, $"chunk-{request.ChunkIndex:D8}.part");
+        var attemptPath = Path.Combine(session.TempPath, $"chunk-{request.ChunkIndex:D8}.{Guid.NewGuid():N}.attempt");
         string checksum;
-        await using (var fs = new FileStream(chunkPath, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 128, FileOptions.Asynchronous | FileOptions.SequentialScan))
+        await using (var fs = new FileStream(attemptPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 128, FileOptions.Asynchronous | FileOptions.SequentialScan))
         {
             using var sha = SHA256.Create();
             await using (var crypto = new CryptoStream(fs, sha, CryptoStreamMode.Write))
@@ -130,14 +132,14 @@ UPDATE ged.upload_batch SET status='PROCESSING', started_at=COALESCE(started_at,
             }
             checksum = Convert.ToHexString(sha.Hash ?? Array.Empty<byte>()).ToLowerInvariant();
         }
-        if (new FileInfo(chunkPath).Length != expectedSize)
+        if (new FileInfo(attemptPath).Length != expectedSize)
         {
-            TryDeleteFile(chunkPath);
+            TryDeleteFile(attemptPath);
             return Result<UploadChunkStatusDto>.Fail("VALIDATION", "Conteúdo da parte não corresponde ao tamanho esperado.");
         }
         if (!string.IsNullOrWhiteSpace(request.ChecksumSha256) && !checksum.Equals(request.ChecksumSha256.Trim(), StringComparison.OrdinalIgnoreCase))
         {
-            TryDeleteFile(chunkPath);
+            TryDeleteFile(attemptPath);
             return Result<UploadChunkStatusDto>.Fail("CHECKSUM", "Checksum da parte não confere.");
         }
 
@@ -150,7 +152,33 @@ SET received_chunks=(SELECT count(*) FROM ged.upload_session_chunk c WHERE c.ses
 WHERE s.tenant_id=@tenantId AND s.id=@uploadId;
 """;
         await using var conn = await _db.OpenAsync(ct);
-        await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, request.UploadId, request.ChunkIndex, request.SizeBytes, checksum, chunkPath }, cancellationToken: ct));
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        var locked = await conn.ExecuteScalarAsync<Guid?>(new CommandDefinition("SELECT id FROM ged.upload_session WHERE tenant_id=@tenantId AND user_id=@userId AND id=@uploadId AND status IN ('OPEN','RECEIVING') FOR UPDATE;", new { tenantId, userId, request.UploadId }, tx, cancellationToken: ct));
+        if (locked is null)
+        {
+            await tx.RollbackAsync(ct);
+            TryDeleteFile(attemptPath);
+            return Result<UploadChunkStatusDto>.Fail("STATE", "Sessão de upload não aceita novas partes neste estado.");
+        }
+        var previousPath = await conn.ExecuteScalarAsync<string?>(new CommandDefinition("SELECT temp_path FROM ged.upload_session_chunk WHERE session_id=@uploadId AND chunk_index=@chunkIndex FOR UPDATE;", new { request.UploadId, request.ChunkIndex }, tx, cancellationToken: ct));
+        var backupPath = File.Exists(chunkPath) ? Path.Combine(session.TempPath, $"chunk-{request.ChunkIndex:D8}.{Guid.NewGuid():N}.accepted.bak") : null;
+        try
+        {
+            if (backupPath is not null) File.Move(chunkPath, backupPath, overwrite: false);
+            File.Move(attemptPath, chunkPath, overwrite: false);
+            await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, request.UploadId, request.ChunkIndex, request.SizeBytes, checksum, chunkPath }, tx, cancellationToken: ct));
+            await tx.CommitAsync(ct);
+        }
+        catch
+        {
+            try { await tx.RollbackAsync(CancellationToken.None); } catch { }
+            TryDeleteFile(chunkPath);
+            if (backupPath is not null && File.Exists(backupPath)) File.Move(backupPath, chunkPath, overwrite: false);
+            TryDeleteFile(attemptPath);
+            throw;
+        }
+        if (backupPath is not null) TryDeleteFile(backupPath);
+        if (!string.IsNullOrWhiteSpace(previousPath) && !string.Equals(previousPath, chunkPath, StringComparison.OrdinalIgnoreCase)) TryDeleteFile(previousPath);
         _logger.LogInformation("Chunk received Tenant={TenantId} User={UserId} Upload={UploadId} Chunk={ChunkIndex} Size={SizeBytes} Checksum={Checksum} CorrelationId={CorrelationId}", tenantId, userId, request.UploadId, request.ChunkIndex, request.SizeBytes, checksum, request.CorrelationId);
         return await GetStatusAsync(tenantId, userId, request.UploadId, ct);
     }
@@ -161,9 +189,10 @@ WHERE s.tenant_id=@tenantId AND s.id=@uploadId;
         if (session is null) return Result<UploadBatchFileResultDto>.Fail("NOT_FOUND", "Sessão de upload não encontrada.");
         if (session.Status == "COMPLETED" && session.DocumentId.HasValue)
         {
-            var completedVersion = session.VersionId.HasValue ? await GetCurrentVersionAsync(tenantId, session.DocumentId.Value, ct) : null;
+            var completedVersion = session.VersionId.HasValue ? await GetVersionAsync(tenantId, session.DocumentId.Value, session.VersionId.Value, ct) : await GetCurrentVersionAsync(tenantId, session.DocumentId.Value, ct);
             return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = session.BatchItemId ?? uploadId, DocumentId = session.DocumentId, VersionId = session.VersionId, RequestedFolderId = session.RequestedFolderId, ResolvedFolderId = session.FolderId, FolderName = session.Metadata.FolderName, FileName = completedVersion?.FileName ?? session.OriginalFileName, UploadedAtUtc = completedVersion?.UploadedAtUtc, UploadedAtLocalFormatted = completedVersion?.UploadedAtUtc?.ToUniversalTime().ToString("dd/MM/yyyy HH:mm"), Status = "COMPLETED", Message = "Upload em partes já concluído.", CorrelationId = session.CorrelationId });
         }
+        if (DocumentUploadSizePolicy.Exceeds(_options, session.TotalSizeBytes, out var completionLimit)) return Result<UploadBatchFileResultDto>.Fail("LIMIT", $"O arquivo excede o limite configurado de {completionLimit.DisplayText}.");
         var status = await BuildStatusAsync(session, ct);
         if (status.MissingChunks.Count > 0) return Result<UploadBatchFileResultDto>.Fail("MISSING_CHUNKS", "Ainda existem partes pendentes para concluir o upload.");
         var sw = Stopwatch.StartNew();
@@ -174,8 +203,13 @@ WHERE s.tenant_id=@tenantId AND s.id=@uploadId;
             session = await LoadSessionAsync(tenantId, userId, uploadId, ct);
             if (session?.Status == "COMPLETED" && session.DocumentId.HasValue)
             {
-                var completedVersion = session.VersionId.HasValue ? await GetCurrentVersionAsync(tenantId, session.DocumentId.Value, ct) : null;
+                var completedVersion = session.VersionId.HasValue ? await GetVersionAsync(tenantId, session.DocumentId.Value, session.VersionId.Value, ct) : await GetCurrentVersionAsync(tenantId, session.DocumentId.Value, ct);
                 return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = session.BatchItemId ?? uploadId, DocumentId = session.DocumentId, VersionId = session.VersionId, RequestedFolderId = session.RequestedFolderId, ResolvedFolderId = session.FolderId, FolderName = session.Metadata.FolderName, FileName = completedVersion?.FileName ?? session.OriginalFileName, UploadedAtUtc = completedVersion?.UploadedAtUtc, UploadedAtLocalFormatted = completedVersion?.UploadedAtUtc?.ToUniversalTime().ToString("dd/MM/yyyy HH:mm"), Status = "COMPLETED", Message = "Upload em partes já concluído.", CorrelationId = session.CorrelationId });
+            }
+            if (session?.Status == "COMPLETING")
+            {
+                var recovered = await TryRecoverCompletingAsync(tenantId, userId, session, ct);
+                if (recovered is not null) return recovered;
             }
             return Result<UploadBatchFileResultDto>.Fail("CONCURRENCY", "Conclusão do upload já está em andamento.");
         }
@@ -186,7 +220,12 @@ WHERE s.tenant_id=@tenantId AND s.id=@uploadId;
             for (var i = 0; i < session.TotalChunks; i++)
             {
                 var part = Path.Combine(session.TempPath, $"chunk-{i:D8}.part");
-                await using var input = new FileStream(part, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+                var accepted = await GetAcceptedChunkAsync(tenantId, session.UploadId, i, ct);
+                if (accepted is null || !File.Exists(accepted.TempPath)) throw new FileNotFoundException("Parte aceita ausente na montagem final.", part);
+                if (new FileInfo(accepted.TempPath).Length != accepted.SizeBytes || accepted.SizeBytes != ExpectedChunkSize(session, i)) throw new InvalidDataException("Parte aceita com tamanho incompatível na montagem final.");
+                var actualChecksum = await ComputeSha256Async(accepted.TempPath, ct);
+                if (!actualChecksum.Equals(accepted.ChecksumSha256, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Parte aceita com checksum incompatível na montagem final.");
+                await using var input = new FileStream(accepted.TempPath, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
                 await input.CopyToAsync(output, ct);
             }
         }
@@ -207,9 +246,9 @@ WHERE s.tenant_id=@tenantId AND s.id=@uploadId;
         var version = await GetCurrentVersionAsync(tenantId, upload.Value!.DocumentId, ct);
         var ocrQueued = false;
         var previewQueued = false;
-        if (md.RunOcr && version?.VersionId is Guid ocrVersionId) { await _ocrJobs.EnqueueAsync(tenantId, ocrVersionId, userId, false, ct); ocrQueued = true; _logger.LogInformation("OCR queued Tenant={TenantId} User={UserId} Upload={UploadId} VersionId={VersionId} CorrelationId={CorrelationId}", tenantId, userId, uploadId, ocrVersionId, session.CorrelationId); }
-        if (md.GeneratePreview && version is not null) { await _previewStatus.UpsertAsync(tenantId, version.VersionId, PreviewProcessingStatus.Pending, null, null, DateTimeOffset.UtcNow, null, ct); await _previewQueue.EnqueueAsync(tenantId, upload.Value.DocumentId, version.VersionId, version.StoragePath, version.FileName, ct); previewQueued = true; _logger.LogInformation("Preview queued Tenant={TenantId} User={UserId} Upload={UploadId} VersionId={VersionId} CorrelationId={CorrelationId}", tenantId, userId, uploadId, version.VersionId, session.CorrelationId); }
         await MarkCompletedAsync(tenantId, session, upload.Value.DocumentId, version?.VersionId, version?.FileName, version?.ChecksumSha256, sw.ElapsedMilliseconds, ct);
+        if (md.RunOcr && version?.VersionId is Guid ocrVersionId) { try { await _ocrJobs.EnqueueAsync(tenantId, ocrVersionId, userId, false, ct); ocrQueued = true; _logger.LogInformation("OCR queued Tenant={TenantId} User={UserId} Upload={UploadId} VersionId={VersionId} CorrelationId={CorrelationId}", tenantId, userId, uploadId, ocrVersionId, session.CorrelationId); } catch (Exception ex) { await MarkPostProcessingWarningAsync(tenantId, session, "OCR", ex.Message, CancellationToken.None); } }
+        if (md.GeneratePreview && version is not null) { try { await _previewStatus.UpsertAsync(tenantId, version.VersionId, PreviewProcessingStatus.Pending, null, null, DateTimeOffset.UtcNow, null, ct); await _previewQueue.EnqueueAsync(tenantId, upload.Value.DocumentId, version.VersionId, version.StoragePath, version.FileName, ct); previewQueued = true; _logger.LogInformation("Preview queued Tenant={TenantId} User={UserId} Upload={UploadId} VersionId={VersionId} CorrelationId={CorrelationId}", tenantId, userId, uploadId, version.VersionId, session.CorrelationId); } catch (Exception ex) { await MarkPostProcessingWarningAsync(tenantId, session, "PREVIEW", ex.Message, CancellationToken.None); } }
         _logger.LogInformation("Chunk complete finished Tenant={TenantId} User={UserId} Upload={UploadId} DocumentId={DocumentId} VersionId={VersionId} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}", tenantId, userId, uploadId, upload.Value.DocumentId, version?.VersionId, sw.ElapsedMilliseconds, session.CorrelationId);
         return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = session.BatchItemId ?? uploadId, DocumentId = upload.Value.DocumentId, VersionId = version?.VersionId, RequestedFolderId = session.RequestedFolderId, ResolvedFolderId = session.FolderId, FolderName = md.FolderName, Title = upload.Value.Title, FileName = upload.Value.FileName, UploadedAtUtc = version?.UploadedAtUtc, UploadedAtLocalFormatted = version?.UploadedAtUtc?.ToUniversalTime().ToString("dd/MM/yyyy HH:mm"), Status = "COMPLETED", Message = "Arquivo grande recebido em partes com sucesso.", OcrQueued = ocrQueued, PreviewQueued = previewQueued, CorrelationId = session.CorrelationId });
     }
@@ -232,7 +271,7 @@ WHERE s.tenant_id=@tenantId AND s.id=@uploadId;
     private async Task<SessionRow?> LoadSessionAsync(Guid tenantId, Guid userId, Guid uploadId, CancellationToken ct)
     {
         const string sql = """
-SELECT id AS UploadId, tenant_id AS TenantId, user_id AS UserId, batch_id AS BatchId, batch_item_id AS BatchItemId, folder_id AS FolderId, requested_folder_id AS RequestedFolderId, original_file_name AS OriginalFileName, content_type AS ContentType, total_size_bytes AS TotalSizeBytes, chunk_size_bytes AS ChunkSizeBytes, total_chunks AS TotalChunks, received_chunks AS ReceivedChunks, status, temp_path AS TempPath, document_id AS DocumentId, version_id AS VersionId, error_message AS ErrorMessage, metadata_json::text AS MetadataJson, correlation_id AS CorrelationId
+SELECT id AS UploadId, tenant_id AS TenantId, user_id AS UserId, batch_id AS BatchId, batch_item_id AS BatchItemId, folder_id AS FolderId, requested_folder_id AS RequestedFolderId, original_file_name AS OriginalFileName, content_type AS ContentType, total_size_bytes AS TotalSizeBytes, chunk_size_bytes AS ChunkSizeBytes, total_chunks AS TotalChunks, received_chunks AS ReceivedChunks, status, temp_path AS TempPath, document_id AS DocumentId, version_id AS VersionId, error_message AS ErrorMessage, metadata_json::text AS MetadataJson, correlation_id AS CorrelationId, updated_at AS UpdatedAt
 FROM ged.upload_session WHERE tenant_id=@tenantId AND user_id=@userId AND id=@uploadId;
 """;
         await using var conn = await _db.OpenAsync(ct);
@@ -308,21 +347,11 @@ WHERE tenant_id=@tenantId
         }
     }
 
-    private bool TryGetMaxFileSizeBytes(out long maxBytes)
+    private static async Task<string> ComputeSha256Async(string path, CancellationToken ct)
     {
-        if (_options.MaxFileSizeBytes.HasValue)
-        {
-            maxBytes = _options.MaxFileSizeBytes.Value;
-            return maxBytes > 0;
-        }
-
-        maxBytes = _options.MaxFileSizeMb > 0 ? _options.MaxFileSizeMb * 1024L * 1024L : 0;
-        return maxBytes > 0;
-    }
-
-    private static string FormatBytes(long bytes)
-    {
-        return bytes % (1024L * 1024L) == 0 ? $"{bytes / (1024L * 1024L)} MB" : $"{bytes} bytes";
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        using var sha = SHA256.Create();
+        return Convert.ToHexString(await sha.ComputeHashAsync(stream, ct)).ToLowerInvariant();
     }
 
     private static long ExpectedChunkSize(SessionRow session, int chunkIndex)
@@ -347,6 +376,59 @@ WHERE d.tenant_id=@tenantId AND d.id=@documentId;
         return await conn.QuerySingleOrDefaultAsync<VersionInfo>(new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct));
     }
 
+    private async Task<VersionInfo?> GetVersionAsync(Guid tenantId, Guid documentId, Guid versionId, CancellationToken ct)
+    {
+        const string sql = """
+SELECT v.id AS VersionId, v.file_name AS FileName, v.storage_path AS StoragePath, COALESCE(v.uploaded_at_utc, v.created_at) AS UploadedAtUtc, v.checksum_sha256 AS ChecksumSha256
+FROM ged.document_version v
+WHERE v.tenant_id=@tenantId AND v.document_id=@documentId AND v.id=@versionId;
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        return await conn.QuerySingleOrDefaultAsync<VersionInfo>(new CommandDefinition(sql, new { tenantId, documentId, versionId }, cancellationToken: ct));
+    }
+
+    private async Task<AcceptedChunk?> GetAcceptedChunkAsync(Guid tenantId, Guid uploadId, int chunkIndex, CancellationToken ct)
+    {
+        const string sql = """
+SELECT c.size_bytes AS SizeBytes, c.checksum_sha256 AS ChecksumSha256, c.temp_path AS TempPath
+FROM ged.upload_session_chunk c
+JOIN ged.upload_session s ON s.id=c.session_id AND s.tenant_id=@tenantId
+WHERE c.session_id=@uploadId AND c.chunk_index=@chunkIndex;
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        return await conn.QuerySingleOrDefaultAsync<AcceptedChunk>(new CommandDefinition(sql, new { tenantId, uploadId, chunkIndex }, cancellationToken: ct));
+    }
+
+    private async Task<Result<UploadBatchFileResultDto>?> TryRecoverCompletingAsync(Guid tenantId, Guid userId, SessionRow session, CancellationToken ct)
+    {
+        if (session.DocumentId.HasValue)
+        {
+            await MarkCompletedAsync(tenantId, session, session.DocumentId.Value, session.VersionId, null, null, 0, ct);
+            var version = session.VersionId.HasValue ? await GetVersionAsync(tenantId, session.DocumentId.Value, session.VersionId.Value, ct) : await GetCurrentVersionAsync(tenantId, session.DocumentId.Value, ct);
+            return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = session.BatchItemId ?? session.UploadId, DocumentId = session.DocumentId, VersionId = session.VersionId, RequestedFolderId = session.RequestedFolderId, ResolvedFolderId = session.FolderId, FolderName = session.Metadata.FolderName, FileName = version?.FileName ?? session.OriginalFileName, UploadedAtUtc = version?.UploadedAtUtc, UploadedAtLocalFormatted = version?.UploadedAtUtc?.ToUniversalTime().ToString("dd/MM/yyyy HH:mm"), Status = "COMPLETED", Message = "Upload em partes recuperado; documento já persistido.", CorrelationId = session.CorrelationId });
+        }
+
+        if (DateTimeOffset.UtcNow - session.UpdatedAt < TimeSpan.FromMinutes(5))
+            return null;
+
+        await ResetInterruptedCompletingAsync(tenantId, userId, session.UploadId, ct);
+        return Result<UploadBatchFileResultDto>.Fail("RECOVERABLE_INTERRUPTED", "Conclusão anterior foi interrompida. Tente concluir novamente.");
+    }
+
+    private async Task ResetInterruptedCompletingAsync(Guid tenantId, Guid userId, Guid uploadId, CancellationToken ct)
+    {
+        const string sql = "UPDATE ged.upload_session SET status='RECEIVING', error_message='Conclusão anterior interrompida; pronta para nova tentativa.', updated_at=now() WHERE tenant_id=@tenantId AND user_id=@userId AND id=@uploadId AND status='COMPLETING' AND document_id IS NULL;";
+        await using var conn = await _db.OpenAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, userId, uploadId }, cancellationToken: ct));
+    }
+
+    private async Task MarkPostProcessingWarningAsync(Guid tenantId, SessionRow session, string step, string message, CancellationToken ct)
+    {
+        const string sql = "UPDATE ged.upload_batch_item SET processing_warning=COALESCE(processing_warning, @warning), updated_at=now() WHERE tenant_id=@tenantId AND upload_session_id=@uploadId;";
+        await using var conn = await _db.OpenAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, session.UploadId, warning = $"Falha recuperável em {step}: {message}" }, cancellationToken: ct));
+    }
+
     private sealed class SessionRow
     {
         public Guid UploadId { get; set; }
@@ -366,6 +448,7 @@ WHERE d.tenant_id=@tenantId AND d.id=@documentId;
         public string? ErrorMessage { get; set; }
         public string MetadataJson { get; set; } = "{}";
         public string? CorrelationId { get; set; }
+        public DateTimeOffset UpdatedAt { get; set; }
         public Metadata Metadata => System.Text.Json.JsonSerializer.Deserialize<Metadata>(MetadataJson) ?? new Metadata();
     }
 
@@ -392,4 +475,5 @@ WHERE d.tenant_id=@tenantId AND d.id=@documentId;
         public string? IncompleteSource { get; set; }
     }
     private sealed class VersionInfo { public Guid VersionId { get; set; } public string FileName { get; set; } = string.Empty; public string StoragePath { get; set; } = string.Empty; public string? ChecksumSha256 { get; set; } public DateTime? UploadedAtUtc { get; set; } }
+    private sealed class AcceptedChunk { public long SizeBytes { get; set; } public string ChecksumSha256 { get; set; } = string.Empty; public string TempPath { get; set; } = string.Empty; }
 }

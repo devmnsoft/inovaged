@@ -102,7 +102,7 @@ VALUES (@id, @tenantId, @folderId, @requestedFolderId, @userId, @userName, 'OPEN
         if (!request.FolderId.HasValue || request.FolderId.Value == Guid.Empty) return Result<UploadBatchFileResultDto>.Fail("VALIDATION", "Selecione uma pasta para enviar documentos.");
         if (request.BatchId == Guid.Empty) return Result<UploadBatchFileResultDto>.Fail("VALIDATION", "Lote inválido.");
         if (request.File is null || request.File.Length <= 0) return Result<UploadBatchFileResultDto>.Fail("VALIDATION", "Arquivo inválido.");
-        if (request.File.Length > Math.Max(1, _options.MaxFileSizeMb) * 1024L * 1024L) return Result<UploadBatchFileResultDto>.Fail("LIMIT", $"O arquivo excede o limite de {_options.MaxFileSizeMb} MB.");
+        if (DocumentUploadSizePolicy.Exceeds(_options, request.File.Length, out var sizeLimit)) return Result<UploadBatchFileResultDto>.Fail("LIMIT", $"O arquivo excede o limite configurado de {sizeLimit.DisplayText}.");
         var ext = Path.GetExtension(request.UploadName ?? request.File.FileName ?? string.Empty);
         var blockedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".exe", ".bat", ".ps1", ".cmd", ".php", ".aspx", ".config", ".env", ".dll" };
         if (blockedExtensions.Contains(ext))

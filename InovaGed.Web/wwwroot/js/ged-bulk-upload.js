@@ -481,6 +481,8 @@
         state.chunkOptions.thresholdBytes = Math.max(1, Number(ds.chunkedThresholdMb || 50)) * mb;
         state.chunkOptions.chunkSizeBytes = Math.max(1, Number(ds.chunkSizeMb || 10)) * mb;
         state.chunkOptions.timeoutMs = Math.max(60, Number(ds.uploadTimeoutSeconds || 1800)) * 1000;
+        state.chunkOptions.maxFileSizeBytes = ds.maxFileSizeBytes ? Number(ds.maxFileSizeBytes) : null;
+        state.chunkOptions.maxFileSizeLabel = ds.maxFileSizeLabel || '';
     }
     function shouldUseChunkedUpload(fileItem) { return state.chunkOptions.enabled && (fileItem.size || 0) > state.chunkOptions.thresholdBytes && !state.useLegacyUploadFallback; }
     function isSchemaMissingError(payload) { return payload?.errorStep === 'Schema' || payload?.code === 'UPLOAD_BATCH_SCHEMA_MISSING'; }
@@ -571,7 +573,15 @@
         }
         for (const f of incoming) {
             if (state.files.some(x => x.originalName === f.name && x.size === f.size)) continue;
-            state.files.push(createFileItem(f));
+            const item = createFileItem(f);
+            if (state.chunkOptions.maxFileSizeBytes && f.size > state.chunkOptions.maxFileSizeBytes) {
+                item.status = 'error';
+                item.canRetry = false;
+                item.errorStep = 'Validação de tamanho';
+                item.errorMessage = `Arquivo acima do limite homologado: ${state.chunkOptions.maxFileSizeLabel || state.chunkOptions.maxFileSizeBytes + ' bytes'}.`;
+                item.errorLog = item.errorMessage;
+            }
+            state.files.push(item);
         }
         state.duplicateCheckKey = null;
         state.duplicateCheckPromise = null;

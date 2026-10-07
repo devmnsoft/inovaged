@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 using InovaGed.Infrastructure.Ged;
 using System.Diagnostics;
 using Dapper;
@@ -18,9 +19,9 @@ namespace InovaGed.Infrastructure.Ged.Documents;
 public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
 {
     private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase) { ".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt" };
-    private readonly long _maxFileSizeBytes;
+    private readonly DocumentUploadOptions _uploadOptions;
     private readonly DocumentAppService _documentApp; private readonly IAuditWriter _audit; private readonly ILogger<DocumentBulkUploadService> _logger; private readonly IMemoryCache _cache; private readonly IDbConnectionFactory _db; private readonly IDocumentPartialService _partialService;
-    public DocumentBulkUploadService(DocumentAppService documentApp, IAuditWriter audit, ILogger<DocumentBulkUploadService> logger, IConfiguration configuration, IMemoryCache cache, IDbConnectionFactory db, IDocumentPartialService partialService){_documentApp=documentApp;_audit=audit;_logger=logger;_cache=cache;_db=db;_partialService=partialService;var maxFileSizeMb=Math.Max(1, configuration.GetValue<int?>("DocumentUpload:MaxFileSizeMb") ?? 50); _maxFileSizeBytes=maxFileSizeMb*1024L*1024L;}
+    public DocumentBulkUploadService(DocumentAppService documentApp, IAuditWriter audit, ILogger<DocumentBulkUploadService> logger, IOptions<DocumentUploadOptions> options, IMemoryCache cache, IDbConnectionFactory db, IDocumentPartialService partialService){_documentApp=documentApp;_audit=audit;_logger=logger;_uploadOptions=options.Value;_cache=cache;_db=db;_partialService=partialService;_ = DocumentUploadSizePolicy.Resolve(_uploadOptions);}
     public async Task<Result<DocumentBulkUploadResultDto>> UploadStreamAsync(Guid tenantId, Guid userId, string? userName, Stream content, string fileName, string contentType, long sizeBytes, Guid? folderId, DocumentBulkUploadMetadata metadata, bool isAdmin, CancellationToken ct)
     {
         try
@@ -28,7 +29,7 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
             var sw = Stopwatch.StartNew();
             if (!folderId.HasValue || folderId.Value == Guid.Empty) return Result<DocumentBulkUploadResultDto>.Fail("VALIDATION", "Selecione uma pasta para enviar documentos.");
             if (content is null || content == Stream.Null || sizeBytes <= 0) return Result<DocumentBulkUploadResultDto>.Fail("VALIDATION", "Arquivo inválido.");
-            if (sizeBytes > _maxFileSizeBytes) return Result<DocumentBulkUploadResultDto>.Fail("LIMIT", $"O arquivo {fileName} excede o tamanho máximo configurado.");
+            if (DocumentUploadSizePolicy.Exceeds(_uploadOptions, sizeBytes, out var limit)) return Result<DocumentBulkUploadResultDto>.Fail("LIMIT", $"O arquivo {fileName} excede o limite configurado de {limit.DisplayText}.");
             var safeName = Path.GetFileName(string.IsNullOrWhiteSpace(metadata.UploadName) ? fileName : metadata.UploadName);
             var ext = Path.GetExtension(safeName ?? string.Empty);
             if (!AllowedExtensions.Contains(ext)) return Result<DocumentBulkUploadResultDto>.Fail("VALIDATION", $"Extensão não permitida: {ext}");

@@ -52,17 +52,36 @@ public sealed class ArchivalClassificationAndChunkUploadContractTests
     {
         var service = File.ReadAllText(Root("InovaGed.Infrastructure/Ged/Documents/UploadChunkService.cs"));
         var options = File.ReadAllText(Root("InovaGed.Application/Ged/Documents/DocumentUploadOptions.cs"));
+        var policy = File.ReadAllText(Root("InovaGed.Application/Ged/Documents/DocumentUploadSizePolicy.cs"));
 
         Assert.Contains("public long? MaxFileSizeBytes", options);
-        Assert.Contains("TryGetMaxFileSizeBytes", service);
+        Assert.Contains("DocumentUploadSizePolicy.Exceeds", service);
+        Assert.Contains("MaxFileSizeBytes", policy);
+        Assert.Contains("MaxFileSizeMb", policy);
         Assert.Contains("request.Metadata.MarkAsIncomplete", service);
         Assert.Contains("MarkAsIncomplete = md.MarkAsIncomplete", service);
         Assert.Contains("using var sha = SHA256.Create()", service);
         Assert.Contains("Checksum da parte não confere", service);
+        Assert.Contains(".attempt", service);
+        Assert.Contains(".accepted.bak", service);
+        Assert.Contains("Parte aceita com checksum incompatível", service);
         Assert.Contains("session.Status is \"COMPLETED\" or \"CANCELLED\" or \"ERROR\" or \"COMPLETING\"", service);
         Assert.Contains("TryMarkCompletingAsync", service);
         Assert.Contains("status='COMPLETING'", service);
         Assert.Contains("new FileInfo(assembled).Length != session.TotalSizeBytes", service);
+    }
+
+    [Fact]
+    public void Upload_size_policy_treats_zero_as_no_business_limit_and_bytes_as_authoritative()
+    {
+        var none = InovaGed.Application.Ged.Documents.DocumentUploadSizePolicy.Resolve(new InovaGed.Application.Ged.Documents.DocumentUploadOptions { MaxFileSizeBytes = 0, MaxFileSizeMb = 1 });
+        Assert.False(none.HasBusinessLimit);
+        Assert.Null(none.MaxBytes);
+
+        var bytes = InovaGed.Application.Ged.Documents.DocumentUploadSizePolicy.Resolve(new InovaGed.Application.Ged.Documents.DocumentUploadOptions { MaxFileSizeBytes = 2_147_483_649, MaxFileSizeMb = 1 });
+        Assert.Equal(2_147_483_649, bytes.MaxBytes);
+        Assert.False(InovaGed.Application.Ged.Documents.DocumentUploadSizePolicy.Exceeds(new InovaGed.Application.Ged.Documents.DocumentUploadOptions { MaxFileSizeBytes = 2_147_483_649 }, 2_147_483_649, out _));
+        Assert.True(InovaGed.Application.Ged.Documents.DocumentUploadSizePolicy.Exceeds(new InovaGed.Application.Ged.Documents.DocumentUploadOptions { MaxFileSizeBytes = 2_147_483_649 }, 2_147_483_650, out _));
     }
 
     private static string Root(string path) => GlobalJsonContractTests.Root(path);

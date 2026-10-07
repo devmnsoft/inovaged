@@ -6,6 +6,7 @@
 @using System.Threading.Tasks
 @using Microsoft.Extensions.Options
 @using InovaGed.Web.Security
+@using InovaGed.Application.Ged.Documents
 
 @inject ICurrentUser CurrentUser
 @inject IDocumentClassificationQueries ClassificationQueries
@@ -36,6 +37,7 @@
     var currentCanReceiveDocuments = currentFolderNode?.CanReceiveDocuments ?? Model.CurrentFolderId.HasValue;
     var allowLegacyUploadFallback = DocumentUploadOptions.Value.AllowLegacyUploadFallback;
     var uploadOptions = DocumentUploadOptions.Value;
+    var uploadSizeLimit = DocumentUploadSizePolicy.Resolve(uploadOptions);
     var ocrAvailableCount = Model.Documents.Count(d => d.IsOcrAvailable);
     var incompleteCount = Model.Documents.Count(d => d.IsDocumentIncomplete || string.Equals(d.PartialStatus, "INCOMPLETE", StringComparison.OrdinalIgnoreCase));
     var readyToConsolidateCount = Model.Documents.Count(d => d.IsPartialDocument && !d.IsDocumentIncomplete && string.Equals(d.PartialStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase));
@@ -911,7 +913,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="bulkUploadModal" tabindex="-1" aria-hidden="true" data-folder-id="@Model.CurrentFolderId" data-upload-folder-id="@currentUploadFolderId" data-listing-folder-id="@currentListingFolderId" data-can-receive-documents="@(currentCanReceiveDocuments ? "true" : "false")" data-folder-virtual="@(uploadFolderIsVirtual ? "true" : "false")" data-is-virtual="@(uploadFolderIsVirtual ? "true" : "false")" data-folder-name="@uploadFolderLabel" data-allow-legacy-upload-fallback="@(allowLegacyUploadFallback ? "true" : "false")" data-use-chunked-upload="@(uploadOptions.UseChunkedUpload ? "true" : "false")" data-chunk-size-mb="@uploadOptions.ChunkSizeMb" data-chunked-threshold-mb="@uploadOptions.ChunkedThresholdMb" data-upload-timeout-seconds="@uploadOptions.UploadTimeoutSeconds">
+<div class="modal fade" id="bulkUploadModal" tabindex="-1" aria-hidden="true" data-folder-id="@Model.CurrentFolderId" data-upload-folder-id="@currentUploadFolderId" data-listing-folder-id="@currentListingFolderId" data-can-receive-documents="@(currentCanReceiveDocuments ? "true" : "false")" data-folder-virtual="@(uploadFolderIsVirtual ? "true" : "false")" data-is-virtual="@(uploadFolderIsVirtual ? "true" : "false")" data-folder-name="@uploadFolderLabel" data-allow-legacy-upload-fallback="@(allowLegacyUploadFallback ? "true" : "false")" data-use-chunked-upload="@(uploadOptions.UseChunkedUpload ? "true" : "false")" data-chunk-size-mb="@uploadOptions.ChunkSizeMb" data-chunked-threshold-mb="@uploadOptions.ChunkedThresholdMb" data-upload-timeout-seconds="@uploadOptions.UploadTimeoutSeconds" data-max-file-size-bytes="@(uploadSizeLimit.MaxBytes?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "")" data-max-file-size-label="@uploadSizeLimit.DisplayText">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header"><div><h5 class="modal-title">Adicionar documentos em lote</h5><small class="text-muted">Envie vários arquivos diretamente para a pasta selecionada.</small></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>

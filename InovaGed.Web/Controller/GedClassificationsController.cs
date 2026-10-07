@@ -2,6 +2,7 @@ using Dapper;
 using InovaGed.Application.Audit;
 using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Database;
+using InovaGed.Application.Ged.Documents;
 using InovaGed.Application.Identity;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -15,6 +16,7 @@ public sealed class GedClassificationsController : Controller
     private static readonly string[] AllowedRoles = [AppRoles.Admin, AppRoles.AdministradorOphir, AppRoles.ArquivistaOphir, AppRoles.Arquivista];
     private readonly IDbConnectionFactory _db;
     private readonly IDocumentClassificationCommands _commands;
+    private readonly IDocumentBulkClassificationService _bulkClassification;
     private readonly ICurrentUser _currentUser;
     private readonly IAuditWriter _audit;
     private readonly ILogger<GedClassificationsController> _logger;
@@ -22,12 +24,14 @@ public sealed class GedClassificationsController : Controller
     public GedClassificationsController(
         IDbConnectionFactory db,
         IDocumentClassificationCommands commands,
+        IDocumentBulkClassificationService bulkClassification,
         ICurrentUser currentUser,
         IAuditWriter audit,
         ILogger<GedClassificationsController> logger)
     {
         _db = db;
         _commands = commands;
+        _bulkClassification = bulkClassification;
         _currentUser = currentUser;
         _audit = audit;
         _logger = logger;
@@ -46,7 +50,7 @@ SELECT
   v.id AS "ClassificationVersionId",
   v.version_no AS "VersionNo"
 FROM ged.classification_plan c
-LEFT JOIN LATERAL (
+JOIN LATERAL (
     SELECT pv.id, pv.version_no
     FROM ged.classification_plan_version pv
     JOIN ged.classification_plan_version_item pvi
@@ -56,7 +60,7 @@ LEFT JOIN LATERAL (
     WHERE pv.tenant_id = c.tenant_id
       AND COALESCE(pv.reg_status, 'A') = 'A'
       AND COALESCE(pvi.is_active, true)
-    ORDER BY pv.version_no DESC, pv.published_at DESC NULLS LAST, pv.created_at DESC
+      AND pv.version_no = (SELECT max(version_no) FROM ged.classification_plan_version WHERE tenant_id = c.tenant_id AND COALESCE(reg_status, 'A') = 'A')
     LIMIT 1
 ) v ON true
 WHERE c.tenant_id = @TenantId
@@ -138,16 +142,20 @@ WHERE c.tenant_id = @TenantId
       WHERE v.tenant_id = c.tenant_id
         AND COALESCE(v.reg_status, 'A') = 'A'
         AND COALESCE(i.is_active, true)
-      ORDER BY v.version_no DESC
-      LIMIT 1
+        AND v.version_no = (SELECT max(version_no) FROM ged.classification_plan_version WHERE tenant_id = c.tenant_id AND COALESCE(reg_status, 'A') = 'A')
   )
 LIMIT 1;
 """, new { TenantId = _currentUser.TenantId, Id = newId.Value }, cancellationToken: ct));
             if (string.IsNullOrWhiteSpace(label)) return BadRequest(new { success = false, message = "Classificação não encontrada." });
-        }
 
-        await using var tx = con.BeginTransaction();
-        var applied = await con.ExecuteScalarAsync<int>(new CommandDefinition("""
+            var canonical = await _bulkClassification.ApplyAsync(_currentUser.TenantId, _currentUser.UserId, new[] { id }, newId.Value, ct);
+            var item = canonical.Items.FirstOrDefault();
+            if (item is null || !item.Success) return BadRequest(new { success = false, message = item?.Message ?? "Documento ou classificação indisponível para este tenant.", code = item?.Code });
+        }
+        else
+        {
+            await using var tx = con.BeginTransaction();
+            var applied = await con.ExecuteScalarAsync<int>(new CommandDefinition("""
 WITH selected_version AS (
     SELECT v.id
     FROM ged.classification_plan_version v
@@ -230,15 +238,16 @@ pending_recalc AS (
 )
 SELECT count(*) FROM updated_document;
 """, new
-        {
-            TenantId = _currentUser.TenantId,
-            DocumentId = id,
-            ClassificationId = newId,
-            UserId = _currentUser.UserId,
-            Reason = string.IsNullOrWhiteSpace(request.Reason) ? "Classificação rápida pela listagem" : request.Reason
-        }, tx, cancellationToken: ct));
-        await tx.CommitAsync(ct);
-        if (applied == 0) return BadRequest(new { success = false, message = "Documento ou classificação indisponível para este tenant." });
+            {
+                TenantId = _currentUser.TenantId,
+                DocumentId = id,
+                ClassificationId = newId,
+                UserId = _currentUser.UserId,
+                Reason = string.IsNullOrWhiteSpace(request.Reason) ? "Classificação rápida pela listagem" : request.Reason
+            }, tx, cancellationToken: ct));
+            await tx.CommitAsync(ct);
+            if (applied == 0) return BadRequest(new { success = false, message = "Documento ou classificação indisponível para este tenant." });
+        }
 
         await _audit.WriteAsync(
             _currentUser.TenantId,
