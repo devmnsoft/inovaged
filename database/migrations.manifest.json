@@ -1242,6 +1242,14 @@
       "transactional": true,
       "deploymentSafety": "Additive",
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_10_14_preview_status_upsert_contract",
+      "path": "database/migrations/2026_10_14_preview_status_upsert_contract.sql",
+      "module": "Preview",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
     }
   ]
 }

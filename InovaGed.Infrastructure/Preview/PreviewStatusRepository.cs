@@ -58,7 +58,7 @@ LIMIT 1;";
             {
                 TenantId = row.TenantId,
                 VersionId = row.VersionId,
-                Status = Enum.TryParse<PreviewProcessingStatus>((string)row.Status, true, out var st) ? st : PreviewProcessingStatus.Pending,
+                Status = ParseStatus((string)row.Status),
                 PreviewPath = row.PreviewPath,
                 ErrorMessage = row.ErrorMessage,
                 RequestedAt = row.RequestedAt,
@@ -97,7 +97,7 @@ LIMIT 1;";
             {
                 tenantId,
                 versionId,
-                status = status.ToString().ToUpperInvariant(),
+                status = ToDatabaseStatus(status),
                 previewPath,
                 errorMessage,
                 requestedAt,
@@ -110,4 +110,21 @@ LIMIT 1;";
             throw;
         }
     }
+
+    private static PreviewProcessingStatus ParseStatus(string? status) =>
+        status?.Trim().ToUpperInvariant() switch
+        {
+            "READY" => PreviewProcessingStatus.Ready,
+            "PROCESSING" => PreviewProcessingStatus.Processing,
+            "FAILED" or "ERROR" => PreviewProcessingStatus.Error,
+            _ => PreviewProcessingStatus.Pending
+        };
+
+    private static string ToDatabaseStatus(PreviewProcessingStatus status) => status switch
+    {
+        PreviewProcessingStatus.Ready => "READY",
+        PreviewProcessingStatus.Processing => "PROCESSING",
+        PreviewProcessingStatus.Error => "FAILED",
+        _ => "PENDING"
+    };
 }

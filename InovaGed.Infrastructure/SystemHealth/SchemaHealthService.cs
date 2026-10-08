@@ -30,7 +30,7 @@ public sealed class SchemaHealthService : ISchemaHealthService
 
     private static readonly string[] RequiredTables =
     [
-        "ged.document", "ged.document_version", "ged.folder", "ged.document_search", "ged.ocr_job",
+        "ged.document", "ged.document_version", "ged.folder", "ged.document_search", "ged.ocr_job", "ged.preview_status",
         "ged.code_sequence",
         "ged.upload_batch", "ged.upload_batch_item", "ged.upload_duplicate_decision", "ged.upload_session", "ged.upload_session_chunk",
         "ged.document_partial_part", "ged.audit_log", "ged.app_audit_log",
@@ -105,6 +105,10 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("ocr_job", "attempt_count", "OCR"), ("ocr_job", "worker_id", "OCR"), ("ocr_job", "locked_at", "OCR"),
         ("ocr_job", "locked_by", "OCR"), ("ocr_job", "updated_at", "OCR"), ("ocr_job", "next_attempt_at", "OCR"),
         ("ocr_job", "failure_code", "OCR"), ("ocr_job", "reg_status", "OCR"), ("ocr_job", "invalidate_digital_signatures", "OCR"),
+        ("preview_status", "tenant_id", "Preview"), ("preview_status", "document_version_id", "Preview"),
+        ("preview_status", "status", "Preview"), ("preview_status", "preview_path", "Preview"),
+        ("preview_status", "error_message", "Preview"), ("preview_status", "requested_at", "Preview"),
+        ("preview_status", "finished_at", "Preview"),
         ("ocr_auto_schedule_run", "tenant_id", "OCR Auto Schedule"), ("ocr_auto_schedule_run", "started_at_utc", "OCR Auto Schedule"),
         ("ocr_auto_schedule_run", "status", "OCR Auto Schedule"), ("ocr_auto_schedule_run_item", "run_id", "OCR Auto Schedule"),
         ("ocr_auto_schedule_run_item", "status", "OCR Auto Schedule"),
@@ -257,6 +261,8 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("ix_upload_session_tenant_user_status", [], "Índice de sessões chunked por usuário/status."),
         ("ix_upload_session_chunk_session", [], "Índice dos chunks por sessão."),
         ("ix_ocr_job_tenant_version_status", [], "Índice da fila OCR por versão/status."),
+        ("ux_preview_status_tenant_version", [], "Unicidade do preview por tenant e versão documental."),
+        ("ix_preview_status_tenant_status", [], "Índice do preview por tenant/status."),
         ("ix_ocr_auto_schedule_run_tenant_started", [], "Índice do histórico do agendamento automático de OCR."),
         ("ix_ocr_auto_schedule_run_item_run", [], "Índice dos itens do agendamento automático de OCR."),
         ("ix_ocr_auto_schedule_run_status", [], "Índice de status do agendamento automático de OCR."),
@@ -460,6 +466,7 @@ where schemaname = 'ged';", cancellationToken: ct))).ToList();
             var existingIndexes = existingIndexRows.Select(i => i.IndexName).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             AddDocumentSearchTenantVersionIndexCheck(report, existingColumns, existingIndexRows);
+            AddPreviewStatusUpsertContractCheck(report, existingTables, existingColumns, existingIndexRows);
             AddCheck(report, "SMART_SEARCH_CONTEXT_TERM", "SmartSearch", "ged.search_context_term", "Tabela", "Warning", existingTables.Contains("ged.search_context_term"), "Dicionário de contexto da busca inteligente disponível.", "Execute database/migrations/2026_06_finalize_loans_secure_document_sharing.sql.");
             AddCheck(report, "LOANS_SECURE_DOCUMENT_LINK", "Loans", "ged.secure_document_link", "Tabela", "Warning", existingTables.Contains("ged.secure_document_link"), "Links seguros de entrega digital disponíveis.", "Execute database/migrations/2026_06_fix_secure_document_link_sharing.sql.");
             AddCheck(report, "LOANS_SECURE_DOCUMENT_LINK_ACCESS", "Loans", "ged.secure_document_link_access", "Tabela", "Warning", existingTables.Contains("ged.secure_document_link_access"), "Auditoria de acessos a links seguros disponível.", "Execute database/migrations/2026_06_fix_secure_document_link_sharing.sql.");
@@ -741,6 +748,25 @@ limit 1;", cancellationToken: ct));
         return existingIndexes.Any(index =>
             index.IndexDef.Contains(" on ged.document_search ", StringComparison.OrdinalIgnoreCase)
             && index.IndexDef.Contains(expectedColumns, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void AddPreviewStatusUpsertContractCheck(SchemaHealthReportDto report, HashSet<string> existingTables, HashSet<string> existingColumns, IReadOnlyList<PgIndexInfo> existingIndexes)
+    {
+        const string checkId = "GED_PREVIEW_STATUS_UPSERT_CONTRACT";
+        const string objectName = "ged.preview_status(tenant_id, document_version_id)";
+        var hasTable = existingTables.Contains("ged.preview_status");
+        var hasColumns = HasColumn(existingColumns, "preview_status", "tenant_id")
+            && HasColumn(existingColumns, "preview_status", "document_version_id");
+        var hasUniqueContract = hasTable && hasColumns && existingIndexes.Any(index =>
+            index.IndexDef.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase)
+            && index.IndexDef.Contains("ON ged.preview_status", StringComparison.OrdinalIgnoreCase)
+            && index.IndexDef.Contains("(tenant_id, document_version_id)", StringComparison.OrdinalIgnoreCase));
+
+        AddCheck(report, checkId, "Preview", objectName, "Contrato de upsert", "Critical", hasUniqueContract,
+            hasUniqueContract
+                ? "Contrato único do preview por tenant/versão OK."
+                : "Contrato único do preview ausente; PreviewVersion pode falhar com PostgreSQL 42P10 ao enfileirar preview.",
+            "Execute database/migrations/2026_10_14_preview_status_upsert_contract.sql pelo migrador oficial. Se houver duplicidades, reconcilie os registros antes de reaplicar.");
     }
 
     private sealed class PgIndexInfo

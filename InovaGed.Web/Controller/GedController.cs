@@ -2574,6 +2574,12 @@ SELECT
             _logger.LogInformation(ex, "GED preview abortado pelo cliente. Tenant={TenantId} User={UserId} VersionId={VersionId} Range={Range} ElapsedMs={ElapsedMs} Aborted={Aborted}", tenantId, userId, versionId, range, sw.ElapsedMilliseconds, true);
             return new EmptyResult();
         }
+        catch (PostgresException ex) when (ex.SqlState is "42P10" or "42P01" or "42703")
+        {
+            var correlationId = HttpContext.TraceIdentifier;
+            _logger.LogError(ex, "Schema de preview incompatível. SqlState={SqlState} Tenant={TenantId} User={UserId} VersionId={VersionId} CorrelationId={CorrelationId}", ex.SqlState, tenantId, userId, versionId, correlationId);
+            return PreviewSchemaErrorHtml(versionId, correlationId);
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro em PreviewVersion. Tenant={TenantId} User={UserId} VersionId={VersionId} Range={Range} ElapsedMs={ElapsedMs}", tenantId, userId, versionId, range, sw.ElapsedMilliseconds);
@@ -2626,7 +2632,7 @@ SELECT
 </body>
 </html>";
 
-        return Content(html, "text/html; charset=utf-8");
+        return new ContentResult { Content = html, ContentType = "text/html; charset=utf-8", StatusCode = StatusCodes.Status202Accepted };
     }
 
     private ContentResult PreviewErrorHtml(Guid versionId)
@@ -2649,13 +2655,43 @@ SELECT
 <body>
   <div class=""box"">
     <h3>Falha ao gerar a visualização</h3>
-    <p class=""muted"">O servidor registrou um erro ao converter o arquivo para PDF. Verifique o log para detalhes.</p>
+    <p class=""muted"">O servidor registrou uma falha ao preparar o preview. O arquivo original continua disponível quando você tiver permissão de acesso.</p>
     <p class=""muted"">Tente novamente: <a href=""{retryUrl}"">recarregar</a></p>
   </div>
 </body>
 </html>";
 
-        return Content(html, "text/html; charset=utf-8");
+        return new ContentResult { Content = html, ContentType = "text/html; charset=utf-8", StatusCode = StatusCodes.Status500InternalServerError };
+    }
+
+    private ContentResult PreviewSchemaErrorHtml(Guid versionId, string correlationId)
+    {
+        var retryUrl = Url.Action("PreviewVersion", "Ged", new { versionId }) ?? $"/Ged/PreviewVersion?versionId={versionId}";
+
+        var html = $@"
+<!doctype html>
+<html>
+<head>
+  <meta charset=""utf-8"" />
+  <meta name=""viewport"" content=""width=device-width, initial-scale=1"" />
+  <title>Atualização necessária</title>
+  <style>
+    body{{font-family:system-ui;margin:0;background:#f6f7fb;color:#222}}
+    .box{{max-width:720px;margin:10vh auto;padding:24px;background:#fff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.08)}}
+    .muted{{color:#666}} a{{color:#0b5ed7}} code{{background:#eef1f6;padding:2px 5px;border-radius:4px}}
+  </style>
+</head>
+<body>
+  <div class=""box"">
+    <h3>Preview indisponível: atualização de banco pendente</h3>
+    <p class=""muted"">A estrutura de controle do preview precisa ser atualizada antes de gerar a visualização.</p>
+    <p class=""muted"">CorrelationId: <code>{System.Net.WebUtility.HtmlEncode(correlationId)}</code></p>
+    <p class=""muted"">Após aplicar as migrations, tente novamente: <a href=""{retryUrl}"">recarregar</a></p>
+  </div>
+</body>
+</html>";
+
+        return new ContentResult { Content = html, ContentType = "text/html; charset=utf-8", StatusCode = StatusCodes.Status409Conflict };
     }
 
     [HttpGet]
@@ -2696,7 +2732,7 @@ SELECT
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro inesperado em PreviewStatus. Tenant={TenantId} Version={VersionId}", _currentUser.TenantId, versionId);
-            return Ok(new { success = false, versionId, status = "ERROR", errorMessage = "Não foi possível consultar o status do OCR no momento." });
+            return StatusCode(StatusCodes.Status500InternalServerError, new { success = false, versionId, status = "ERROR", errorMessage = "Não foi possível consultar o status do preview no momento.", correlationId = HttpContext.TraceIdentifier });
         }
     }
 
