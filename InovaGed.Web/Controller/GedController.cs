@@ -2211,9 +2211,13 @@ SELECT
             }
 
             var tenantId = _currentUser.TenantId;
+            var userId = _currentUser.UserId;
 
             var v = await _docs.GetVersionForDownloadAsync(tenantId, id, ct);
             if (v == null) return NotFound("Documento excluído ou indisponível.");
+
+            var allowed = await _accessPolicy.CanAccessGedAsync(tenantId, userId, User, ct);
+            if (!allowed) return Forbid();
 
             await WriteGedAuditAsync(documentPart ? "DOCUMENT_PART_DOWNLOAD" : "DOCUMENT_DOWNLOAD", documentPart ? "DOCUMENT_PART" : "DOCUMENT_VERSION", id, documentPart ? "Download de parte de documento" : "Download de documento GED", new { versionId = id, v.DocumentId, v.FileName, partialGroupId, partNumber, tenantId = _currentUser.TenantId, userId = _currentUser.UserId, correlationId = HttpContext.TraceIdentifier, timestampUtc = DateTime.UtcNow }, ct);
 
@@ -2243,9 +2247,13 @@ SELECT
             if (!_currentUser.IsAuthenticated) return Unauthorized();
 
             var tenantId = _currentUser.TenantId;
+            var userId = _currentUser.UserId;
 
             var v = await _docs.GetVersionForDownloadAsync(tenantId, id, ct);
             if (v == null) return NotFound("Documento excluído ou indisponível.");
+
+            var allowed = await _accessPolicy.CanAccessGedAsync(tenantId, userId, User, ct);
+            if (!allowed) return Forbid();
 
             await WriteGedAuditAsync(documentPart ? "DOCUMENT_PART_PREVIEW" : "FILE_PREVIEW", documentPart ? "DOCUMENT_PART" : "DOCUMENT_PREVIEW", id, documentPart ? "Preview de parte de documento" : "Preview de documento GED", new { versionId = id, v.DocumentId, v.FileName, partialGroupId, partNumber, tenantId = _currentUser.TenantId, userId = _currentUser.UserId, correlationId = HttpContext.TraceIdentifier, timestampUtc = DateTime.UtcNow }, ct);
 
@@ -2274,9 +2282,16 @@ SELECT
             if (!_currentUser.IsAuthenticated) return Unauthorized();
 
             var tenantId = _currentUser.TenantId;
+            var userId = _currentUser.UserId;
 
             var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
             if (v is null) return NotFound("Documento excluído ou indisponível.");
+
+            var allowed = await _accessPolicy.CanAccessGedAsync(tenantId, userId, User, ct);
+            if (!allowed) return Forbid();
+
+            if (!await _storage.ExistsAsync(v.StoragePath, ct))
+                return NotFound("Arquivo não encontrado no storage.");
 
             var stream = await _storage.OpenReadAsync(v.StoragePath, ct);
             return File(stream, v.ContentType, v.FileName);
@@ -2459,9 +2474,13 @@ SELECT
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized();
             var tenantId = _currentUser.TenantId;
+            var userId = _currentUser.UserId;
 
             var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
             if (v is null) return NotFound("Documento excluído ou indisponível.");
+
+            var allowed = await _accessPolicy.CanAccessGedAsync(tenantId, userId, User, ct);
+            if (!allowed) return Forbid();
 
             if (IsImage(v.ContentType, v.FileName))
             {
@@ -2514,6 +2533,7 @@ SELECT
     public async Task<IActionResult> PreviewVersion(Guid versionId, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
+        if (versionId == Guid.Empty) return BadRequest("VersionId inválido.");
 
         var tenantId = _currentUser.TenantId;
         var userId = _currentUser.UserId;
@@ -2524,6 +2544,9 @@ SELECT
         {
             var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
             if (v is null) return NotFound("Documento excluído ou indisponível.");
+
+            var allowed = await _accessPolicy.CanAccessGedAsync(tenantId, userId, User, ct);
+            if (!allowed) return Forbid();
 
             if (!await _storage.ExistsAsync(v.StoragePath, ct))
                 return NotFound("Arquivo não encontrado no storage.");
@@ -2600,32 +2623,79 @@ SELECT
   <meta name=""viewport"" content=""width=device-width, initial-scale=1"" />
   <title>Gerando visualização…</title>
   <style>
-    body{{font-family:system-ui;margin:0;background:#f6f7fb;color:#222}}
-    .box{{max-width:720px;margin:10vh auto;padding:24px;background:#fff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.08)}}
-    .muted{{color:#666}}
-    .spinner{{width:24px;height:24px;border:3px solid #ddd;border-top-color:#333;border-radius:50%;animation:spin 1s linear infinite;display:inline-block;vertical-align:middle;margin-right:10px}}
+    body{{font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:0;background:#f6f7fb;color:#1e293b}}
+    .box{{max-width:720px;margin:10vh auto;padding:28px;background:#fff;border-radius:14px;box-shadow:0 10px 30px rgba(15,23,42,.08);border:1px solid #e2e8f0}}
+    .muted{{color:#64748b;font-size:14px;line-height:1.6}}
+    .spinner{{width:24px;height:24px;border:3px solid #cbd5e1;border-top-color:#2563eb;border-radius:50%;animation:spin 1s linear infinite;display:inline-block;vertical-align:middle;margin-right:10px}}
     @keyframes spin{{to{{transform:rotate(360deg)}}}}
-    a{{color:#0b5ed7}}
+    a{{color:#2563eb;text-decoration:none;font-weight:600}}
+    a:hover{{text-decoration:underline}}
+    .status-msg{{margin-top:12px;padding:12px 16px;border-radius:8px;background:#f1f5f9;color:#334155;font-size:13px}}
   </style>
 </head>
 <body>
   <div class=""box"">
     <div><span class=""spinner""></span><strong>Gerando / atualizando visualização…</strong></div>
     <p class=""muted"">Isso pode levar alguns segundos. A página vai tentar novamente automaticamente.</p>
-    <p class=""muted"">Se demorar muito, clique em <a href=""{retryUrl}"">tentar novamente</a>.</p>
+    <div id=""statusInfo"" class=""status-msg"">Aguardando processamento do documento...</div>
+    <p class=""muted"" style=""margin-top:16px;"">Se demorar muito, clique em <a href=""{retryUrl}"">tentar novamente</a>.</p>
   </div>
   <script>
     const statusUrl = ""{statusUrl}"";
-    let wait = 3000;
+    let wait = 2500;
+    let attempts = 0;
+    const maxAttempts = 30;
     async function tick() {{
-      const res = await fetch(statusUrl, {{ headers: {{ Accept: ""application/json"" }} }});
-      if (res.ok) {{
-        const data = await res.json();
-        if (data.status === ""READY"" && data.previewUrl) {{ location.href = data.previewUrl; return; }}
-        if (data.status === ""ERROR"") {{ return; }}
+      attempts++;
+      if (attempts > maxAttempts) {{
+        const el = document.getElementById('statusInfo');
+        if (el) el.textContent = 'Tempo limite de espera excedido. Tente recarregar a visualização.';
+        return;
+      }}
+      try {{
+        const res = await fetch(statusUrl, {{ headers: {{ Accept: ""application/json"", ""X-Requested-With"": ""XMLHttpRequest"" }} }});
+        if (res.ok) {{
+          const data = await res.json();
+          if (data.status === ""READY"" && data.previewUrl) {{
+            location.href = data.previewUrl;
+            return;
+          }}
+          if (data.status === ""FAILED"" || data.status === ""ERROR"") {{
+            const el = document.getElementById('statusInfo');
+            if (el) {{
+              el.style.background = '#fef2f2';
+              el.style.color = '#991b1b';
+              el.textContent = data.errorMessage || 'Falha ao processar visualização. O documento original continua disponível.';
+            }}
+            return;
+          }}
+          if (data.status === ""CANCELED"") {{
+            const el = document.getElementById('statusInfo');
+            if (el) {{
+              el.style.background = '#fffbeb';
+              el.style.color = '#92400e';
+              el.textContent = 'Geração de visualização cancelada.';
+            }}
+            return;
+          }}
+          if (data.status === ""PROCESSING"") {{
+            const el = document.getElementById('statusInfo');
+            if (el) el.textContent = 'Processando documento e gerando páginas de visualização...';
+          }}
+        }} else if (res.status === 401 || res.status === 403 || res.status === 404) {{
+          const el = document.getElementById('statusInfo');
+          if (el) {{
+            el.style.background = '#fef2f2';
+            el.style.color = '#991b1b';
+            el.textContent = 'Acesso não autorizado ou documento indisponível.';
+          }}
+          return;
+        }}
+      }} catch (err) {{
+        console.warn('Erro ao verificar status do preview:', err);
       }}
       setTimeout(tick, wait);
-      wait = Math.min(wait * 1.7, 10000);
+      wait = Math.min(wait * 1.4, 8000);
     }}
     setTimeout(tick, wait);
   </script>
@@ -2698,41 +2768,82 @@ SELECT
     public async Task<IActionResult> PreviewStatus(Guid versionId, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
-        if (versionId == Guid.Empty) return BadRequest(new { message = "VersionId inválido." });
+        if (versionId == Guid.Empty) return BadRequest(new { success = false, message = "VersionId inválido.", correlationId = HttpContext.TraceIdentifier });
+
+        var tenantId = _currentUser.TenantId;
+        var userId = _currentUser.UserId;
 
         try
         {
-            var tenantId = _currentUser.TenantId;
+            var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
+            if (v is null)
+                return NotFound(new { success = false, versionId, message = "Documento ou versão não localizada para este tenant.", correlationId = HttpContext.TraceIdentifier });
+
+            var allowed = await _accessPolicy.CanAccessGedAsync(tenantId, userId, User, ct);
+            if (!allowed)
+                return StatusCode(StatusCodes.Status403Forbidden, new { success = false, versionId, message = "Você não possui permissão para acessar este documento.", correlationId = HttpContext.TraceIdentifier });
+
             var status = await _previewStatus.GetAsync(tenantId, versionId, ct);
             if (status is null)
-                return Ok(new { success = true, versionId, status = "NOT_READY", previewPath = (string?)null, errorMessage = (string?)null, attempts = 0, lastUpdatedAt = (DateTimeOffset?)null });
+            {
+                return Ok(new
+                {
+                    success = true,
+                    versionId,
+                    status = "NOT_READY",
+                    previewPath = (string?)null,
+                    previewUrl = (string?)null,
+                    errorMessage = (string?)null,
+                    attempts = 0,
+                    lastUpdatedAt = (DateTimeOffset?)null,
+                    requestedAt = (DateTimeOffset?)null,
+                    finishedAt = (DateTimeOffset?)null
+                });
+            }
 
-            var previewUrl = status.Status == PreviewProcessingStatus.Ready && !string.IsNullOrWhiteSpace(status.PreviewPath)
-                ? $"/storage/{status.PreviewPath}"
+            var statusStr = status.Status switch
+            {
+                PreviewProcessingStatus.Ready => "READY",
+                PreviewProcessingStatus.Processing => "PROCESSING",
+                PreviewProcessingStatus.Error => "FAILED",
+                PreviewProcessingStatus.Canceled => "CANCELED",
+                _ => "PENDING"
+            };
+
+            var previewUrl = status.Status == PreviewProcessingStatus.Ready
+                ? (Url.Action("PreviewVersion", "Ged", new { versionId }) ?? $"/Ged/PreviewVersion?versionId={versionId}")
                 : null;
+
             return Ok(new
             {
                 success = true,
                 versionId,
-                status = status.Status.ToString().ToUpperInvariant(),
+                status = statusStr,
                 previewPath = status.PreviewPath,
                 previewUrl,
                 errorMessage = status.ErrorMessage,
-                attempts = 0,
-                lastUpdatedAt = status.FinishedAt ?? status.RequestedAt,
+                attempts = status.Attempts,
+                lastUpdatedAt = status.LastUpdatedAt ?? status.FinishedAt ?? status.LastAttemptAt ?? status.RequestedAt,
                 requestedAt = status.RequestedAt,
                 finishedAt = status.FinishedAt
             });
         }
         catch (OperationCanceledException ex) when (ct.IsCancellationRequested || HttpContext.RequestAborted.IsCancellationRequested)
         {
-            _logger.LogInformation(ex, "Consulta PreviewStatus abortada pelo cliente. Tenant={TenantId} Version={VersionId}", _currentUser.TenantId, versionId);
+            _logger.LogInformation(ex, "Consulta PreviewStatus abortada pelo cliente. Tenant={TenantId} Version={VersionId}", tenantId, versionId);
             return new EmptyResult();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro inesperado em PreviewStatus. Tenant={TenantId} Version={VersionId}", _currentUser.TenantId, versionId);
-            return StatusCode(StatusCodes.Status500InternalServerError, new { success = false, versionId, status = "ERROR", errorMessage = "Não foi possível consultar o status do preview no momento.", correlationId = HttpContext.TraceIdentifier });
+            _logger.LogError(ex, "Erro inesperado em PreviewStatus. Tenant={TenantId} Version={VersionId}", tenantId, versionId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new
+            {
+                success = false,
+                versionId,
+                status = "ERROR",
+                errorMessage = "Não foi possível consultar o status do preview no momento.",
+                correlationId = HttpContext.TraceIdentifier
+            });
         }
     }
 

@@ -36,7 +36,7 @@ public sealed class PreviewWorker : BackgroundService
                     await notifier.PublishAsync(job.TenantId, job.VersionId, "PROCESSING", null, "Gerando preview", stoppingToken);
                     var path = await preview.GetOrCreatePreviewPdfAsync(job.TenantId, job.DocumentId, job.VersionId, job.StoragePath, job.FileName, stoppingToken);
                     await statusRepo.UpsertAsync(job.TenantId, job.VersionId, PreviewProcessingStatus.Ready, path, null, null, DateTimeOffset.UtcNow, stoppingToken);
-                    await notifier.PublishAsync(job.TenantId, job.VersionId, "READY", $"/storage/{path}", null, stoppingToken);
+                    await notifier.PublishAsync(job.TenantId, job.VersionId, "READY", $"/Ged/PreviewVersion?versionId={job.VersionId}", null, stoppingToken);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
