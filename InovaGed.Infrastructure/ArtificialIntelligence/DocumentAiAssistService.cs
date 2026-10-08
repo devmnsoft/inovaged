@@ -6,6 +6,7 @@ using InovaGed.Application.Audit;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Retention;
 using InovaGed.Application.Security;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace InovaGed.Infrastructure.ArtificialIntelligence;
@@ -17,7 +18,8 @@ public sealed class DocumentAiAssistService(
     IAbacAuthorizationService authorization,
     IAuditWriter audit,
     IAssistedDocumentStore documents,
-    RetentionRecalcService retention) : IDocumentAiAssistService
+    RetentionRecalcService retention,
+    ILogger<DocumentAiAssistService> logger) : IDocumentAiAssistService
 {
     private const int TextLimit = 120_000;
     private const int CandidateLimit = 40;
@@ -302,7 +304,39 @@ where v.tenant_id=@tenantId and v.id=any(@ids) and coalesce(d.reg_status,'A')='A
         var document = await LoadByDocumentAsync(connection, caller.TenantId, documentId, ct);
         if (document is null) return Fail(404, "Documento não encontrado.");
         if (!await CanAsync(caller, document, "VIEW", ct)) return await DenyAsync(caller, document, document.VersionId, "authorization_missing", ct);
-        var rows = await documents.ListReviewsAsync(caller.TenantId, documentId, (page - 1) * pageSize, pageSize, ct);
+        IReadOnlyList<ReviewHistoryRow> rows;
+        try
+        {
+            rows = await documents.ListReviewsAsync(caller.TenantId, documentId, (page - 1) * pageSize, pageSize, ct);
+        }
+        catch (PostgresException ex) when (IsDocumentAiSchemaMissing(ex))
+        {
+            var correlationId = Guid.NewGuid().ToString("N");
+            logger.LogError(
+                ex,
+                "Schema obrigatório de IA documental ausente. SqlState={SqlState} Schema={SchemaName} Table={TableName} Constraint={ConstraintName} Step={Step} TenantId={TenantId} DocumentId={DocumentId} CorrelationId={CorrelationId}",
+                ex.SqlState,
+                ex.SchemaName,
+                ex.TableName,
+                ex.ConstraintName,
+                "DocumentAi.ReviewHistory.ListReviews",
+                caller.TenantId,
+                documentId,
+                correlationId);
+            return new(409, new
+            {
+                success = false,
+                code = "DOCUMENT_AI_SCHEMA_UPDATE_REQUIRED",
+                message = "O histórico de revisões de IA requer atualização do banco. Aplique as migrations obrigatórias e tente novamente.",
+                errorStep = "DocumentAi.ReviewHistory.ListReviews",
+                sqlState = ex.SqlState,
+                correlationId,
+                schemaObject = GetSchemaObject(ex) ?? "ged.ai_suggestion_application",
+                migration = "database/migrations/2026_10_05_document_ai_application_integrity.sql",
+                databaseReadinessUrl = "/DatabaseReadiness",
+                schemaHealthUrl = "/SchemaHealth"
+            });
+        }
         var total = rows.Count == 0 ? 0 : rows[0].Total;
         return Ok(new
         {
@@ -411,6 +445,26 @@ where v.tenant_id=@tenantId and v.id=any(@ids) and coalesce(d.reg_status,'A')='A
     private static AssistResponse ProviderFailure(AiResult result) => Fail(result.Failure == AiFailureKind.Disabled ? 403 : result.Failure == AiFailureKind.IdempotencyConflict ? 409 : 422, result.Limitation ?? "A IA não concluiu a solicitação.", result.CorrelationId);
     private static AssistResponse Ok(object? body) => new(200, body);
     private static AssistResponse Fail(int status, string message, string? correlation = null) => new(status, new { success = false, message, correlationId = correlation });
+    private static bool IsDocumentAiSchemaMissing(PostgresException ex) =>
+        ex.SqlState == PostgresErrorCodes.UndefinedTable &&
+        IsDocumentAiReviewObject(GetSchemaObject(ex) ?? ex.MessageText);
+
+    private static bool IsDocumentAiReviewObject(string text) =>
+        text.Contains("ai_suggestion_application", StringComparison.OrdinalIgnoreCase)
+        || text.Contains("ai_retention_recalc_pending", StringComparison.OrdinalIgnoreCase)
+        || text.Contains("ai_execution", StringComparison.OrdinalIgnoreCase);
+
+    private static string? GetSchemaObject(PostgresException ex)
+    {
+        if (!string.IsNullOrWhiteSpace(ex.TableName))
+            return string.IsNullOrWhiteSpace(ex.SchemaName) ? ex.TableName : $"{ex.SchemaName}.{ex.TableName}";
+        const string marker = "relation \"";
+        var start = ex.MessageText.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (start < 0) return null;
+        start += marker.Length;
+        var end = ex.MessageText.IndexOf('"', start);
+        return end > start ? ex.MessageText[start..end] : null;
+    }
     private static string Reference(WorkDocument document) => $"{document.DocumentId:N}/{document.VersionId:N}/texto-extraido";
     private static object Sources(WorkDocument document) => new[] { new { document.DocumentId, document.VersionId, document.Title, document.VersionNumber } };
     private static string Label(string name) => name switch { "title" => "Título", "description" => "Descrição", "isConfidential" => "Sigilo", _ => name };
