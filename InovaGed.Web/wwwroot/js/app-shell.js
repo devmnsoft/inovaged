@@ -135,6 +135,18 @@
     };
     renderContexts();
 
+    document.querySelectorAll('.mobile-menu-link, [data-mobile-close], .offcanvas .sidebar-menu a').forEach((link) => {
+        link.addEventListener('click', () => {
+            const oc = document.getElementById('ocSidebar');
+            if (oc && window.bootstrap?.Offcanvas) {
+                const offcanvas = window.bootstrap.Offcanvas.getInstance(oc) || new window.bootstrap.Offcanvas(oc);
+                offcanvas.hide();
+                const opener = document.querySelector('.mobile-menu-button');
+                opener?.focus();
+            }
+        }, { signal });
+    });
+
     window.AtlasShell = {
         addContext(label, url, type = 'document') {
             const contexts = readContexts().filter((item) => item.url !== url);

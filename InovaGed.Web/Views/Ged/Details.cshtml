@@ -786,28 +786,83 @@
             const badge = document.getElementById('previewStatusBadge');
             window.gedStatusPollers = window.gedStatusPollers || {};
             if (window.gedStatusPollers[versionId]) return;
-            const finalStatuses = new Set(['READY','COMPLETED','ERROR','CANCELLED']);
-            const poller = { timer: null, abort: null, stopped: false, previewLoaded: false };
+            const finalStatuses = new Set(['READY','COMPLETED','ERROR','FAILED','CANCELLED','CANCELED']);
+            const poller = { timer: null, abort: null, stopped: false, previewLoaded: false, isBusy: false, attempts: 0, maxAttempts: 25 };
             window.gedStatusPollers[versionId] = poller;
+
+            if (badge) {
+                badge.style.cursor = 'pointer';
+                badge.title = 'Clique para atualizar o status do preview';
+                badge.addEventListener('click', function(){
+                    poller.attempts = 0;
+                    poller.stopped = false;
+                    check();
+                });
+            }
+
             async function check(){
-                if (poller.stopped || document.visibilityState !== 'visible') {
-                    schedule(5000);
+                if (poller.stopped || poller.isBusy || document.visibilityState !== 'visible') {
+                    if (!poller.stopped) schedule(5000);
                     return;
                 }
+                poller.attempts++;
+                if (poller.attempts > poller.maxAttempts) {
+                    if (badge) {
+                        badge.className = 'badge bg-secondary';
+                        badge.textContent = 'Preview: segundo plano (clique para checar)';
+                    }
+                    stop();
+                    return;
+                }
+
+                poller.isBusy = true;
                 try{
                     poller.abort = new AbortController();
                     const r = await fetch(statusUrl, { headers: { 'Accept':'application/json' }, signal: poller.abort.signal });
-                    if (!r.ok) return schedule(5000);
+                    if (!r.ok) {
+                        poller.isBusy = false;
+                        return schedule(5000);
+                    }
                     const d = await r.json();
-                    const status = d.status || 'PENDING';
-                    if (badge) badge.textContent = `Preview: ${status}`;
+                    const status = (d.status || 'PENDING').toUpperCase();
+                    
+                    if (badge) {
+                        if (status === 'READY') {
+                            badge.className = 'badge bg-success';
+                            badge.textContent = 'Preview: Pronto';
+                        } else if (status === 'FAILED' || status === 'ERROR') {
+                            badge.className = 'badge bg-danger';
+                            badge.textContent = 'Preview: Indisponível';
+                            badge.title = d.errorMessage || 'Falha ao processar visualização.';
+                        } else if (status === 'PROCESSING') {
+                            badge.className = 'badge bg-primary';
+                            badge.textContent = 'Preview: Processando…';
+                        } else {
+                            badge.className = 'badge bg-secondary';
+                            badge.textContent = `Preview: ${status}`;
+                        }
+                    }
+
+                    if (status === 'READY') {
+                        const frame = document.querySelector('iframe[data-preview-frame="1"]');
+                        if (frame && !poller.previewLoaded) {
+                            poller.previewLoaded = true;
+                            frame.src = frame.src;
+                        }
+                        stop();
+                        return;
+                    }
+
                     if (finalStatuses.has(status)) {
                         stop();
                         return;
                     }
-                    schedule(status === 'PENDING' || status === 'NOT_READY' ? 5000 : 3000);
+
+                    schedule(status === 'PENDING' || status === 'NOT_READY' ? 4000 : 2500);
                 } catch (e) {
                     if (e.name !== 'AbortError') schedule(5000);
+                } finally {
+                    poller.isBusy = false;
                 }
             }
             function schedule(delay){
@@ -823,7 +878,7 @@
             }
             document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'visible' && !poller.stopped) check(); });
             window.addEventListener('beforeunload', stop, { once: true });
-            schedule(3000);
+            schedule(2000);
         })();
     </script>
 }

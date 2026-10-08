@@ -112,10 +112,11 @@ public sealed class SigningContentDownloader(IHttpClientFactory clients, IConfig
     private static bool IsRedirect(HttpStatusCode status) => (int)status is >= 300 and <= 399;
     private static async Task ValidateUriAsync(Uri uri, string[] allowedHosts, CancellationToken ct)
     {
-        if (uri.Scheme != Uri.UriSchemeHttps) throw new InvalidOperationException("HTTPS_REQUIRED");
+        if (uri.Scheme != Uri.UriSchemeHttps) throw new InvalidOperationException("CONTENT_URL_HTTPS_REQUIRED");
+        if (!string.IsNullOrEmpty(uri.UserInfo)) throw new InvalidOperationException("CONTENT_URL_CREDENTIALS_FORBIDDEN");
         if (allowedHosts.Length > 0 && !allowedHosts.Contains(uri.Host, StringComparer.OrdinalIgnoreCase)) throw new InvalidOperationException("HOST_NOT_ALLOWED");
         var addresses = await Dns.GetHostAddressesAsync(uri.Host, ct);
-        if (addresses.Any(IsBlocked)) throw new InvalidOperationException("PRIVATE_OR_METADATA_IP_BLOCKED");
+        if (addresses.Any(IsBlocked)) throw new InvalidOperationException("CONTENT_URL_PRIVATE_NETWORK_FORBIDDEN");
     }
 
     private static bool IsBlocked(IPAddress ip)

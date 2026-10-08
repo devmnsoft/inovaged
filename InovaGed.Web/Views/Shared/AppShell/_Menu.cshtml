@@ -19,19 +19,19 @@
 
     var menuSectionId = $"sidebar-menu-section-{menuSection.Id}";
     var menuSectionPanelId = $"{menuSectionId}-items";
-    var sectionActive = menuSection.Items.Any(item => item.ActiveRouteRule.Matches(currentController, currentAction, currentRouteValues));
+    var isSectionActive = menuSection.Items.Any(item => item.ActiveRouteRule.Matches(currentController, currentAction, currentRouteValues));
 
     <section class="sidebar-menu-section" data-menu-section
              aria-labelledby="@menuSectionId">
 
         <h2 class="sidebar-section-title" id="@menuSectionId">
-            <button type="button" data-menu-section-toggle aria-expanded="@(sectionActive ? "true" : "false")"
+            <button type="button" data-menu-section-toggle aria-expanded="@(isSectionActive ? "true" : "false")"
                     aria-controls="@menuSectionPanelId">
                 <span>@menuSection.Label</span><app-icon name="chevron-down" decorative="true" size="14" />
             </button>
         </h2>
 
-        <div id="@menuSectionPanelId" data-menu-section-items hidden="@(!sectionActive)">
+        <div id="@menuSectionPanelId" data-menu-section-items hidden="@(!isSectionActive)">
         @foreach (var item in menuSection.Items) {
             var active = item.ActiveRouteRule.Matches(currentController, currentAction, currentRouteValues);
 

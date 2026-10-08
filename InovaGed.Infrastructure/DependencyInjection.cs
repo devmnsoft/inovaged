@@ -81,7 +81,11 @@ public static class InfrastructureServiceCollectionExtensions
             .AddSecurityOperationsModule(configuration)
             .AddInfrastructureHealthModule(configuration)
             .AddContinuityModule(configuration)
-            .AddDigitalSignatureModule(configuration);
+            .AddDigitalSignatureModule(configuration)
+            .AddStabilityCriticalServices();
+        services.AddHttpContextAccessor();
+        services.TryAddSingleton<global::InovaGed.Application.Common.Time.ITenantTimeZoneService, Common.Time.TenantTimeZoneService>();
+        services.TryAddScoped<ICurrentUser, AnonymousCurrentUser>();
 
         services.AddOptions<DocumentAiOptions>().Bind(configuration.GetSection(DocumentAiOptions.SectionName));
         services.AddHttpClient<DocumentAiGateway>();
@@ -160,12 +164,43 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<global::InovaGed.Application.Retention.IPcdVersionResolver, Retention.PcdVersionResolver>();
         services.AddScoped<global::InovaGed.Application.Retention.IRetentionAuditWriter, Retention.RetentionAuditWriter>();
         services.AddScoped<global::InovaGed.Application.Retention.IRetentionDestinationRepository, Retention.RetentionDestinationRepository>();
+        services.TryAddScoped<global::InovaGed.Application.Retention.IRetentionJobRepository, Retention.RetentionJobRepository>();
+        services.TryAddScoped<global::InovaGed.Application.Retention.RetentionRecalcService>();
+        services.TryAddScoped<global::InovaGed.Application.Retention.IRetentionRecalcService>(sp => sp.GetRequiredService<global::InovaGed.Application.Retention.RetentionRecalcService>());
+
+        services.TryAddScoped<global::InovaGed.Application.Documents.IDocumentSearchTextQueries, InovaGed.Infrastructure.Documents.DocumentSearchTextQueries>();
+        services.TryAddScoped<global::InovaGed.Application.Classification.IDocumentClassificationCommands, Classification.DocumentClassificationCommands>();
+        services.TryAddScoped<global::InovaGed.Application.Labels.Canvas.ILabelCanvasPrintCoordinator, Labels.LabelCanvasPrintCoordinator>();
+        services.TryAddScoped<global::InovaGed.Application.Labels.ILabelTemplateRenderer, PhysicalArchive.LabelTemplateManager>();
+        services.TryAddScoped<global::InovaGed.Application.Labels.ILabelTemplateManager, PhysicalArchive.LabelTemplateManager>();
+        services.TryAddScoped<PhysicalArchive.LabelTemplateManager>();
+        services.TryAddSingleton<global::InovaGed.Application.PhysicalArchive.ILabelPayloadBuilder, PhysicalArchive.LabelPayloadBuilder>();
+        services.TryAddSingleton<global::InovaGed.Application.Labels.ILabelTraceTokenService, Labels.LabelTraceTokenService>();
+        services.TryAddScoped<global::InovaGed.Application.Labels.ILabelTraceabilityService, Labels.LabelTraceabilityService>();
+        services.TryAddScoped<global::InovaGed.Application.Labels.Canvas.ILabelCanvasDesignService, Labels.LabelCanvasDesignRepository>();
+        services.TryAddScoped<global::InovaGed.Application.Labels.Canvas.ILabelCanvasComponentPresetService, Labels.LabelCanvasComponentPresetService>();
+        services.TryAddScoped<global::InovaGed.Application.Labels.Canvas.ILabelTemplatePackageService, Labels.LabelTemplatePackageService>();
+        services.TryAddScoped<global::InovaGed.Application.Labels.Canvas.ILabelCanvasSchemaCapabilities, Labels.LabelCanvasSchemaCapabilities>();
+        services.TryAddSingleton<global::InovaGed.Application.Labels.Canvas.ILabelCanvasFieldCatalogService, Labels.LabelCanvasFieldCatalogService>();
+        services.TryAddSingleton<global::InovaGed.Application.Labels.Canvas.ILabelCanvasRenderService, Labels.LabelCanvasRenderService>();
+        services.TryAddSingleton<global::InovaGed.Application.Labels.Canvas.ILabelPublicationChecklistService, Labels.LabelPublicationChecklistService>();
+        services.TryAddScoped<global::InovaGed.Application.Labels.Intelligence.ILabelPreflightService, Labels.LabelOperationalIntelligenceService>();
+        services.TryAddSingleton<global::InovaGed.Application.Labels.Intelligence.ILabelTemplateRecommendationService, Labels.LabelTemplateRecommendationService>();
+        services.TryAddSingleton<global::InovaGed.Application.Labels.Intelligence.ILabelPrintProfileRecommendationService, Labels.LabelPrintProfileRecommendationService>();
+        services.TryAddSingleton<global::InovaGed.Application.Labels.Canvas.ILabelCanvasStarterTemplateService, Labels.LabelCanvasStarterTemplateService>();
+        services.TryAddSingleton<global::InovaGed.Application.Labels.Canvas.ILabelCanvasDiffService, Labels.LabelCanvasDiffService>();
+        services.TryAddScoped<global::InovaGed.Application.Labels.Canvas.ILabelCanvasValueResolver, Labels.LabelCanvasValueResolver>();
+        services.TryAddScoped<global::InovaGed.Application.Labels.Canvas.IManualLabelInstanceService, Labels.ManualLabelInstanceService>();
+        services.TryAddScoped<global::InovaGed.Application.Labels.Preview.ILabelPreviewService, Labels.LabelPreviewService>();
+        services.TryAddScoped<global::InovaGed.Application.Labels.Batch.ILabelBatchPlanService, Labels.LabelBatchPlanService>();
+        services.TryAddSingleton<global::InovaGed.Application.Labels.Automation.ILabelAutomationRuleEngine, Labels.LabelAutomationRuleEngine>();
 
         services.AddScoped<global::InovaGed.Application.Labels.Printing.ILabelPrintJobService, PhysicalArchive.LabelPrintJobService>();
         services.AddScoped<global::InovaGed.Application.Labels.Printing.ILabelPdfRenderService, PhysicalArchive.LabelHtmlPdfRenderService>();
         services.AddScoped<global::InovaGed.Application.Labels.Tracking.ILabelTrackingService, PhysicalArchive.LabelTrackingService>();
         services.AddScoped<global::InovaGed.Application.Labels.Tracking.ILabelInventoryService, PhysicalArchive.LabelInventoryService>();
         services.AddScoped<global::InovaGed.Application.PhysicalArchive.ILabelTemplateCatalogService, PhysicalArchive.LabelTemplateCatalogService>();
+        services.TryAddScoped<global::InovaGed.Application.Labels.Intelligence.ILabelCustodyService, PhysicalArchive.LabelCustodyService>();
 
         services.AddScoped<PhysicalArchive.ArchiveReconciliationService>();
         services.AddScoped<global::InovaGed.Application.PhysicalArchive.Reconciliation.IArchiveReconciliationService>(sp => sp.GetRequiredService<PhysicalArchive.ArchiveReconciliationService>());
@@ -222,6 +257,10 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IFileStorage, LocalFileStorage>();
         services.AddScoped<IDocumentWriteRepository, DocumentWriteRepository>();
         services.AddScoped<IDocumentMoveService, DocumentMoveService>();
+        services.TryAddScoped<global::InovaGed.Application.Documents.IDocumentCommands, Documents.DocumentCommands>();
+        services.TryAddScoped<global::InovaGed.Application.Classification.IDocumentClassificationQueries, Classification.DocumentClassificationQueries>();
+        services.TryAddScoped<global::InovaGed.Application.Common.Time.IClock, Common.Time.SystemClock>();
+        services.TryAddScoped<global::InovaGed.Application.Ged.Loans.IProtocolAccessService, Ged.Loans.ProtocolAccessService>();
 
         services.AddInfrastructureModule("GED", true, ["Database", "Storage"], !string.IsNullOrWhiteSpace(configuration["Storage:Local:RootPath"]), HealthStatus.Healthy);
         services.AddInfrastructureModule("Storage", true, ["FileSystem"], !string.IsNullOrWhiteSpace(configuration["Storage:Local:RootPath"]), HealthStatus.Healthy);
@@ -239,6 +278,8 @@ public static class InfrastructureServiceCollectionExtensions
 
         services.AddScoped<IPdfTextExtractor, PopplerPdfTextExtractor>();
         services.AddScoped<IOcrService, OcrMyPdfOcrService>();
+        services.TryAddScoped<IOcrEnvironmentValidator, OcrEnvironmentValidator>();
+        services.TryAddSingleton<IOcrProcessRunner, OcrProcessRunner>();
 
         services.AddInfrastructureModule("OCR", configuration.GetValue("Ocr:Enabled", true), ["Database", "Storage"], true, HealthStatus.Degraded);
         return services;

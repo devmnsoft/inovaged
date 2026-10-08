@@ -100,7 +100,7 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
                 }
             }
             string? processingWarning = null;
-            if (!isPart && metadata.ClassificationId.HasValue && metadata.ClassificationId.Value != Guid.Empty)
+            if (metadata.ClassificationId.HasValue && metadata.ClassificationId.Value != Guid.Empty)
             {
                 try
                 {

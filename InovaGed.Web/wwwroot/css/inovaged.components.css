@@ -1,0 +1,53 @@
+/* InovaGED Canonical Component Styles */
+.ig-card {
+    background: var(--ig-surface, #ffffff);
+    border: 1px solid var(--ig-border, #e2e8f0);
+    border-radius: var(--ig-radius, 12px);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    transition: box-shadow 150ms ease, transform 150ms ease;
+}
+
+.ig-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-weight: 500;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.ig-btn-primary {
+    background-color: var(--ig-primary-600, #2563eb);
+    color: #ffffff;
+}
+
+.ig-btn-primary:hover {
+    background-color: var(--ig-primary-700, #1d4ed8);
+    color: #ffffff;
+}
+
+.form-control, .form-select {
+    color: var(--ig-text, #0f172a);
+    background-color: var(--ig-surface, #ffffff);
+    border-color: var(--ig-border, #e2e8f0);
+}
+
+.form-control:focus, .form-select:focus {
+    color: var(--ig-text, #0f172a);
+    background-color: var(--ig-surface, #ffffff);
+    border-color: var(--ig-primary-600, #2563eb);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+@media (prefers-reduced-motion:reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}

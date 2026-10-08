@@ -97,8 +97,8 @@ SELECT
     {{hasAllPartialOcrExpr}} AS "HasAllPartialOcr",
     {{ocrSummaryTextExpr}} AS "OcrSummaryText",
     {{ocrSummaryCssExpr}} AS "OcrSummaryCss",
-    dc.document_type_id            AS "ClassificationId",
-    cdt.name                       AS "ClassificationLabel",
+    COALESCE(dc.classification_id, d.classification_id) AS "ClassificationId",
+    COALESCE(cp.name, cp.title, cdt.name) AS "ClassificationLabel",
     NULL::text                     AS "ClassificationColor",
     NULL::text                     AS "ClassificationIcon",
     {{isPartialDocumentExpr}} AS "IsPartialDocument",
@@ -130,7 +130,7 @@ LEFT JOIN LATERAL (
 {{documentSearchJoin}}
 {{partialOcrJoin}}
 LEFT JOIN LATERAL (
-    SELECT x.document_type_id
+    SELECT x.classification_id, x.document_type_id
     FROM ged.document_classification x
     WHERE x.tenant_id = d.tenant_id
       AND x.document_id = d.id
@@ -138,6 +138,9 @@ LEFT JOIN LATERAL (
     ORDER BY x.classified_at DESC NULLS LAST, x.created_at DESC NULLS LAST
     LIMIT 1
 ) dc ON true
+LEFT JOIN ged.classification_plan cp
+       ON cp.tenant_id = d.tenant_id
+      AND cp.id = COALESCE(dc.classification_id, d.classification_id)
 LEFT JOIN ged.document_type cdt
        ON cdt.tenant_id = d.tenant_id
       AND cdt.id = dc.document_type_id
@@ -153,6 +156,7 @@ WHERE d.tenant_id = @tenantId
        lower(coalesce(d.title, '')) LIKE ('%'||@q||'%') OR
        lower(coalesce(cv.file_name, '')) LIKE ('%'||@q||'%') OR
        lower(coalesce(dt.name, '')) LIKE ('%'||@q||'%') OR
+       lower(coalesce(cp.name, '')) LIKE ('%'||@q||'%') OR
        lower(coalesce(cdt.name, '')) LIKE ('%'||@q||'%') OR
        lower(coalesce(d.description, '')) LIKE ('%'||@q||'%') OR
        lower(coalesce(d.code, '')) LIKE ('%'||@q||'%') OR
@@ -193,12 +197,12 @@ ORDER BY {{uploadedAtExpr}} DESC;
 SELECT
     d.id                 AS "Id",
     d.tenant_id          AS "TenantId",
-    ''                   AS "Code",
+    COALESCE(d.code, '') AS "Code",
     d.title              AS "Title",
     d.description        AS "Description",
     d.folder_id          AS "FolderId",
     d.type_id            AS "TypeId",
-    NULL::uuid           AS "ClassificationId",
+    COALESCE(dc.classification_id, d.classification_id) AS "ClassificationId",
     d.status             AS "Status",
     d.visibility::text   AS "Visibility",
     d.current_version_id AS "CurrentVersionId",
@@ -208,6 +212,15 @@ SELECT
     d.updated_by         AS "UpdatedBy",
     0                    AS "CurrentVersion"
 FROM ged.document d
+LEFT JOIN LATERAL (
+    SELECT x.classification_id
+    FROM ged.document_classification x
+    WHERE x.tenant_id = d.tenant_id
+      AND x.document_id = d.id
+      AND x.reg_status = 'A'
+    ORDER BY x.classified_at DESC NULLS LAST, x.created_at DESC NULLS LAST
+    LIMIT 1
+) dc ON true
 WHERE d.tenant_id = @tenantId
   AND d.id = @documentId
   AND d.status <> 'ARCHIVED'::ged.document_status_enum

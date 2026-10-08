@@ -18,18 +18,25 @@ public sealed class DocumentIntakeReviewService(IDbConnectionFactory db, IAuditW
     public async Task<IReadOnlyDictionary<Guid, DocumentIntakeReviewDto>> GetForDocumentsAsync(
         Guid tenantId, IReadOnlyCollection<Guid> documentIds, CancellationToken ct)
     {
-        var ids = documentIds.Where(x => x != Guid.Empty).Distinct().Take(500).ToArray();
+        var ids = documentIds.Where(x => x != Guid.Empty).Distinct().ToArray();
         if (ids.Length == 0) return new Dictionary<Guid, DocumentIntakeReviewDto>();
         await using var connection = await db.OpenAsync(ct);
-        var existing = (await connection.QueryAsync<IntakeReviewRow>(new CommandDefinition("""
-select d.id as \"DocumentId\", coalesce(r.status, 'PENDING') as \"Status\",
-       r.reviewed_by as \"ReviewedBy\", r.reviewed_at as \"ReviewedAt\", r.notes as \"Notes\"
+        var existing = new Dictionary<Guid, DocumentIntakeReviewDto>();
+        foreach (var chunk in ids.Chunk(500))
+        {
+            var rows = (await connection.QueryAsync<IntakeReviewRow>(new CommandDefinition("""
+select d.id as "DocumentId", coalesce(r.status, 'PENDING') as "Status",
+       r.reviewed_by as "ReviewedBy", r.reviewed_at as "ReviewedAt", r.notes as "Notes"
 from ged.document d
 left join ged.document_intake_review r on r.tenant_id=d.tenant_id and r.document_id=d.id and r.reg_status='A'
-where d.tenant_id=@tenantId and d.id=any(@ids) and coalesce(d.reg_status,'A')='A';
-""", new { tenantId, ids }, cancellationToken: ct)))
-            .Select(x => x.ToDto())
-            .ToDictionary(x => x.DocumentId);
+where d.tenant_id=@tenantId and d.id=any(@chunk) and coalesce(d.reg_status,'A')='A';
+""", new { tenantId, chunk }, cancellationToken: ct)))
+                .Select(x => x.ToDto());
+            foreach (var dto in rows)
+            {
+                existing[dto.DocumentId] = dto;
+            }
+        }
         foreach (var id in ids)
             if (!existing.ContainsKey(id)) throw new KeyNotFoundException("Documento n\u00e3o encontrado ou inacess\u00edvel.");
         return existing;
@@ -65,8 +72,8 @@ where d.tenant_id=@tenantId and d.id=@documentId and coalesce(d.reg_status,'A')=
 on conflict (tenant_id, document_id) where reg_status='A' do update
 set status=excluded.status, reviewed_by=excluded.reviewed_by,
     reviewed_at=excluded.reviewed_at, notes=excluded.notes
-returning document_id as \"DocumentId\", status as \"Status\", reviewed_by as \"ReviewedBy\",
-          reviewed_at as \"ReviewedAt\", notes as \"Notes\";
+returning document_id as "DocumentId", status as "Status", reviewed_by as "ReviewedBy",
+          reviewed_at as "ReviewedAt", notes as "Notes";
 """, new { tenantId, userId, documentId, status, notes }, cancellationToken: ct));
         if (row is null) throw new KeyNotFoundException("Documento n\u00e3o encontrado ou inacess\u00edvel.");
         var result = row.ToDto();

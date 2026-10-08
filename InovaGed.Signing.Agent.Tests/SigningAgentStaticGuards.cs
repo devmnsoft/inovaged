@@ -4,7 +4,43 @@ namespace InovaGed.Signing.Agent.Tests;
 
 public sealed class SigningAgentStaticGuards
 {
-    private static readonly string ProgramText = File.ReadAllText(Path.Combine("..", "InovaGed.Signing.Agent", "Program.cs"));
+    private static readonly string ProgramText = LocateAgentSources();
+
+    private static string LocateAgentSources()
+    {
+        var candidates = new[]
+        {
+            Path.Combine("..", "InovaGed.Signing.Agent"),
+            Path.Combine("..", "..", "..", "..", "InovaGed.Signing.Agent"),
+            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "InovaGed.Signing.Agent"),
+            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "InovaGed.Signing.Agent"),
+            Path.Combine(Directory.GetCurrentDirectory(), "InovaGed.Signing.Agent")
+        };
+
+        foreach (var candidate in candidates)
+        {
+            var full = Path.GetFullPath(candidate);
+            if (Directory.Exists(full))
+            {
+                var files = Directory.GetFiles(full, "*.cs", SearchOption.TopDirectoryOnly);
+                if (files.Length > 0) return string.Join("\n", files.Select(File.ReadAllText));
+            }
+        }
+
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null)
+        {
+            var path = Path.Combine(dir.FullName, "InovaGed.Signing.Agent");
+            if (Directory.Exists(path))
+            {
+                var files = Directory.GetFiles(path, "*.cs", SearchOption.TopDirectoryOnly);
+                if (files.Length > 0) return string.Join("\n", files.Select(File.ReadAllText));
+            }
+            dir = dir.Parent;
+        }
+
+        throw new DirectoryNotFoundException("Could not locate InovaGed.Signing.Agent source directory.");
+    }
 
     [Fact]
     public void Agent_rejects_non_loopback_listeners()

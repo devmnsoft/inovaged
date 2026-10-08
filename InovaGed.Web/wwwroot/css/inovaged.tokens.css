@@ -1,0 +1,16 @@
+:root, [data-theme="inovaged-classic"] {
+    --ig-primary-600:#2563eb;
+    --ig-primary-700:#1d4ed8;
+    --ig-primary-800:#1e40af;
+    --ig-primary-50:#eff6ff;
+    --ig-accent-500:#22c55e;
+    --ig-accent-600:#16a34a;
+    --ig-brand-gradient:linear-gradient(135deg,#2563eb,#22c55e);
+    --ig-motion-slow:260ms;
+    --ig-surface:#ffffff;
+    --ig-surface-subtle:#f8fafc;
+    --ig-border:#e2e8f0;
+    --ig-text:#0f172a;
+    --ig-text-muted:#64748b;
+    --ig-radius:12px;
+}

@@ -68,7 +68,7 @@
                     <td>@if (i.DocumentId.HasValue) { <input type="checkbox" class="js-upload-doc-check" value="@i.DocumentId" /> }</td>
                     <td>@i.OriginalFileName</td>
                     <td><span class="badge bg-secondary">@i.OperationalStatus</span></td>
-                    <td>@(i.DocumentId.HasValue ? "Pendente" : "Não aplicável")</td>
+                    <td>@(i.DocumentId.HasValue ? i.ClassificationDisplay : "Não aplicável")</td>
                     <td><span class="badge bg-light text-dark">@i.ReviewLabel</span></td>
                     <td class="text-danger">@(i.ErrorMessage ?? i.ProcessingWarning ?? "-")</td>
                     <td>@(i.ErrorStep ?? "-")</td>

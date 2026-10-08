@@ -4,9 +4,20 @@
         <app-icon name="menu" decorative="true" size="20" />
     </button>
     <partial name="AppShell/_WorkspaceIdentity" model="Model" />
+    @if (!string.IsNullOrWhiteSpace(Model.PageTitle))
+    {
+        <div class="atlas-topbar__titles d-none d-md-flex flex-column ms-2">
+            <h1 class="atlas-topbar__title h6 mb-0">@Model.PageTitle</h1>
+            @if (!string.IsNullOrWhiteSpace(Model.PageSubtitle)) { <small class="text-muted">@Model.PageSubtitle</small> }
+        </div>
+    }
     <div class="atlas-topbar__actions">
         <partial name="AppShell/_GlobalSearch" model="Model" />
         <partial name="AppShell/_QuickCreate" model="Model.QuickActions" />
+        @if (Model.PrimaryAction is not null)
+        {
+            <a class="btn btn-sm btn-primary d-none d-sm-inline-flex align-items-center" href="@Model.PrimaryAction.ResolvedUrl(Url)">@Model.PrimaryAction.Label</a>
+        }
         <partial name="AppShell/_UtilityActions" model="Model" />
         <partial name="AppShell/_UserMenu" model="Model.User" />
     </div>

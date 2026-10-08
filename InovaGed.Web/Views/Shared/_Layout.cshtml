@@ -22,6 +22,10 @@
     <link href="~/lib/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link href="~/lib/bootstrap-icons/font/bootstrap-icons.min.css" rel="stylesheet" asp-append-version="true" />
     <link rel="icon" type="image/svg+xml" href="~/favicon.svg" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/inovaged.tokens.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/inovaged.base.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/inovaged.shell.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/inovaged.components.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/atlas/atlas-tokens.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/atlas/atlas-base.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/atlas/inovaged.atlas.illustrations.css" asp-append-version="true" />
@@ -42,7 +46,7 @@
     <link rel="stylesheet" href="~/css/inovaged.utilities.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/locdesk-brand.css" asp-append-version="true" />
 </head>
-<body class="@(isAuthenticated ? "layout-app" : "layout-auth")">
+<body class="@(isAuthenticated ? "layout-app" : "layout-auth")" data-theme="inovaged-classic">
     <partial name="Icons/_AtlasAssets" />
     <a class="skip-link" href="#main-content">Pular para o conteúdo</a>
     @if (shell is not null)

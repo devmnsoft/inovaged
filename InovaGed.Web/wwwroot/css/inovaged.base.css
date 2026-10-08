@@ -1,0 +1,21 @@
+/* InovaGED Canonical Base Styles */
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: var(--ig-font-sans, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+    color: var(--ig-text, #0f172a);
+    background-color: var(--ig-surface-subtle, #f8fafc);
+    -webkit-font-smoothing: antialiased;
+}
+
+a {
+    color: var(--ig-primary-600, #2563eb);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}

@@ -322,8 +322,20 @@ SELECT i.id AS Id,
        i.processing_warning AS ProcessingWarning,
        i.correlation_id AS CorrelationId,
        i.created_at AS CreatedAt,
-       i.finished_at AS FinishedAt
+       i.finished_at AS FinishedAt,
+       COALESCE(dc.classification_id, d.classification_id) AS ClassificationId,
+       c.code AS ClassificationCode,
+       COALESCE(c.name, c.title) AS ClassificationName
 FROM ged.upload_batch_item i
+LEFT JOIN ged.document d ON d.tenant_id=i.tenant_id AND d.id=i.document_id
+LEFT JOIN LATERAL (
+    SELECT x.classification_id
+    FROM ged.document_classification x
+    WHERE x.tenant_id = d.tenant_id AND x.document_id = d.id AND x.reg_status = 'A'
+    ORDER BY x.classified_at DESC NULLS LAST, x.created_at DESC NULLS LAST
+    LIMIT 1
+) dc ON true
+LEFT JOIN ged.classification_plan c ON c.tenant_id=d.tenant_id AND c.id=COALESCE(dc.classification_id, d.classification_id)
 WHERE i.tenant_id=@tenantId AND i.batch_id=@batchId AND coalesce(i.reg_status,'A')='A'
 ORDER BY i.created_at, i.original_file_name;
 """, new { tenantId = _currentUser.TenantId, batchId }, cancellationToken: ct))).AsList();

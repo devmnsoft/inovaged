@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Text;
 using InovaGed.Application.Common.Storage;
 using Microsoft.Extensions.Logging;
@@ -8,6 +8,7 @@ namespace InovaGed.Application.Common.Preview;
 
 public sealed class LibreOfficePreviewGenerator : IPreviewGenerator
 {
+    private static readonly SemaphoreSlim ConcurrencySemaphore = new(4, 4);
     private readonly IFileStorage _storage;
     private readonly ILogger<LibreOfficePreviewGenerator> _logger;
     private readonly LibreOfficeOptions _options;
@@ -75,11 +76,14 @@ public sealed class LibreOfficePreviewGenerator : IPreviewGenerator
             "InovaGedPreview",
             Guid.NewGuid().ToString("N"));
 
+        var profileRoot = Path.Combine(tempRoot, "profile");
         Directory.CreateDirectory(tempRoot);
+        Directory.CreateDirectory(profileRoot);
 
         var safeInputName = SanitizeFileName(originalFileName);
         var localInput = Path.Combine(tempRoot, safeInputName);
 
+        await ConcurrencySemaphore.WaitAsync(ct);
         try
         {
             await using (var source = await _storage.OpenReadAsync(sourceStoragePath, ct))
@@ -94,9 +98,23 @@ public sealed class LibreOfficePreviewGenerator : IPreviewGenerator
                 await source.CopyToAsync(target, ct);
             }
 
-            var args =
-                $"--headless --nologo --nofirststartwizard --nolockcheck " +
-                $"--convert-to pdf --outdir \"{tempRoot}\" \"{localInput}\"";
+            var profileUri = new Uri(profileRoot).AbsoluteUri;
+            var args = new[]
+            {
+                "--headless",
+                "--nologo",
+                "--nofirststartwizard",
+                "--norestore",
+                "--nodefault",
+                "--nolockcheck",
+                "--invisible",
+                $"--env:UserInstallation={profileUri}",
+                "--convert-to",
+                "pdf:writer_pdf_Export",
+                "--outdir",
+                tempRoot,
+                localInput
+            };
 
             var result = await RunProcessAsync(
                 fileName: sofficePath,
@@ -115,7 +133,7 @@ public sealed class LibreOfficePreviewGenerator : IPreviewGenerator
                     result.StdErr);
 
                 throw new InvalidOperationException(
-                    "Falha ao converter arquivo para PDF. Verifique se o LibreOffice está instalado e se o arquivo não está corrompido.");
+                    "Falha ao converter arquivo para PDF. Verifique se o LibreOffice está instalado e se o arquivo não está corrompido ou protegido por senha.");
             }
 
             var expectedPdf = Path.Combine(
@@ -140,6 +158,16 @@ public sealed class LibreOfficePreviewGenerator : IPreviewGenerator
                 throw new FileNotFoundException("O PDF de preview não foi gerado pelo LibreOffice.");
             }
 
+            var fileInfo = new FileInfo(expectedPdf);
+            if (fileInfo.Length < 32)
+            {
+                _logger.LogError(
+                    "LibreOffice gerou um PDF corrompido ou vazio. File={File}, Size={Size}",
+                    originalFileName,
+                    fileInfo.Length);
+                throw new InvalidOperationException("O PDF de preview gerado é inválido ou vazio.");
+            }
+
             await using var pdfStream = new FileStream(
                 expectedPdf,
                 FileMode.Open,
@@ -153,7 +181,7 @@ public sealed class LibreOfficePreviewGenerator : IPreviewGenerator
                 ct);
 
             _logger.LogInformation(
-                "Preview PDF gerado. DocumentId={DocumentId}, VersionId={VersionId}, PreviewPath={PreviewPath}",
+                "Preview PDF gerado com sucesso. DocumentId={DocumentId}, VersionId={VersionId}, PreviewPath={PreviewPath}",
                 documentId,
                 versionId,
                 previewRelPath);
@@ -162,6 +190,7 @@ public sealed class LibreOfficePreviewGenerator : IPreviewGenerator
         }
         finally
         {
+            ConcurrencySemaphore.Release();
             try
             {
                 if (Directory.Exists(tempRoot))
@@ -212,7 +241,7 @@ public sealed class LibreOfficePreviewGenerator : IPreviewGenerator
 
     private static async Task<ProcessResult> RunProcessAsync(
         string fileName,
-        string arguments,
+        IReadOnlyList<string> arguments,
         string workingDirectory,
         TimeSpan timeout,
         CancellationToken ct)
@@ -220,7 +249,6 @@ public sealed class LibreOfficePreviewGenerator : IPreviewGenerator
         var psi = new ProcessStartInfo
         {
             FileName = fileName,
-            Arguments = arguments,
             WorkingDirectory = workingDirectory,
             UseShellExecute = false,
             RedirectStandardOutput = true,
@@ -229,6 +257,11 @@ public sealed class LibreOfficePreviewGenerator : IPreviewGenerator
             StandardErrorEncoding = Encoding.UTF8,
             CreateNoWindow = true
         };
+
+        foreach (var arg in arguments)
+        {
+            psi.ArgumentList.Add(arg);
+        }
 
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException($"Falha ao iniciar processo: {fileName}");
@@ -255,8 +288,13 @@ public sealed class LibreOfficePreviewGenerator : IPreviewGenerator
                 // ignore
             }
 
-            throw new TimeoutException($"Tempo excedido ao executar: {fileName}");
+            if (ct.IsCancellationRequested)
+                throw new OperationCanceledException(ct);
+
+            throw new TimeoutException($"Tempo excedido ao executar conversão com LibreOffice: {fileName}");
         }
+
+        await Task.WhenAll(stdoutTask, stderrTask);
 
         return new ProcessResult(
             process.ExitCode,

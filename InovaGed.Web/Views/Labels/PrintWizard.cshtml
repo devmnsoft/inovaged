@@ -1,5 +1,59 @@
 @model InovaGed.Web.Models.Labels.LabelPrintWizardInputModel
-@{ViewData["Title"]="Nova impressão de etiqueta";ViewData["LabelHelpContext"]="PRINT_STEP_ORIGIN";var steps=new[]{"Origem","Modelo","Identidade","Impressão","Conferência"};}
-@section Styles {<link rel="stylesheet" href="~/css/pages/labels-print-wizard.css" asp-append-version="true"/><link rel="stylesheet" href="~/css/labels-premium.css" asp-append-version="true"/><link rel="stylesheet" href="~/css/labels-studio.css" asp-append-version="true"/>}
-<main class="label-wizard-page"><header class="label-wizard-hero atlas-page-hero"><div><small>Impressão guiada</small><h1>Nova etiqueta</h1><p>Uma decisão por etapa, com prévia real antes da emissão.</p></div><div class="label-wizard-hero__actions"><partial name="Shared/_LabelHelpDrawer"/><a asp-action="Index" class="atlas-btn atlas-btn-secondary">Voltar à central</a></div></header><nav class="label-stepper" aria-label="Etapas da impressão">@for(var i=0;i<steps.Length;i++){<button type="button" data-step-target="@(i+1)" aria-current="@(i==0?"step":null)"><span>@(i+1)</span>@steps[i]</button>}</nav><form method="post" id="label-print-form" class="label-wizard-layout" data-label-form data-quick-preview-url="@Url.Action("QuickPreview","Labels")">@Html.AntiForgeryToken()<input type="hidden" name="ClientActionId" value="@Guid.NewGuid()"/><main class="label-wizard-main"><partial name="Atlas/_AtlasValidationSummary"/><partial name="_PrintWizardOrigin"/><partial name="_PrintWizardTemplate"/><partial name="_PrintWizardBranding"/><partial name="_PrintWizardPrintSettings"/><partial name="_PrintWizardReview"/><p class="label-step-error" data-step-error role="alert"></p><footer class="label-wizard-navigation"><button type="button" class="atlas-btn atlas-btn-secondary" data-step-back>Voltar</button><button type="button" class="atlas-btn atlas-btn-primary" data-step-next>Continuar</button></footer></main><partial name="_PrintWizardPreview"/></form></main>
-@section Scripts {<script src="~/js/labels-help.js" asp-append-version="true"></script><script src="~/js/labels-printwizard.js" asp-append-version="true"></script><script src="~/js/labels-form-submit.js" asp-append-version="true"></script>}
+@{
+    ViewData["Title"]="Nova impressão de etiqueta";
+    ViewData["LabelHelpContext"]="PRINT_STEP_ORIGIN";
+    var steps=new[]{"O que imprimir","Modelo da etiqueta","Logo e identidade visual","Conferência final"};
+}
+@section Styles {
+    <link rel="stylesheet" href="~/css/pages/labels-print-wizard.css" asp-append-version="true"/>
+    <link rel="stylesheet" href="~/css/labels-premium.css" asp-append-version="true"/>
+    <link rel="stylesheet" href="~/css/labels-studio.css" asp-append-version="true"/>
+}
+<main class="label-wizard-page">
+    <header class="label-wizard-hero atlas-page-hero">
+        <div>
+            <small>Impressão guiada</small>
+            <h1>Nova etiqueta</h1>
+            <p>Uma decisão por etapa, com prévia real antes da emissão.</p>
+        </div>
+        <div class="label-wizard-hero__actions">
+            <partial name="Shared/_LabelHelpDrawer"/>
+            <a asp-action="Index" class="atlas-btn atlas-btn-secondary">Voltar à central</a>
+        </div>
+    </header>
+    <nav class="label-stepper" aria-label="Etapas da impressão">
+        @for(var i=0;i<steps.Length;i++){
+            <button type="button" data-step-target="@(i+1)" aria-current="@(i==0?"step":null)">
+                <span>@(i+1)</span>@steps[i]
+            </button>
+        }
+    </nav>
+    <form method="post" id="label-print-form" class="label-wizard-layout" data-label-form data-quick-preview-url="@Url.Action("QuickPreview","Labels")">
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="ClientActionId" value="@Guid.NewGuid()"/>
+        <input type="hidden" asp-for="SelectedLogoAssetId" id="wizardSelectedLogoAssetId" />
+        <main class="label-wizard-main">
+            <partial name="Atlas/_AtlasValidationSummary"/>
+            <partial name="_PrintWizardOrigin"/>
+            <partial name="_PrintWizardTemplate"/>
+            <partial name="_PrintWizardBranding"/>
+            <partial name="_PrintWizardPrintSettings"/>
+            <partial name="_PrintWizardReview"/>
+            <p class="label-step-error" data-step-error role="alert"></p>
+            <footer class="label-wizard-navigation">
+                <button type="button" class="atlas-btn atlas-btn-secondary" data-step-back>Voltar</button>
+                <button type="button" class="atlas-btn atlas-btn-primary" data-step-next>Continuar</button>
+            </footer>
+        </main>
+        <partial name="_PrintWizardPreview"/>
+    </form>
+</main>
+@section Scripts {
+    <script src="~/js/labels-help.js" asp-append-version="true"></script>
+    <script src="~/js/labels-printwizard.js" asp-append-version="true"></script>
+    <script src="~/js/labels-form-submit.js" asp-append-version="true"></script>
+    <script>
+        // Logo origin handler
+        const onLogoSelected = () => { const logoOrigin = document.getElementById('logoOrigin'); if (logoOrigin) logoOrigin.value='SELECTED'; };
+    </script>
+}

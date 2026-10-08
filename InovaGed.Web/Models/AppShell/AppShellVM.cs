@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Mvc;
+
 namespace InovaGed.Web.Models.AppShell;
 
 public sealed record AppShellVM(
@@ -8,7 +10,11 @@ public sealed record AppShellVM(
     IReadOnlyList<AppMenuSectionVM> Menu,
     IReadOnlyList<AppQuickActionVM> QuickActions,
     IReadOnlyList<AppUtilityActionVM> UtilityActions,
-    AppPrimaryActionVM? PrimaryAction);
+    AppPrimaryActionVM? PrimaryAction)
+{
+    public string PageTitle => Page?.Title ?? string.Empty;
+    public string? PageSubtitle => Page?.Subtitle;
+}
 
 public sealed record AppBrandVM(string Name, string Product, string HomeController, string HomeAction);
 public sealed record AppEnvironmentVM(string WorkspaceLabel, string SecurityLabel);
@@ -62,4 +68,8 @@ public sealed record AppMenuItemVM(
     IReadOnlyList<string> Keywords);
 public sealed record AppQuickActionVM(string Code, string Label, string Description, string Controller, string Action, string Icon, bool IsPrimary);
 public sealed record AppUtilityActionVM(string Code, string Label, string Controller, string Action, string Icon);
-public sealed record AppPrimaryActionVM(string Label, string Controller, string Action, string Icon);
+public sealed record AppPrimaryActionVM(string Label, string Controller, string Action, string Icon, string? Url = null)
+{
+    public string ResolvedUrl(Microsoft.AspNetCore.Mvc.IUrlHelper? urlHelper = null)
+        => !string.IsNullOrWhiteSpace(Url) ? Url : (urlHelper?.Action(Action, Controller) ?? $"/{Controller}/{Action}");
+}

@@ -8,11 +8,14 @@ public sealed class VisualSnapshotAssertTests : IDisposable
     private readonly string? _update = Environment.GetEnvironmentVariable("INOVAGED_UPDATE_UI_BASELINES");
     private readonly string? _ci = Environment.GetEnvironmentVariable("CI");
 
+    private static readonly byte[] ValidPngA = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
+    private static readonly byte[] ValidPngB = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
+
     [Fact]
     public async Task Matching_files_pass()
     {
-        var (golden, actual) = await CreateFilesAsync([1, 2, 3], [1, 2, 3]);
-        await VisualSnapshotAssert.MatchAsync([1, 2, 3], golden, actual);
+        var (golden, actual) = await CreateFilesAsync(ValidPngA, ValidPngA);
+        await VisualSnapshotAssert.MatchAsync(ValidPngA, golden, actual);
     }
 
     [Fact]
@@ -20,16 +23,16 @@ public sealed class VisualSnapshotAssertTests : IDisposable
     {
         var actual = Path.Combine(_root, "actual.png");
         Directory.CreateDirectory(_root);
-        await File.WriteAllBytesAsync(actual, [1]);
+        await File.WriteAllBytesAsync(actual, ValidPngA);
         var error = await Assert.ThrowsAsync<XunitException>(() =>
-            VisualSnapshotAssert.MatchAsync([1], Path.Combine(_root, "missing.png"), actual));
+            VisualSnapshotAssert.MatchAsync(ValidPngA, Path.Combine(_root, "missing.png"), actual));
         Assert.Contains("golden ausente", error.Message);
     }
 
     [Fact]
     public async Task Empty_actual_fails_clearly()
     {
-        var (golden, actual) = await CreateFilesAsync([1], []);
+        var (golden, actual) = await CreateFilesAsync(ValidPngA, []);
         var error = await Assert.ThrowsAsync<XunitException>(() => VisualSnapshotAssert.MatchAsync([], golden, actual));
         Assert.Contains("está vazio", error.Message);
     }
@@ -37,8 +40,8 @@ public sealed class VisualSnapshotAssertTests : IDisposable
     [Fact]
     public async Task Different_hash_preserves_actual_and_reports_hashes()
     {
-        var (golden, actual) = await CreateFilesAsync([1], [2]);
-        var error = await Assert.ThrowsAsync<XunitException>(() => VisualSnapshotAssert.MatchAsync([2], golden, actual));
+        var (golden, actual) = await CreateFilesAsync(ValidPngA, ValidPngB);
+        var error = await Assert.ThrowsAsync<XunitException>(() => VisualSnapshotAssert.MatchAsync(ValidPngB, golden, actual));
         Assert.Contains("Visual snapshot mismatch", error.Message);
         Assert.Contains("SHA-256", error.Message);
         Assert.True(File.Exists(actual));
@@ -48,7 +51,7 @@ public sealed class VisualSnapshotAssertTests : IDisposable
     public async Task Missing_actual_directory_fails_clearly()
     {
         var error = await Assert.ThrowsAsync<XunitException>(() => VisualSnapshotAssert.MatchAsync(
-            [1], Path.Combine(_root, "golden.png"), Path.Combine(_root, "missing", "actual.png")));
+            ValidPngA, Path.Combine(_root, "golden.png"), Path.Combine(_root, "missing", "actual.png")));
         Assert.Contains("não existe", error.Message);
     }
 
@@ -60,9 +63,9 @@ public sealed class VisualSnapshotAssertTests : IDisposable
         var actual = Path.Combine(_root, "actual.png");
         var golden = Path.Combine(_root, "nested", "golden.png");
         Directory.CreateDirectory(_root);
-        await File.WriteAllBytesAsync(actual, [4, 5]);
-        await VisualSnapshotAssert.MatchAsync([4, 5], golden, actual);
-        Assert.Equal(new byte[] { 4, 5 }, await File.ReadAllBytesAsync(golden));
+        await File.WriteAllBytesAsync(actual, ValidPngA);
+        await VisualSnapshotAssert.MatchAsync(ValidPngA, golden, actual);
+        Assert.Equal(ValidPngA, await File.ReadAllBytesAsync(golden));
     }
 
     [Fact]
@@ -72,9 +75,9 @@ public sealed class VisualSnapshotAssertTests : IDisposable
         Environment.SetEnvironmentVariable("CI", "true");
         var actual = Path.Combine(_root, "actual.png");
         Directory.CreateDirectory(_root);
-        await File.WriteAllBytesAsync(actual, [1]);
+        await File.WriteAllBytesAsync(actual, ValidPngA);
         await Assert.ThrowsAsync<InvalidOperationException>(() => VisualSnapshotAssert.MatchAsync(
-            [1], Path.Combine(_root, "golden.png"), actual));
+            ValidPngA, Path.Combine(_root, "golden.png"), actual));
     }
 
     private async Task<(string Golden, string Actual)> CreateFilesAsync(byte[] goldenBytes, byte[] actualBytes)

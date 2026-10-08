@@ -30,12 +30,25 @@ public static class OcrAutoScheduleClock
         {
             return TimeZoneInfo.FindSystemTimeZoneById(id);
         }
-        catch (TimeZoneNotFoundException) when (id.Equals("America/Belem", StringComparison.OrdinalIgnoreCase))
+        catch (TimeZoneNotFoundException) when (id.Equals("America/Belem", StringComparison.OrdinalIgnoreCase) ||
+                                                id.Equals("America/Sao_Paulo", StringComparison.OrdinalIgnoreCase) ||
+                                                id.Equals("America/Fortaleza", StringComparison.OrdinalIgnoreCase) ||
+                                                id.Equals("America/Recife", StringComparison.OrdinalIgnoreCase))
         {
             return TimeZoneInfo.FindSystemTimeZoneById("E. South America Standard Time");
         }
+        catch (TimeZoneNotFoundException) when (id.Equals("America/Manaus", StringComparison.OrdinalIgnoreCase) ||
+                                                id.Equals("America/Cuiaba", StringComparison.OrdinalIgnoreCase) ||
+                                                id.Equals("America/Porto_Velho", StringComparison.OrdinalIgnoreCase))
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById("Central Brazilian Standard Time");
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return TimeZoneInfo.Utc;
+        }
     }
 
-    private static TimeSpan ParseRunAt(string? runAt)
+    public static TimeSpan ParseRunAt(string? runAt)
         => TimeSpan.TryParseExact(runAt, @"hh\:mm", CultureInfo.InvariantCulture, out var value) ? value : new TimeSpan(18, 0, 0);
 }

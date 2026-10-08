@@ -2784,6 +2784,28 @@ SELECT
                 return StatusCode(StatusCodes.Status403Forbidden, new { success = false, versionId, message = "Você não possui permissão para acessar este documento.", correlationId = HttpContext.TraceIdentifier });
 
             var status = await _previewStatus.GetAsync(tenantId, versionId, ct);
+            var previewRelPath = BuildPreviewPath(tenantId, v.DocumentId, versionId, v.FileName);
+            var isDirectMedia = IsPdf(v.ContentType, v.FileName) || IsImage(v.ContentType, v.FileName);
+            var fileExistsOnStorage = isDirectMedia || await _storage.ExistsAsync(previewRelPath, ct);
+
+            if (fileExistsOnStorage || status?.Status == PreviewProcessingStatus.Ready)
+            {
+                var previewUrl = Url.Action("PreviewVersion", "Ged", new { versionId }) ?? $"/Ged/PreviewVersion?versionId={versionId}";
+                return Ok(new
+                {
+                    success = true,
+                    versionId,
+                    status = "READY",
+                    previewPath = isDirectMedia ? v.StoragePath : (status?.PreviewPath ?? previewRelPath),
+                    previewUrl,
+                    errorMessage = (string?)null,
+                    attempts = status?.Attempts ?? 1,
+                    lastUpdatedAt = status?.LastUpdatedAt ?? status?.FinishedAt ?? DateTimeOffset.UtcNow,
+                    requestedAt = status?.RequestedAt ?? DateTimeOffset.UtcNow,
+                    finishedAt = status?.FinishedAt ?? DateTimeOffset.UtcNow
+                });
+            }
+
             if (status is null)
             {
                 return Ok(new
@@ -2810,17 +2832,13 @@ SELECT
                 _ => "PENDING"
             };
 
-            var previewUrl = status.Status == PreviewProcessingStatus.Ready
-                ? (Url.Action("PreviewVersion", "Ged", new { versionId }) ?? $"/Ged/PreviewVersion?versionId={versionId}")
-                : null;
-
             return Ok(new
             {
                 success = true,
                 versionId,
                 status = statusStr,
                 previewPath = status.PreviewPath,
-                previewUrl,
+                previewUrl = (string?)null,
                 errorMessage = status.ErrorMessage,
                 attempts = status.Attempts,
                 lastUpdatedAt = status.LastUpdatedAt ?? status.FinishedAt ?? status.LastAttemptAt ?? status.RequestedAt,

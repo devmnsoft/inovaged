@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using InovaGed.Application;
 using InovaGed.Application.Common.Storage;
 using Microsoft.Extensions.Configuration;
@@ -19,8 +19,9 @@ public sealed class PopplerPdfTextExtractor : IPdfTextExtractor
     {
         _storage = storage;
         _logger = logger;
-        _pdfToTextPath = cfg["Ocr:PdfToTextPath"]
-            ?? throw new InvalidOperationException("Ocr:PdfToTextPath não configurado.");
+        _pdfToTextPath = string.IsNullOrWhiteSpace(cfg["Ocr:PdfToTextPath"])
+            ? "pdftotext"
+            : cfg["Ocr:PdfToTextPath"]!;
     }
 
     public async Task<string> ExtractTextAsync(string pdfStoragePath, CancellationToken ct)

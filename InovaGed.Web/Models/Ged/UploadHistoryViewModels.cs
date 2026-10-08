@@ -57,6 +57,12 @@ public sealed class GedUploadBatchItemVM
     public string? CorrelationId { get; set; }
     public string? ProcessingWarning { get; set; }
     public string IntakeReviewStatus { get; set; } = "PENDING";
+    public Guid? ClassificationId { get; set; }
+    public string? ClassificationCode { get; set; }
+    public string? ClassificationName { get; set; }
+    public string ClassificationDisplay => !string.IsNullOrWhiteSpace(ClassificationCode) && !string.IsNullOrWhiteSpace(ClassificationName)
+        ? $"{ClassificationCode} - {ClassificationName}"
+        : (!string.IsNullOrWhiteSpace(ClassificationName) ? ClassificationName : "Sem classificação");
     public string OperationalStatus => Status switch
     {
         "PROCESSING" or "PENDING" or "UPLOADING" => "Em processamento",

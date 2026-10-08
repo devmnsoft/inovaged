@@ -34,6 +34,8 @@ public sealed class OcrAutoSchedulerWorker : BackgroundService
             return;
         }
 
+        await TryCatchUpMissedRunAsync(stoppingToken);
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -84,6 +86,41 @@ public sealed class OcrAutoSchedulerWorker : BackgroundService
                     break;
                 }
             }
+        }
+    }
+
+    private async Task TryCatchUpMissedRunAsync(CancellationToken ct)
+    {
+        try
+        {
+            var options = _options.CurrentValue;
+            if (!options.Enabled) return;
+
+            using var scope = _scopeFactory.CreateScope();
+            var repo = scope.ServiceProvider.GetRequiredService<IOcrAutoScheduleRepository>();
+            var lastRun = await repo.GetLastRunAsync(options.TenantId, ct);
+
+            var tz = OcrAutoScheduleClock.ResolveTimeZone(options.TimeZone);
+            var localNow = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, tz);
+            var scheduledToday = new DateTimeOffset(localNow.Date.Add(OcrAutoScheduleClock.ParseRunAt(options.RunAt)), localNow.Offset);
+
+            if (localNow > scheduledToday && (localNow - scheduledToday) < TimeSpan.FromHours(12))
+            {
+                var ranToday = lastRun is not null &&
+                               TimeZoneInfo.ConvertTime(lastRun.StartedAtUtc, tz).Date == localNow.Date &&
+                               (lastRun.Status is "COMPLETED" or "SUCCESS" or "RUNNING");
+
+                if (!ranToday)
+                {
+                    _logger.LogInformation("OCR Auto Scheduler identificou execução perdida após reinício do serviço. Disparando recuperação...");
+                    var service = scope.ServiceProvider.GetRequiredService<IOcrAutoSchedulerService>();
+                    await service.RunAsync(ct);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Falha ao verificar recuperação de execução de OCR na inicialização.");
         }
     }
 }

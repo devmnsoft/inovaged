@@ -6,7 +6,7 @@ public static class PackageVerifier
 {
  static readonly string[] Required=["app/InovaGed.Web.dll","app/web.config","tools/doctor/InovaGed.Environment.Doctor.dll","tools/migrator/InovaGed.Database.Migrator.dll","database/migrations.manifest.json","config/appsettings.Production.example.json","config/deployment.example.json","deployment/Invoke-InovaGedDeployment.ps1","manifest/release-manifest.json","manifest/build-information.json","checksums.sha256"];
  static readonly string[] TextExtensions=[".json",".config",".xml",".ps1",".cmd",".bat",".sh",".txt",".md"];
- static readonly Regex Secret=new(@"(?im)(Password|Pwd)\s*=\s*(?!(SUA_SENHA|YOUR_PASSWORD|\$\{SECRET\}|<SET_EXTERNALLY>))\S+|Bearer\s+\S+|BEGIN (RSA )?PRIVATE KEY|BEGIN CERTIFICATE|client_secret\s*[:=]|api_key\s*[:=]|token\s*=",RegexOptions.NonBacktracking);
+ static readonly Regex Secret=new(@"(?im)(Password|Pwd)\s*=\s*(?!(SUA_SENHA|YOUR_PASSWORD|\$\{SECRET\}|<SET_EXTERNALLY>))\S+|Bearer\s+\S+|BEGIN (RSA )?PRIVATE KEY|BEGIN CERTIFICATE|client_secret\s*[:=]|api_key\s*[:=]|token\s*=",RegexOptions.Compiled,TimeSpan.FromSeconds(2));
  public static VerificationReport Verify(string packagePath)
  {
   var issues=new List<VerificationIssue>(); if(!File.Exists(packagePath)) return new(false,[new("PACKAGE_NOT_FOUND",packagePath,"Pacote não encontrado.")]);
