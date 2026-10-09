@@ -253,6 +253,16 @@ public sealed class ClassificationController : Controller
                 return RedirectToAction("Index", "Ged");
             }
 
+            if (!Enum.IsDefined(typeof(ClassificationEditAction), classificationAction)
+                || !Enum.IsDefined(typeof(DocumentTypeEditAction), documentTypeAction))
+            {
+                if (IsAjaxRequest())
+                    return BadRequest("Ação de classificação ou tipo documental inválida.");
+
+                TempData["Error"] = "Ação de classificação ou tipo documental inválida.";
+                return RedirectToAction("Details", "Ged", new { id = documentId, openClassify = true });
+            }
+
             var hasClassification = classificationAction != ClassificationEditAction.Keep;
             var hasDocumentType = documentTypeAction != DocumentTypeEditAction.Keep;
             var hasTags = Request.Form.ContainsKey("tagsCsv");

@@ -227,13 +227,6 @@ pending_recalc AS (
     INSERT INTO ged.ai_retention_recalc_pending (id, tenant_id, document_id, application_id, reason, attempts, next_attempt_at)
     SELECT gen_random_uuid(), @TenantId, @DocumentId, NULL, 'QUICK_CLASSIFICATION_RECALC', 0, now()
     WHERE EXISTS (SELECT 1 FROM updated_document)
-      AND NOT EXISTS (
-          SELECT 1 FROM ged.ai_retention_recalc_pending
-          WHERE tenant_id = @TenantId
-            AND document_id = @DocumentId
-            AND application_id IS NULL
-            AND resolved_at IS NULL
-      )
     RETURNING id
 )
 SELECT count(*) FROM updated_document;

@@ -5,6 +5,7 @@ using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Retention;
 using InovaGed.Application.Security;
+using InovaGed.Infrastructure.Retention;
 using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Infrastructure.Classification;
@@ -16,12 +17,14 @@ public sealed class DocumentClassificationCommands : IDocumentClassificationComm
     private readonly IRetentionRecalcService? _retention;
     private readonly IAbacAuthorizationService _authorization;
     private readonly IRetentionJobRepository _retentionJobs;
+    private readonly AssistedRetentionRecovery _retentionRecovery;
 
     public DocumentClassificationCommands(
         IDbConnectionFactory db,
         ILogger<DocumentClassificationCommands> logger,
         IRetentionJobRepository retentionJobs,
         IAbacAuthorizationService authorization,
+        AssistedRetentionRecovery retentionRecovery,
         IRetentionRecalcService? retention = null)
     {
         _db = db;
@@ -29,6 +32,7 @@ public sealed class DocumentClassificationCommands : IDocumentClassificationComm
         _retention = retention;
         _authorization = authorization;
         _retentionJobs = retentionJobs;
+        _retentionRecovery = retentionRecovery;
     }
 
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -520,18 +524,12 @@ where tenant_id = @TenantId
             await tx.CommitAsync(ct);
 
             bool recalcOk = false;
-            if (classificationChanged && _retention != null)
+            if (classificationChanged && pendingRecalcId is Guid pendingId)
             {
                 try
                 {
-                    var calculated = await _retention.RunOneAsync(command.TenantId, command.DocumentId, 30, ct);
-                    if (calculated == 1)
-                    {
-                        recalcOk = true;
-                        using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                        if (pendingRecalcId is Guid id)
-                            await _retentionJobs.ResolvePendingRecalcAsync(command.TenantId, id, cleanup.Token);
-                    }
+                    var recovered = await _retentionRecovery.RunAsync(command.TenantId, pendingId, manual: true, ct);
+                    recalcOk = recovered.Resolved;
                 }
                 catch (Exception rex)
                 {

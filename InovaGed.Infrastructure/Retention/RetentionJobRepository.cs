@@ -152,18 +152,6 @@ select
 
     public async Task<Guid> EnqueueRecalculateAsync(System.Data.IDbConnection connection, System.Data.IDbTransaction transaction, Guid tenantId, Guid documentId, string reason, CancellationToken ct)
     {
-        var existing = await connection.ExecuteScalarAsync<Guid?>(new CommandDefinition("""
-select id
-from ged.ai_retention_recalc_pending
-where tenant_id=@tenantId and document_id=@documentId and application_id is null and resolved_at is null
-order by created_at desc, id desc
-limit 1
-for update
-""", new { tenantId, documentId }, transaction, cancellationToken: ct));
-
-        if (existing is Guid id && id != Guid.Empty)
-            return id;
-
         var newId = Guid.NewGuid();
         await connection.ExecuteAsync(new CommandDefinition("""
 insert into ged.ai_retention_recalc_pending

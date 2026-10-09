@@ -108,8 +108,9 @@ public sealed class DocumentAiCyclePostgresTests : IAsyncLifetime
 
     private PostgresAssistedDocumentStore Store() => new(Factory());
 
-    private AssistedRetentionRecovery Recovery(IRetentionJobRepository? repository = null) => new(Factory(),
-        new RetentionRecalcService(repository ?? new RetentionJobRepository(Factory(), NullLogger<RetentionJobRepository>.Instance), NullLogger<RetentionRecalcService>.Instance));
+    private AssistedRetentionRecovery Recovery(IRetentionJobRepository? repository = null) => new(
+        Factory(),
+        repository ?? new RetentionJobRepository(Factory(), NullLogger<RetentionJobRepository>.Instance));
 
     [PgGatedFact]
     public async Task New_worker_recovers_committed_pending_and_replay_does_not_recalculate()

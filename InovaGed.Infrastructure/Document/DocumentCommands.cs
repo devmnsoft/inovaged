@@ -4,6 +4,7 @@ using InovaGed.Application;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Common.Storage;
 using InovaGed.Application.Documents;
+using InovaGed.Application.Retention;
 using InovaGed.Domain.Primitives;
 using Microsoft.Extensions.Logging;
 
@@ -14,14 +15,17 @@ public sealed class DocumentCommands : IDocumentCommands
     private readonly IDbConnectionFactory _db;
     private readonly IFileStorage _storage;
     private readonly ILogger<DocumentCommands> _logger;
+    private readonly IRetentionJobRepository _retentionJobs;
 
     public DocumentCommands(
         IDbConnectionFactory db,
         IFileStorage storage,
+        IRetentionJobRepository retentionJobs,
         ILogger<DocumentCommands> logger)
     {
         _db = db;
         _storage = storage;
+        _retentionJobs = retentionJobs;
         _logger = logger;
     }
 
@@ -262,12 +266,6 @@ do update set
   reg_status = 'A'
 where ged.document_classification.tenant_id = excluded.tenant_id;";
 
-        const string pendingRecalcSql = @"
-insert into ged.ai_retention_recalc_pending (id, tenant_id, document_id, application_id, reason, attempts, next_attempt_at)
-select gen_random_uuid(), @tenantId, @documentId, null, 'DOCUMENT_COMMANDS_APPLY', 0, now()
-where not exists (select 1 from ged.ai_retention_recalc_pending
-                  where tenant_id = @tenantId and document_id = @documentId and application_id is null and resolved_at is null);";
-
         try
         {
             await using var conn = await _db.OpenAsync(ct);
@@ -277,7 +275,7 @@ where not exists (select 1 from ged.ai_retention_recalc_pending
             if (rows == 0) throw new InvalidOperationException("A classe não pertence à versão vigente do plano ou o documento não foi encontrado.");
 
             await conn.ExecuteAsync(new CommandDefinition(upsertClassificationSql, new { tenantId, userId, documentId }, tx, cancellationToken: ct));
-            await conn.ExecuteAsync(new CommandDefinition(pendingRecalcSql, new { tenantId, documentId }, tx, cancellationToken: ct));
+            await _retentionJobs.EnqueueRecalculateAsync(conn, tx, tenantId, documentId, "DOCUMENT_COMMANDS_APPLY", ct);
 
             await tx.CommitAsync(ct);
         }

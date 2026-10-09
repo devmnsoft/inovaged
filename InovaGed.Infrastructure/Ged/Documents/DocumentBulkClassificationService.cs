@@ -5,6 +5,7 @@ using InovaGed.Application.Documents;
 using InovaGed.Application.Ged.Documents;
 using InovaGed.Application.Retention;
 using InovaGed.Application.Security;
+using InovaGed.Infrastructure.Retention;
 using Npgsql;
 
 namespace InovaGed.Infrastructure.Ged.Documents;
@@ -13,6 +14,8 @@ public sealed class DocumentBulkClassificationService(
     IDbConnectionFactory db,
     IDocumentCommands commands,
     IRetentionRecalcService retention,
+    IRetentionJobRepository retentionJobs,
+    AssistedRetentionRecovery retentionRecovery,
     IAuditWriter audit,
     IAbacAuthorizationService authorization) : IDocumentBulkClassificationService
 {
@@ -99,6 +102,7 @@ select exists(
         var allowed = await authorization.FilterDocumentsAsync(tenantId, userId, new[] { id }, "EDIT", ct);
         if (!allowed.Contains(id)) return Denied(id, "Documento não encontrado ou inacessível.", "NOT_FOUND");
 
+        Guid pendingId;
         await using (var tx = await connection.BeginTransactionAsync(ct))
         {
             var locked = await connection.ExecuteScalarAsync<Guid?>(new CommandDefinition("""
@@ -143,46 +147,21 @@ where ged.document_classification.tenant_id=excluded.tenant_id;
 """, new { tenantId, userId, id }, tx, cancellationToken: ct));
 
             // Same transaction: the classification cannot commit without durable recalculation work.
-            await connection.ExecuteAsync(new CommandDefinition("""
-insert into ged.ai_retention_recalc_pending (id, tenant_id, document_id, application_id, reason, attempts, next_attempt_at)
-select gen_random_uuid(), @tenantId, @id, null, @PendingReason, 0, now()
-where not exists (select 1 from ged.ai_retention_recalc_pending
-                  where tenant_id=@tenantId and document_id=@id and application_id is null and resolved_at is null);
-""", new { tenantId, id, PendingReason }, tx, cancellationToken: ct));
+            pendingId = await retentionJobs.EnqueueRecalculateAsync(connection, tx, tenantId, id, PendingReason, ct);
             await tx.CommitAsync(ct);
         }
 
         try
         {
-            var calculated = await retention.RunOneAsync(tenantId, id, 30, ct);
-            if (calculated != 1) throw new InvalidOperationException("retention_document_missing");
+            var recovered = await retentionRecovery.RunAsync(tenantId, pendingId, manual: true, ct);
+            if (!recovered.Resolved) throw new InvalidOperationException("retention_pending");
         }
         catch (Exception ex)
         {
             var cancelledRecalc = ex is OperationCanceledException;
-            var error = cancelledRecalc ? "temporalidade:cancelada" : ex is PostgresException pg ? "temporalidade:" + pg.SqlState : "temporalidade:falha";
-            try
-            {
-                using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                await connection.ExecuteAsync(new CommandDefinition("""
-update ged.ai_retention_recalc_pending set last_error=@error
-where tenant_id=@tenantId and document_id=@id and application_id is null and resolved_at is null;
-""", new { tenantId, id, error }, cancellationToken: cleanup.Token));
-            }
-            catch { /* the durable row already exists; the worker will retry */ }
             return new(id, true, "Classificação aplicada; temporalidade pendente de recuperação.", "PENDING",
                 cancelledRecalc ? "RETENTION_CANCELLED" : "RETENTION_PENDING");
         }
-
-        try
-        {
-            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            await connection.ExecuteAsync(new CommandDefinition("""
-update ged.ai_retention_recalc_pending set resolved_at=now(), last_error=null, claimed_at=null, claim_token=null
-where tenant_id=@tenantId and document_id=@id and application_id is null and resolved_at is null;
-""", new { tenantId, id }, cancellationToken: cleanup.Token));
-        }
-        catch { /* a leftover pending row is idempotent and recovered by the worker */ }
         return new(id, true, "Classificação aplicada.", "APPLIED", "APPLIED");
     }
 

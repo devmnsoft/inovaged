@@ -88,7 +88,7 @@ public sealed record SaveManualIntegratedCommand(
         UserId,
         ClassificationAction: !HasClassification ? ClassificationEditAction.Keep : (ClassificationId.HasValue && ClassificationId.Value != Guid.Empty ? ClassificationEditAction.Replace : ClassificationEditAction.Remove),
         ClassificationId: ClassificationId,
-        ConfirmClassificationRemoval: true,
+        ConfirmClassificationRemoval: false,
         TypeAction: !HasDocumentType ? DocumentTypeEditAction.Keep : (DocumentTypeId.HasValue && DocumentTypeId.Value != Guid.Empty ? DocumentTypeEditAction.Replace : DocumentTypeEditAction.Remove),
         DocumentTypeId: DocumentTypeId,
         HasTags: HasTags,

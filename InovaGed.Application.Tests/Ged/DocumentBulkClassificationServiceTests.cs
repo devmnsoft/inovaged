@@ -8,6 +8,8 @@ using InovaGed.Domain.Primitives;
 using InovaGed.Infrastructure.Ged.Documents;
 using Dapper;
 using InovaGed.Infrastructure.Common.Database;
+using InovaGed.Infrastructure.Retention;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using Xunit;
 
@@ -61,6 +63,46 @@ public sealed class DocumentBulkClassificationServiceTests
         }
     }
 
+    private sealed class ToggleRetentionJobs : IRetentionJobRepository
+    {
+        private readonly IRetentionJobRepository _inner;
+
+        public ToggleRetentionJobs(IRetentionJobRepository inner)
+        {
+            _inner = inner;
+        }
+
+        public bool ShouldFail { get; set; }
+
+        public Task<int> RecalculateAsync(Guid tenantId, int dueSoonDays, CancellationToken ct) =>
+            _inner.RecalculateAsync(tenantId, dueSoonDays, ct);
+
+        public Task<RetentionDashboardVM> GetDashboardAsync(Guid tenantId, int dueSoonDays, CancellationToken ct) =>
+            _inner.GetDashboardAsync(tenantId, dueSoonDays, ct);
+
+        public Task<int> RecalculateOneAsync(Guid tenantId, Guid documentId, int dueSoonDays, CancellationToken ct) =>
+            ShouldFail
+                ? throw new InvalidOperationException("Falha simulada de recálculo")
+                : _inner.RecalculateOneAsync(tenantId, documentId, dueSoonDays, ct);
+
+        public Task<int> RecalculateOneAsync(System.Data.IDbConnection connection, System.Data.IDbTransaction transaction, Guid tenantId, Guid documentId, int dueSoonDays, CancellationToken ct) =>
+            ShouldFail
+                ? throw new InvalidOperationException("Falha simulada de recálculo")
+                : _inner.RecalculateOneAsync(connection, transaction, tenantId, documentId, dueSoonDays, ct);
+
+        public Task<Guid> EnqueueRecalculateAsync(Guid tenantId, Guid documentId, string reason, CancellationToken ct) =>
+            _inner.EnqueueRecalculateAsync(tenantId, documentId, reason, ct);
+
+        public Task<Guid> EnqueueRecalculateAsync(System.Data.IDbConnection connection, System.Data.IDbTransaction transaction, Guid tenantId, Guid documentId, string reason, CancellationToken ct) =>
+            _inner.EnqueueRecalculateAsync(connection, transaction, tenantId, documentId, reason, ct);
+
+        public Task<bool> ResolvePendingRecalcAsync(Guid tenantId, Guid pendingId, CancellationToken ct) =>
+            _inner.ResolvePendingRecalcAsync(tenantId, pendingId, ct);
+
+        public Task<bool> ResolvePendingRecalcAsync(System.Data.IDbConnection connection, System.Data.IDbTransaction transaction, Guid tenantId, Guid pendingId, CancellationToken ct) =>
+            _inner.ResolvePendingRecalcAsync(connection, transaction, tenantId, pendingId, ct);
+    }
+
     private sealed class FakeAbac : IAbacAuthorizationService
     {
         public HashSet<Guid> AllowedIds { get; } = new();
@@ -79,7 +121,7 @@ public sealed class DocumentBulkClassificationServiceTests
     public async Task ApplyAsync_RejectsBatchOver500Documents()
     {
         var service = new DocumentBulkClassificationService(
-            null!, new FakeCommands(), new FakeRetention(), new FakeAuditWriter(), new FakeAbac());
+            null!, new FakeCommands(), new FakeRetention(), null!, null!, new FakeAuditWriter(), new FakeAbac());
 
         var ids = Enumerable.Range(0, 501).Select(_ => Guid.NewGuid()).ToList();
 
@@ -93,7 +135,7 @@ public sealed class DocumentBulkClassificationServiceTests
     public async Task ApplyAsync_ReturnsEmptyResult_WhenNoDocumentsProvided()
     {
         var service = new DocumentBulkClassificationService(
-            null!, new FakeCommands(), new FakeRetention(), new FakeAuditWriter(), new FakeAbac());
+            null!, new FakeCommands(), new FakeRetention(), null!, null!, new FakeAuditWriter(), new FakeAbac());
 
         var result = await service.ApplyAsync(Guid.NewGuid(), Guid.NewGuid(), Array.Empty<Guid>(), Guid.NewGuid(), CancellationToken.None);
 
@@ -107,7 +149,7 @@ public sealed class DocumentBulkClassificationServiceTests
     public async Task ApplyAsync_HonorsCancellation()
     {
         var service = new DocumentBulkClassificationService(
-            null!, new FakeCommands(), new FakeRetention(), new FakeAuditWriter(), new FakeAbac());
+            null!, new FakeCommands(), new FakeRetention(), null!, null!, new FakeAuditWriter(), new FakeAbac());
 
         using var cts = new CancellationTokenSource();
         cts.Cancel();
@@ -148,8 +190,14 @@ insert into ged.classification_plan_version_item(tenant_id,version_id,classifica
 """, new { tenant, doc, denied, cls, plan });
 
         var abac = new FakeAbac(); abac.AllowedIds.Add(doc);
-        var retention = new FakeRetention { ShouldFail = true };
-        var service = new DocumentBulkClassificationService(new NpgsqlConnectionFactory(PgGate.Dsn()), new FakeCommands(), retention, new FakeAuditWriter(), abac);
+        var factory = new NpgsqlConnectionFactory(PgGate.Dsn());
+        var retentionJobs = new ToggleRetentionJobs(new RetentionJobRepository(factory, NullLogger<RetentionJobRepository>.Instance))
+        {
+            ShouldFail = true
+        };
+        var retention = new FakeRetention();
+        var recovery = new AssistedRetentionRecovery(factory, retentionJobs);
+        var service = new DocumentBulkClassificationService(factory, new FakeCommands(), retention, retentionJobs, recovery, new FakeAuditWriter(), abac);
         var result = await service.ApplyAsync(tenant, user, new[] { doc, doc, denied, Guid.Empty }, cls, CancellationToken.None);
 
         Assert.Equal(new[] { "PENDING", "DENIED", "DENIED", "DENIED" }, result.Items.Select(x => x.Status));
@@ -159,7 +207,7 @@ insert into ged.classification_plan_version_item(tenant_id,version_id,classifica
         Assert.Null(await admin.ExecuteScalarAsync<Guid?>("select classification_id from ged.document where id=@denied", new { denied }));
         Assert.Equal(1, await admin.ExecuteScalarAsync<int>("select count(*) from ged.ai_retention_recalc_pending where document_id=@doc and application_id is null and resolved_at is null", new { doc }));
 
-        retention.ShouldFail = false;
+        retentionJobs.ShouldFail = false;
         var again = await service.ApplyAsync(tenant, user, new[] { doc }, cls, CancellationToken.None);
         Assert.Equal("APPLIED", again.Items[0].Status);
         Assert.Equal(0, await admin.ExecuteScalarAsync<int>("select count(*) from ged.ai_retention_recalc_pending where document_id=@doc and resolved_at is null", new { doc }));

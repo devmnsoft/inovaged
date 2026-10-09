@@ -18,7 +18,7 @@ public sealed class DocumentAiAssistService(
     IAbacAuthorizationService authorization,
     IAuditWriter audit,
     IAssistedDocumentStore documents,
-    RetentionRecalcService retention,
+    IRetentionJobRepository retentionJobs,
     ILogger<DocumentAiAssistService> logger) : IDocumentAiAssistService
 {
     private const int TextLimit = 120_000;
@@ -125,14 +125,20 @@ public sealed class DocumentAiAssistService(
             await using var connection = await db.OpenAsync(ct);
             const string countSql = """
 select count(*) from ged.classification_plan_version_item i
-where i.tenant_id=@tenantId and coalesce(i.is_active,true) and i.version_id=(select v.id from ged.classification_plan_version v where v.tenant_id=@tenantId order by v.version_no desc limit 1)
+join ged.classification_plan_version v on v.tenant_id=i.tenant_id and v.id=i.version_id
+where i.tenant_id=@tenantId
+  and coalesce(i.is_active,true)
+  and coalesce(v.reg_status,'A')='A'
+  and v.version_no=(select max(version_no) from ged.classification_plan_version where tenant_id=@tenantId and coalesce(reg_status,'A')='A')
 """;
             var available = await connection.ExecuteScalarAsync<int>(new CommandDefinition(countSql, new { tenantId = caller.TenantId }, cancellationToken: ct));
             var classes = (await connection.QueryAsync<ClassOption>(new CommandDefinition("""
 select i.classification_id "Id", i.code "Code", i.name "Name"
 from ged.classification_plan_version_item i
+join ged.classification_plan_version v on v.tenant_id=i.tenant_id and v.id=i.version_id
 where i.tenant_id=@tenantId and coalesce(i.is_active,true)
-  and i.version_id=(select v.id from ged.classification_plan_version v where v.tenant_id=@tenantId order by v.version_no desc limit 1)
+  and coalesce(v.reg_status,'A')='A'
+  and v.version_no=(select max(version_no) from ged.classification_plan_version where tenant_id=@tenantId and coalesce(reg_status,'A')='A')
 order by i.code limit @limit
 """, new { tenantId = caller.TenantId, limit = CandidateLimit }, cancellationToken: ct))).ToList();
             if (classes.Count == 0) return Fail(422, "O plano de classificação vigente não possui classes ativas.");
@@ -148,8 +154,10 @@ order by i.code limit @limit
     public Task<AssistResponse> ApplyArchivalClassAsync(ApplyCatalogCommand command, AssistCaller caller, CancellationToken ct) =>
         ApplyCatalogAsync(command, caller, AiTask.SuggestArchivalClassification, """
 select i.code from ged.classification_plan_version_item i
+join ged.classification_plan_version v on v.tenant_id=i.tenant_id and v.id=i.version_id
 where i.tenant_id=@tenantId and i.classification_id=@id and coalesce(i.is_active,true)
-  and i.version_id=(select v.id from ged.classification_plan_version v where v.tenant_id=@tenantId order by v.version_no desc limit 1)
+  and coalesce(v.reg_status,'A')='A'
+  and v.version_no=(select max(version_no) from ged.classification_plan_version where tenant_id=@tenantId and coalesce(reg_status,'A')='A')
 """, "AI_ARCHIVAL_APPLY", "Classificação arquivística aplicada a partir de sugestão de IA", (application, token, id, mutate, tokenCt) => documents.ApplyArchivalClassAsync(application, token, id, mutate, tokenCt), ct);
 
     private async Task<AssistResponse> ApplyCatalogAsync(ApplyCatalogCommand command, AssistCaller caller, AiTask task, string nameSql, string auditAction, string auditMessage, Func<AssistedApplicationRecord, long, Guid, bool, CancellationToken, Task<AssistedWriteResult>> write, CancellationToken ct)
@@ -280,7 +288,7 @@ where v.tenant_id=@tenantId and v.id=any(@ids) and coalesce(d.reg_status,'A')='A
     {
         try
         {
-            var result = await new InovaGed.Infrastructure.Retention.AssistedRetentionRecovery(db, retention)
+            var result = await new InovaGed.Infrastructure.Retention.AssistedRetentionRecovery(db, retentionJobs)
                 .RunAsync(caller.TenantId, written.PendingId!.Value, true, ct);
             return Ok(new { success = true, alreadyApplied = false, partial = !result.Resolved, retentionRecalculated = result.Resolved,
                 retentionPending = !result.Resolved, retentionState = result.State, concurrencyToken = written.ConcurrencyToken,
@@ -394,7 +402,7 @@ where v.tenant_id=@tenantId and v.id=any(@ids) and coalesce(d.reg_status,'A')='A
         if (!await CanAsync(caller, document, "EDIT", ct)) return await DenyAsync(caller, document, document.VersionId, "edit_permission_missing", ct);
         var pending = await documents.GetRetentionAsync(caller.TenantId, pendingId, ct);
         if (pending is null || pending.DocumentId != documentId) return Fail(404, "Pendência não encontrada.");
-        var result = await new InovaGed.Infrastructure.Retention.AssistedRetentionRecovery(db, retention)
+        var result = await new InovaGed.Infrastructure.Retention.AssistedRetentionRecovery(db, retentionJobs)
             .RunAsync(caller.TenantId, pendingId, true, ct);
         return Ok(new { success = result.Resolved, retentionPending = !result.Resolved, retentionRecalculated = result.Resolved,
             retentionState = result.State, partial = !result.Resolved, attempts = result.Attempts,

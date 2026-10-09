@@ -11,7 +11,7 @@ public sealed record RetentionRecoveryResult(bool Resolved, int Attempts, string
 /// Uses the existing retention calculation with a database lock, not a time-based lease.
 /// Calculation, pending completion and review completion commit together.
 /// </summary>
-public sealed class AssistedRetentionRecovery(IDbConnectionFactory db, RetentionRecalcService retention)
+public sealed class AssistedRetentionRecovery(IDbConnectionFactory db, IRetentionJobRepository retentionJobs)
 {
     public async Task<int> RunBatchAsync(Guid tenantId, CancellationToken ct)
     {
@@ -57,7 +57,7 @@ where tenant_id=@tenantId and id=@pendingId
         {
             // The row lock survives arbitrarily long calculations. On process/connection loss,
             // PostgreSQL rolls back every effect and makes the durable pending item available.
-            var rows = await retention.RunOneAsync(connection, tx, tenantId, item.DocumentId, 30, ct);
+            var rows = await retentionJobs.RecalculateOneAsync(connection, tx, tenantId, item.DocumentId, 30, ct);
             if (rows != 1) throw new InvalidOperationException("retention_document_missing");
             if (item.ApplicationId is Guid applicationId)
             {
