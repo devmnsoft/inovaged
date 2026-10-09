@@ -14,18 +14,21 @@ public sealed class DocumentClassificationCommands : IDocumentClassificationComm
     private readonly IDbConnectionFactory _db;
     private readonly ILogger<DocumentClassificationCommands> _logger;
     private readonly IRetentionRecalcService? _retention;
-    private readonly IAbacAuthorizationService? _authorization;
+    private readonly IAbacAuthorizationService _authorization;
+    private readonly IRetentionJobRepository _retentionJobs;
 
     public DocumentClassificationCommands(
         IDbConnectionFactory db,
         ILogger<DocumentClassificationCommands> logger,
-        IRetentionRecalcService? retention = null,
-        IAbacAuthorizationService? authorization = null)
+        IRetentionJobRepository retentionJobs,
+        IAbacAuthorizationService authorization,
+        IRetentionRecalcService? retention = null)
     {
         _db = db;
         _logger = logger;
         _retention = retention;
         _authorization = authorization;
+        _retentionJobs = retentionJobs;
     }
 
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -247,7 +250,16 @@ WHERE tenant_id = @TenantId
         if (command.DocumentId == Guid.Empty)
             return new(false, false, false, false, false, false, "ID do documento inválido.", "INVALID_ID");
 
-        if (_authorization != null && command.UserId.HasValue)
+        if (command.TenantId == Guid.Empty)
+            return new(false, false, false, false, false, false, "Tenant inválido.", "INVALID_TENANT");
+
+        if (!command.IsSystemExecution && (!command.UserId.HasValue || command.UserId.Value == Guid.Empty))
+            return new(false, false, false, false, false, false, "Identidade obrigatória para editar classificação.", "IDENTITY_REQUIRED");
+
+        if (command.IsSystemExecution && string.IsNullOrWhiteSpace(command.SystemExecutionReason))
+            return new(false, false, false, false, false, false, "Execução de sistema exige justificativa auditável.", "SYSTEM_REASON_REQUIRED");
+
+        if (!command.IsSystemExecution)
         {
             var allowed = await _authorization.FilterDocumentsAsync(command.TenantId, command.UserId.Value, new[] { command.DocumentId }, "EDIT", ct);
             if (!allowed.Contains(command.DocumentId))
@@ -281,9 +293,10 @@ for update;";
             bool typeChanged = false;
             bool tagsChanged = false;
             bool metadataChanged = false;
+            Guid? pendingRecalcId = null;
 
             // Classificação
-            if (command.HasClassification)
+            if (command.ClassificationAction == ClassificationEditAction.Replace)
             {
                 if (command.ClassificationId.HasValue && command.ClassificationId.Value != Guid.Empty)
                 {
@@ -355,17 +368,23 @@ do update set
                         command.UserId
                     }, tx, cancellationToken: ct));
 
-                    const string insertPendingSql = @"
-insert into ged.ai_retention_recalc_pending (id, tenant_id, document_id, application_id, reason, attempts, next_attempt_at)
-select gen_random_uuid(), @TenantId, @DocumentId, null, 'MANUAL_SAVE_RECALC', 0, now()
-where not exists (select 1 from ged.ai_retention_recalc_pending
-                  where tenant_id=@TenantId and document_id=@DocumentId and application_id is null and resolved_at is null);";
-
-                    await con.ExecuteAsync(new CommandDefinition(insertPendingSql, new { command.TenantId, command.DocumentId }, tx, cancellationToken: ct));
+                    pendingRecalcId = await _retentionJobs.EnqueueRecalculateAsync(con, tx, command.TenantId, command.DocumentId, "MANUAL_SAVE_RECALC", ct);
                     classificationChanged = true;
                 }
                 else
                 {
+                    await tx.RollbackAsync(ct);
+                    return new(false, false, false, false, false, false, "Informe uma classificação vigente para substituir.", "INVALID_CLASSIFICATION_ACTION");
+                }
+            }
+            else if (command.ClassificationAction == ClassificationEditAction.Remove)
+            {
+                if (!command.ConfirmClassificationRemoval)
+                {
+                    await tx.RollbackAsync(ct);
+                    return new(false, false, false, false, false, false, "Confirme explicitamente a remoção da classificação arquivística.", "REMOVAL_CONFIRMATION_REQUIRED");
+                }
+
                     const string clearDocClassSql = @"
 update ged.document
 set classification_id = null,
@@ -396,24 +415,17 @@ where tenant_id = @TenantId and document_id = @DocumentId;";
                         command.UserId
                     }, tx, cancellationToken: ct));
 
-                    const string insertPendingSql = @"
-insert into ged.ai_retention_recalc_pending (id, tenant_id, document_id, application_id, reason, attempts, next_attempt_at)
-select gen_random_uuid(), @TenantId, @DocumentId, null, 'MANUAL_SAVE_RECALC', 0, now()
-where not exists (select 1 from ged.ai_retention_recalc_pending
-                  where tenant_id=@TenantId and document_id=@DocumentId and application_id is null and resolved_at is null);";
-
-                    await con.ExecuteAsync(new CommandDefinition(insertPendingSql, new { command.TenantId, command.DocumentId }, tx, cancellationToken: ct));
+                    pendingRecalcId = await _retentionJobs.EnqueueRecalculateAsync(con, tx, command.TenantId, command.DocumentId, "MANUAL_SAVE_RECALC", ct);
                     classificationChanged = true;
-                }
             }
 
             // Tipo Documental
-            if (command.HasDocumentType)
+            if (command.TypeAction == DocumentTypeEditAction.Replace)
             {
                 if (command.DocumentTypeId.HasValue && command.DocumentTypeId.Value != Guid.Empty)
                 {
                     var typeExists = await con.ExecuteScalarAsync<bool>(new CommandDefinition(
-                        "select exists(select 1 from ged.document_type where tenant_id = @TenantId and id = @Id);",
+                        "select exists(select 1 from ged.document_type where tenant_id = @TenantId and id = @Id and coalesce(reg_status,'A')='A');",
                         new { command.TenantId, Id = command.DocumentTypeId.Value }, tx, cancellationToken: ct));
 
                     if (!typeExists)
@@ -450,6 +462,12 @@ do update set
                 }
                 else
                 {
+                    await tx.RollbackAsync(ct);
+                    return new(false, false, false, false, false, false, "Informe um tipo documental ativo para substituir.", "INVALID_TYPE_ACTION");
+                }
+            }
+            else if (command.TypeAction == DocumentTypeEditAction.Remove)
+            {
                     await con.ExecuteAsync(new CommandDefinition(@"
 update ged.document
 set type_id = null,
@@ -465,7 +483,6 @@ set document_type_id = null,
 where tenant_id = @TenantId and document_id = @DocumentId;", new { command.TenantId, command.DocumentId, command.UserId }, tx, cancellationToken: ct));
 
                     typeChanged = true;
-                }
             }
 
             // Tags
@@ -512,10 +529,8 @@ where tenant_id = @TenantId
                     {
                         recalcOk = true;
                         using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                        await con.ExecuteAsync(new CommandDefinition("""
-update ged.ai_retention_recalc_pending set resolved_at=now(), last_error=null, claimed_at=null, claim_token=null
-where tenant_id=@TenantId and document_id=@DocumentId and application_id is null and resolved_at is null;
-""", new { command.TenantId, DocumentId = command.DocumentId }, cancellationToken: cleanup.Token));
+                        if (pendingRecalcId is Guid id)
+                            await _retentionJobs.ResolvePendingRecalcAsync(command.TenantId, id, cleanup.Token);
                     }
                 }
                 catch (Exception rex)

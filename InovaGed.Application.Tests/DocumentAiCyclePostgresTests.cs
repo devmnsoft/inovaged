@@ -200,6 +200,10 @@ create trigger {trigger} before update on ged.ai_retention_recalc_pending for ea
             await Continue.Task.WaitAsync(ct);
             return await inner.RecalculateOneAsync(c, tx, t, d, days, ct);
         }
+        public Task<Guid> EnqueueRecalculateAsync(Guid tenantId, Guid documentId, string reason, CancellationToken ct) => inner.EnqueueRecalculateAsync(tenantId, documentId, reason, ct);
+        public Task<Guid> EnqueueRecalculateAsync(System.Data.IDbConnection connection, System.Data.IDbTransaction transaction, Guid tenantId, Guid documentId, string reason, CancellationToken ct) => inner.EnqueueRecalculateAsync(connection, transaction, tenantId, documentId, reason, ct);
+        public Task<bool> ResolvePendingRecalcAsync(Guid tenantId, Guid pendingId, CancellationToken ct) => inner.ResolvePendingRecalcAsync(tenantId, pendingId, ct);
+        public Task<bool> ResolvePendingRecalcAsync(System.Data.IDbConnection connection, System.Data.IDbTransaction transaction, Guid tenantId, Guid pendingId, CancellationToken ct) => inner.ResolvePendingRecalcAsync(connection, transaction, tenantId, pendingId, ct);
     }
     private NpgsqlConnectionFactory Factory() => new(PgGate.Dsn());
     private async Task<T> One<T>(string sql, object args) => await _admin!.ExecuteScalarAsync<T>(sql, args);

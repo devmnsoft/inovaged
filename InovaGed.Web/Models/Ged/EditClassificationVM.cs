@@ -5,7 +5,10 @@ public sealed class EditClassificationVM
     public Guid DocumentId { get; set; }
     public Guid? ClassificationId { get; set; }
     public string? ClassificationLabel { get; set; }
+    public bool CurrentClassificationIsSelectable { get; set; }
     public Guid? DocumentTypeId { get; set; }
+    public string? DocumentTypeLabel { get; set; }
+    public bool CurrentDocumentTypeIsSelectable { get; set; }
     public string? TagsCsv { get; set; }
     public string? MetadataLines { get; set; }
 

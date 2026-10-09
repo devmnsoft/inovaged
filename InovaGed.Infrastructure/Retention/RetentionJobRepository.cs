@@ -144,6 +144,58 @@ select
     public Task<int> RecalculateOneAsync(System.Data.IDbConnection connection, System.Data.IDbTransaction transaction, Guid tenantId, Guid documentId, int dueSoonDays, CancellationToken ct)
         => connection.ExecuteAsync(new CommandDefinition(RecalculateOneSql, new { tenantId, documentId, dueSoonDays }, transaction, cancellationToken: ct));
 
+    public async Task<Guid> EnqueueRecalculateAsync(Guid tenantId, Guid documentId, string reason, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        return await EnqueueRecalculateAsync(conn, null!, tenantId, documentId, reason, ct);
+    }
+
+    public async Task<Guid> EnqueueRecalculateAsync(System.Data.IDbConnection connection, System.Data.IDbTransaction transaction, Guid tenantId, Guid documentId, string reason, CancellationToken ct)
+    {
+        var existing = await connection.ExecuteScalarAsync<Guid?>(new CommandDefinition("""
+select id
+from ged.ai_retention_recalc_pending
+where tenant_id=@tenantId and document_id=@documentId and application_id is null and resolved_at is null
+order by created_at desc, id desc
+limit 1
+for update
+""", new { tenantId, documentId }, transaction, cancellationToken: ct));
+
+        if (existing is Guid id && id != Guid.Empty)
+            return id;
+
+        var newId = Guid.NewGuid();
+        await connection.ExecuteAsync(new CommandDefinition("""
+insert into ged.ai_retention_recalc_pending
+  (id, tenant_id, document_id, application_id, reason, attempts, next_attempt_at)
+values
+  (@id, @tenantId, @documentId, null, @reason, 0, now())
+""", new
+        {
+            id = newId,
+            tenantId,
+            documentId,
+            reason = string.IsNullOrWhiteSpace(reason) ? "RETENTION_RECALC" : reason.Trim()
+        }, transaction, cancellationToken: ct));
+        return newId;
+    }
+
+    public async Task<bool> ResolvePendingRecalcAsync(Guid tenantId, Guid pendingId, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        return await ResolvePendingRecalcAsync(conn, null!, tenantId, pendingId, ct);
+    }
+
+    public async Task<bool> ResolvePendingRecalcAsync(System.Data.IDbConnection connection, System.Data.IDbTransaction transaction, Guid tenantId, Guid pendingId, CancellationToken ct)
+    {
+        var rows = await connection.ExecuteAsync(new CommandDefinition("""
+update ged.ai_retention_recalc_pending
+set resolved_at=now(), last_error=null, claimed_at=null, claim_token=null
+where tenant_id=@tenantId and id=@pendingId and resolved_at is null
+""", new { tenantId, pendingId }, transaction, cancellationToken: ct));
+        return rows == 1;
+    }
+
     private const string RecalculateOneSql = @"
 with base as (
   select

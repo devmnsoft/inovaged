@@ -172,7 +172,7 @@
                     {
                         <div class="text-muted mt-1 font-monospace">Diagnóstico: @(Model.ClassificationCorrelationId ?? Model.RetentionCorrelationId)</div>
                     }
-                    <button type="button" class="btn btn-sm btn-outline-danger mt-2" onclick="window.InovaGedSidePanel?.reload?.() || location.reload();">
+                    <button type="button" class="btn btn-sm btn-outline-danger mt-2" onclick="if (window.InovaGedSidePanel && typeof window.InovaGedSidePanel.reload === 'function') { window.InovaGedSidePanel.reload(); } else { location.reload(); }">
                         <app-icon class="me-1" name="refresh" size="14" decorative="true" /> Tentar novamente
                     </button>
                 </div>

@@ -5,6 +5,8 @@ using System.Text.Json;
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Protocols;
+using InovaGed.Application.Retention;
+using InovaGed.Application.Security;
 using InovaGed.Web.Models.Protocolo;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -21,12 +23,16 @@ public sealed class ProtocoloController : GedControllerBase
     private readonly InovaGed.Application.Ged.Loans.IProtocolAccessService _protocolAccess;
     private readonly IProtocoloCentralService _central;
     private readonly InovaGed.Application.Protocolo.IProtocolAiAssistService _aiAssist;
+    private readonly IRetentionJobRepository _retentionJobs;
+    private readonly IAbacAuthorizationService _documentAuthorization;
 
-    public ProtocoloController(IDbConnectionFactory dbFactory, InovaGed.Application.Ged.Loans.IProtocolAccessService protocolAccess, IProtocoloCentralService central, InovaGed.Application.Protocolo.IProtocolAiAssistService aiAssist) : base(dbFactory)
+    public ProtocoloController(IDbConnectionFactory dbFactory, InovaGed.Application.Ged.Loans.IProtocolAccessService protocolAccess, IProtocoloCentralService central, InovaGed.Application.Protocolo.IProtocolAiAssistService aiAssist, IRetentionJobRepository retentionJobs, IAbacAuthorizationService documentAuthorization) : base(dbFactory)
     {
         _protocolAccess = protocolAccess;
         _central = central;
         _aiAssist = aiAssist;
+        _retentionJobs = retentionJobs;
+        _documentAuthorization = documentAuthorization;
     }
 
     [HttpGet]
@@ -751,6 +757,12 @@ where tenant_id=@TenantId and id=@PendingId and protocolo_id=@ProtocolId
 
         if (isEncerramento || isArquivamento)
         {
+            if (UserId is not Guid actorId)
+            {
+                tx.Rollback();
+                return Challenge();
+            }
+
             const string findDocsSql = """
 SELECT 
     d.id as DocumentId,
@@ -771,6 +783,20 @@ FOR UPDATE OF d;
 """;
             var linkedDocs = (await db.QueryAsync<(Guid DocumentId, DateTime? ClosedAt, DateTime? ArchivedAt, string? StartEvent)>(
                 findDocsSql, new { TenantId, Id = id }, tx)).ToList();
+            var affectedDocs = linkedDocs
+                .Where(x => (isEncerramento && x.StartEvent == "ENCERRAMENTO" && !x.ClosedAt.HasValue)
+                         || (isArquivamento && x.StartEvent == "ARQUIVAMENTO" && !x.ArchivedAt.HasValue))
+                .Select(x => x.DocumentId)
+                .Distinct()
+                .ToArray();
+            var allowedDocs = affectedDocs.Length == 0
+                ? new HashSet<Guid>()
+                : await _documentAuthorization.FilterDocumentsAsync(TenantId, actorId, affectedDocs, "EDIT", HttpContext.RequestAborted);
+            if (affectedDocs.Any(x => !allowedDocs.Contains(x)))
+            {
+                tx.Rollback();
+                return Forbid();
+            }
 
             foreach (var docItem in linkedDocs)
             {
@@ -780,11 +806,8 @@ FOR UPDATE OF d;
 UPDATE ged.document 
 SET closed_at = NOW(), updated_at = NOW(), updated_by = @UserId
 WHERE tenant_id = @TenantId AND id = @DocId;
-
-INSERT INTO ged.ai_retention_recalc_pending (tenant_id, document_id, reason, requested_by, requested_at)
-VALUES (@TenantId, @DocId, 'Disparo de evento de temporalidade por encerramento de protocolo', @UserId, NOW())
-ON CONFLICT (tenant_id, document_id) WHERE resolved_at IS NULL DO NOTHING;
 """, new { TenantId, DocId = docItem.DocumentId, UserId }, tx);
+                    await _retentionJobs.EnqueueRecalculateAsync(db, tx, TenantId, docItem.DocumentId, "PROTOCOL_CLOSED_EVENT", HttpContext.RequestAborted);
                 }
                 else if (isArquivamento && docItem.StartEvent == "ARQUIVAMENTO" && !docItem.ArchivedAt.HasValue)
                 {
@@ -792,11 +815,8 @@ ON CONFLICT (tenant_id, document_id) WHERE resolved_at IS NULL DO NOTHING;
 UPDATE ged.document 
 SET archived_at = NOW(), updated_at = NOW(), updated_by = @UserId
 WHERE tenant_id = @TenantId AND id = @DocId;
-
-INSERT INTO ged.ai_retention_recalc_pending (tenant_id, document_id, reason, requested_by, requested_at)
-VALUES (@TenantId, @DocId, 'Disparo de evento de temporalidade por arquivamento de protocolo', @UserId, NOW())
-ON CONFLICT (tenant_id, document_id) WHERE resolved_at IS NULL DO NOTHING;
 """, new { TenantId, DocId = docItem.DocumentId, UserId }, tx);
+                    await _retentionJobs.EnqueueRecalculateAsync(db, tx, TenantId, docItem.DocumentId, "PROTOCOL_ARCHIVED_EVENT", HttpContext.RequestAborted);
                 }
             }
         }

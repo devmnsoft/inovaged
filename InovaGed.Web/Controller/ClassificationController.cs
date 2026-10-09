@@ -135,12 +135,26 @@ public sealed class ClassificationController : Controller
                 ct);
 
             await using var conn = await _db.OpenAsync(ct);
-            var currentClassification = await conn.QueryFirstOrDefaultAsync<(Guid? ClassificationId, string? Code, string? Name)>(
+            var currentClassification = await conn.QueryFirstOrDefaultAsync<(Guid? ClassificationId, string? Code, string? Name, bool Selectable)>(
                 new CommandDefinition("""
                 SELECT 
                     d.classification_id AS "ClassificationId",
                     COALESCE(pvi.code, cp.code) AS "Code",
-                    COALESCE(pvi.name, cp.name) AS "Name"
+                    COALESCE(pvi.name, cp.name) AS "Name",
+                    EXISTS (
+                        SELECT 1
+                        FROM ged.classification_plan_version_item ei
+                        JOIN ged.classification_plan_version ev ON ev.tenant_id = ei.tenant_id AND ev.id = ei.version_id
+                        WHERE ei.tenant_id = d.tenant_id
+                          AND ei.classification_id = d.classification_id
+                          AND COALESCE(ei.is_active, true)
+                          AND COALESCE(ev.reg_status, 'A') = 'A'
+                          AND ev.version_no = (
+                              SELECT max(version_no)
+                              FROM ged.classification_plan_version
+                              WHERE tenant_id = d.tenant_id AND COALESCE(reg_status, 'A') = 'A'
+                          )
+                    ) AS "Selectable"
                 FROM ged.document d
                 LEFT JOIN ged.classification_plan cp 
                     ON cp.tenant_id = d.tenant_id AND cp.id = d.classification_id
@@ -161,7 +175,11 @@ public sealed class ClassificationController : Controller
                         ? $"{currentClassification.Code} — {currentClassification.Name}"
                         : currentClassification.Name)
                     : null,
+                CurrentClassificationIsSelectable = currentClassification.Selectable,
                 DocumentTypeId = classification?.DocumentTypeId,
+                DocumentTypeLabel = classification?.DocumentTypeName,
+                CurrentDocumentTypeIsSelectable = classification?.DocumentTypeId is Guid typeId
+                    && (types ?? Array.Empty<DocumentTypeRowDto>()).Any(t => t.Id == typeId),
                 TagsCsv = classification?.Tags is { Count: > 0 }
                     ? string.Join(", ", classification.Tags)
                     : "",
@@ -207,7 +225,10 @@ public sealed class ClassificationController : Controller
     public async Task<IActionResult> SaveManual(
         [FromForm] Guid documentId,
         [FromForm] Guid? classificationId,
+        [FromForm] ClassificationEditAction classificationAction,
+        [FromForm] bool confirmClassificationRemoval,
         [FromForm] Guid? documentTypeId,
+        [FromForm] DocumentTypeEditAction documentTypeAction,
         [FromForm] string? tagsCsv,
         [FromForm] string? metadataJson,
         [FromForm] string? metadataLines,
@@ -232,8 +253,8 @@ public sealed class ClassificationController : Controller
                 return RedirectToAction("Index", "Ged");
             }
 
-            var hasClassification = Request.Form.ContainsKey("classificationId");
-            var hasDocumentType = Request.Form.ContainsKey("documentTypeId");
+            var hasClassification = classificationAction != ClassificationEditAction.Keep;
+            var hasDocumentType = documentTypeAction != DocumentTypeEditAction.Keep;
             var hasTags = Request.Form.ContainsKey("tagsCsv");
             var hasMetadata = Request.Form.ContainsKey("metadataLines") || Request.Form.ContainsKey("metadataJson");
 
@@ -260,9 +281,10 @@ public sealed class ClassificationController : Controller
                 TenantId: tenantId,
                 DocumentId: documentId,
                 UserId: userId,
-                HasClassification: hasClassification,
+                ClassificationAction: classificationAction,
                 ClassificationId: classificationId,
-                HasDocumentType: hasDocumentType,
+                ConfirmClassificationRemoval: confirmClassificationRemoval,
+                TypeAction: documentTypeAction,
                 DocumentTypeId: documentTypeId,
                 HasTags: hasTags,
                 Tags: tags,
