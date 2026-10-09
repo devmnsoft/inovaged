@@ -43,9 +43,9 @@
     color: var(--ig-text-muted, #64748b);
 }
 
-html.ged-preview-open,
-body.ged-preview-open,
 html.ged-drawer-lock,
-body.ged-drawer-lock {
+body.ged-drawer-lock,
+html.ged-reader-focus-open,
+body.ged-reader-focus-open {
     overflow: hidden;
 }

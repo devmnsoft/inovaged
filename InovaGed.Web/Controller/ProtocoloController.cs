@@ -61,7 +61,22 @@ public sealed class ProtocoloController : GedControllerBase
 
     [Authorize(Policy = AppPolicies.ProtocolRequest)]
     [HttpGet]
-    public async Task<IActionResult> Novo() { using var db = await OpenAsync(); var vm = new ProtocoloNovoVM(); await PopularCombosAsync(db, vm); return View(vm); }
+    public async Task<IActionResult> Novo(Guid? gedDocumentId)
+    {
+        using var db = await OpenAsync();
+        var vm = new ProtocoloNovoVM();
+        await PopularCombosAsync(db, vm);
+        if (gedDocumentId is Guid docId && docId != Guid.Empty && UserId is Guid uid)
+        {
+            var title = await db.ExecuteScalarAsync<string?>("select coalesce(nullif(btrim(title),''), code) from ged.document where tenant_id=@TenantId and id=@Id and reg_status='A'", new { TenantId, Id = docId });
+            if (!string.IsNullOrWhiteSpace(title) && await _documentAuthorization.CanAccessDocumentAsync(TenantId, uid, docId, "VIEW", new Dictionary<string, string>(), HttpContext.RequestAborted))
+            {
+                vm.GedDocumentId = docId;
+                vm.GedDocumentTitle = title;
+            }
+        }
+        return View(vm);
+    }
 
     [Authorize(Policy = AppPolicies.ProtocolRequest)]
     [HttpPost, ValidateAntiForgeryToken, RequestSizeLimit(150_000_000)]
@@ -81,6 +96,17 @@ public sealed class ProtocoloController : GedControllerBase
             await UpsertParticipanteAsync(db, tx, id, vm.SetorDestinoId, true, !vm.SalvarComoRascunho);
             await RegistrarTramitacaoAsync(db, tx, id, vm.SetorOrigemId, vm.SetorDestinoId, "CRIACAO", null, status, "Protocolo criado.", null, null);
             await SalvarArquivosAsync(db, tx, id, vm.SetorOrigemId, await GetSetorNomeAsync(db, vm.SetorOrigemId) ?? "", arquivos, null, null);
+            if (vm.GedDocumentId is Guid origemId && origemId != Guid.Empty && UserId is Guid uid
+                && await _documentAuthorization.CanAccessDocumentAsync(TenantId, uid, origemId, "VIEW", new Dictionary<string, string>(), HttpContext.RequestAborted)
+                && await _documentAuthorization.CanAccessDocumentAsync(TenantId, uid, origemId, "EDIT", new Dictionary<string, string>(), HttpContext.RequestAborted))
+            {
+                var documentoOk = await db.ExecuteScalarAsync<bool>("select exists(select 1 from ged.document where tenant_id=@TenantId and id=@Id and reg_status='A')", new { TenantId, Id = origemId }, tx);
+                if (documentoOk)
+                {
+                    await db.ExecuteAsync(@"insert into ged.protocolo_documento_ged(id, tenant_id, protocolo_id, ged_document_id, tipo_vinculo, observacao, criado_por, criado_por_nome, created_at, reg_status)
+values (@Id, @TenantId, @ProtocoloId, @GedDocumentId, 'DOCUMENTO_GERAL', null, @UserId, @UserName, now(), 'A')", new { Id = Guid.NewGuid(), TenantId, ProtocoloId = id, GedDocumentId = origemId, UserId, UserName = UserNameSafe }, tx);
+                }
+            }
             tx.Commit();
             if (!vm.SalvarComoRascunho && vm.SetorOrigemId != vm.SetorDestinoId && UserId is not null)
             {

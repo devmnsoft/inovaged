@@ -54,14 +54,16 @@ public sealed class AtlasGedIconContractTests
     [Fact]
     public void Ged_workspace_scroll_locks_match_runtime_classes()
     {
-        var workspace = File.ReadAllText(Path.Combine(Root, "InovaGed.Web/wwwroot/css/pages/ged-workspace.css"));
+        var shell = File.ReadAllText(Path.Combine(Root, "InovaGed.Web/wwwroot/css/inovaged.shell.css"));
         var sidePanel = File.ReadAllText(Path.Combine(Root, "InovaGed.Web/wwwroot/js/ged-document-side-panel.js"));
         var explorer = File.ReadAllText(Path.Combine(Root, "InovaGed.Web/wwwroot/js/ged-explorer-controller.js"));
 
-        Assert.Contains("document.body.classList.add('ged-preview-open')", sidePanel);
-        Assert.Contains("body.ged-preview-open", workspace);
+        Assert.DoesNotContain("document.body.classList.add('ged-preview-open')", sidePanel);
+        Assert.Contains("document.body.classList.toggle('ged-reader-focus-open'", sidePanel);
+        Assert.Contains("body.ged-reader-focus-open", shell);
         Assert.Contains("document.body.classList.toggle(\"ged-drawer-lock\"", explorer);
-        Assert.Contains("body.ged-drawer-lock", workspace);
+        Assert.Contains("body.ged-drawer-lock", shell);
+        Assert.DoesNotContain("body.ged-preview-open", shell);
     }
 
     [Fact]

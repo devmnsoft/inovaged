@@ -4,6 +4,7 @@ public sealed class DocumentSidePanelVm
 {
     public Guid DocumentId { get; set; }
     public Guid VersionId { get; set; }
+    public bool IsCurrentVersion { get; set; } = true;
     public string Title { get; set; } = "";
     public string FileName { get; set; } = "";
     public string TypeName { get; set; } = "Sem classificação";
@@ -58,9 +59,14 @@ public sealed class DocumentSidePanelVm
     public string? RetentionBasisDateFormatted { get; set; }
     public string? RetentionDueDateFormatted { get; set; }
     public string? RetentionStartEvent { get; set; }
+    public string? RetentionStartEventCode { get; set; }
     public string? RetentionActivePhase { get; set; }
+    public bool RetentionActivePhaseExplicitZero { get; set; }
     public string? RetentionArchivePhase { get; set; }
+    public bool RetentionArchivePhaseExplicitZero { get; set; }
     public string? RetentionFinalDestination { get; set; }
+    public string? RetentionFinalDestinationCode { get; set; }
+    public string RetentionMemoryState { get; set; } = "calculation_pending";
     public string? RetentionNormativeReference { get; set; }
     public string? RetentionPendingReason { get; set; }
     public bool HasRetentionCalculation { get; set; }

@@ -71,6 +71,9 @@ public sealed class GedController : Controller
     private readonly IAuditWriter _auditWriter;
     private readonly IDateTimeDisplayService _dateTimeDisplay;
     private readonly IDocumentPartialService _documentPartialService;
+    private readonly IAbacAuthorizationService _documentAuthorization;
+    private readonly IProtocolAccessService _protocolAccess;
+    private readonly IAuthorizationService _authorization;
 
     // ✅ classificação
     private readonly IDocumentClassificationQueries _clsQ;
@@ -112,7 +115,10 @@ public sealed class GedController : Controller
         IDocumentCommands documentCommands,
         IOcrSignalRNotifier ocrNotifier,
         IDateTimeDisplayService dateTimeDisplay,
-        IDocumentPartialService documentPartialService)
+        IDocumentPartialService documentPartialService,
+        IAbacAuthorizationService documentAuthorization,
+        IProtocolAccessService protocolAccess,
+        IAuthorizationService authorization)
     {
         _logger = logger;
         _currentUser = currentUser;
@@ -135,6 +141,9 @@ public sealed class GedController : Controller
         _auditWriter = auditWriter;
         _dateTimeDisplay = dateTimeDisplay;
         _documentPartialService = documentPartialService;
+        _documentAuthorization = documentAuthorization;
+        _protocolAccess = protocolAccess;
+        _authorization = authorization;
 
         _docs = docs;
         _documentApp = documentApp;
@@ -435,7 +444,7 @@ LIMIT 30;
 
 
     [HttpGet("/Ged/DocumentPanel")]
-    public async Task<IActionResult> DocumentPanel(Guid id, CancellationToken ct)
+    public async Task<IActionResult> DocumentPanel(Guid id, Guid? versionId, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
 
@@ -444,8 +453,12 @@ LIMIT 30;
         if (doc is null) return NotFound("Documento excluído ou indisponível.");
 
         var versions = await _docs.ListVersionsAsync(tenantId, id, ct);
-        var current = versions.FirstOrDefault(v => v.Id == doc.CurrentVersionId) ?? versions.FirstOrDefault();
-        if (current is null) return NotFound();
+        var latest = versions.FirstOrDefault(v => v.Id == doc.CurrentVersionId) ?? versions.FirstOrDefault();
+        var current = versionId is Guid requested
+            ? versions.FirstOrDefault(v => v.Id == requested)
+            : latest;
+        if (current is null) return NotFound(versionId.HasValue ? "Versão indisponível para este documento." : "Documento excluído ou indisponível.");
+        var isCurrentVersion = latest is not null && current.Id == latest.Id;
 
         var folderName = await ResolveFolderNameAsync(tenantId, doc.FolderId, ct);
         var typeName = await ResolveDocumentTypeNameAsync(tenantId, doc.TypeId, ct);
@@ -471,6 +484,7 @@ LIMIT 30;
         {
             DocumentId = id,
             VersionId = current.Id,
+            IsCurrentVersion = isCurrentVersion,
             Title = doc.Title,
             FileName = current.FileName,
             TypeName = typeName,
@@ -489,6 +503,11 @@ LIMIT 30;
             RetentionActivePhase = retentionInfo.ActivePhase,
             RetentionArchivePhase = retentionInfo.ArchivePhase,
             RetentionFinalDestination = retentionInfo.FinalDestination,
+            RetentionFinalDestinationCode = retentionInfo.FinalDestinationCode,
+            RetentionStartEventCode = retentionInfo.StartEventCode,
+            RetentionMemoryState = retentionInfo.MemoryState,
+            RetentionActivePhaseExplicitZero = retentionInfo.ActivePhaseExplicitZero,
+            RetentionArchivePhaseExplicitZero = retentionInfo.ArchivePhaseExplicitZero,
             RetentionNormativeReference = retentionInfo.NormativeReference,
             RetentionPendingReason = retentionInfo.PendingReason,
             HasRetentionCalculation = retentionInfo.HasCalculation,
@@ -634,34 +653,101 @@ LIMIT 30;
     [HttpGet("/Ged/DocumentProtocols")]
     public async Task<IActionResult> DocumentProtocols(Guid id, CancellationToken ct)
     {
-        if (!_currentUser.IsAuthenticated) return Unauthorized();
+        var correlationId = HttpContext.TraceIdentifier;
+        if (!_currentUser.IsAuthenticated) return Unauthorized(ProtocolResponse(false, "unauthorized", "Sessão expirada.", correlationId, canRetry: false));
         var tenantId = _currentUser.TenantId;
         try
         {
+            var doc = await _docs.GetAsync(tenantId, id, ct);
+            if (doc is null)
+                return NotFound(ProtocolResponse(false, "not_found", "Documento inexistente ou indisponível.", correlationId, canRetry: false));
+            if (!await CanViewDocumentAsync(id, ct))
+                return StatusCode(StatusCodes.Status403Forbidden, ProtocolResponse(false, "forbidden", "Acesso negado.", correlationId, canRetry: false));
+
             await using var con = await _db.OpenAsync(ct);
             const string sql = """
 select
-    id as "Id",
     protocolo_id as "ProtocoloId",
     protocolo_numero as "ProtocoloNumero",
     tipo_vinculo as "TipoVinculo",
     observacao as "Observacao",
-    criado_por_nome as "CriadoPorNome",
-    created_at as "CreatedAt"
+    criado_por_nome as "CriadoPorNome"
 from ged.vw_protocolo_ged_vinculos
 where tenant_id = @tenantId and ged_document_id = @id
 order by created_at desc;
 """;
-            var rows = (await con.QueryAsync<dynamic>(new CommandDefinition(sql, new { tenantId, id }, cancellationToken: ct))).ToList();
-            await WriteGedAuditAsync("DOCUMENT_PROTOCOLS_VIEW", "DOCUMENT_PROTOCOLS", id, "Protocolos vinculados ao documento abertos no painel lateral GED", new { documentId = id, correlationId = HttpContext.TraceIdentifier }, ct);
-            return Ok(new { success = true, items = rows });
+            var rows = (await con.QueryAsync<ProtocolLinkRow>(new CommandDefinition(sql, new { tenantId, id }, cancellationToken: ct))).ToList();
+            var visible = new List<DocumentProtocolLinkDto>();
+            foreach (var row in rows)
+            {
+                if (row.ProtocoloId == Guid.Empty) continue;
+                var canView = await _protocolAccess.CanViewProtocolAsync(tenantId, row.ProtocoloId, _currentUser.UserId, User, ct);
+                var presented = DocumentProtocolLinkPresenter.Present(
+                    row.ProtocoloId,
+                    row.ProtocoloNumero,
+                    row.TipoVinculo,
+                    row.Observacao,
+                    row.CriadoPorNome,
+                    canView,
+                    canView ? $"/Protocolo/Details/{row.ProtocoloId}" : null);
+                if (presented is not null) visible.Add(presented);
+            }
+
+            if (rows.Count > 0 && visible.Count == 0)
+                return StatusCode(StatusCodes.Status403Forbidden, ProtocolResponse(false, "forbidden", "Acesso negado.", correlationId, canRetry: false));
+
+            var canCreate = (await _authorization.AuthorizeAsync(User, AppPolicies.ProtocolRequest)).Succeeded;
+            await WriteGedAuditAsync("DOCUMENT_PROTOCOLS_VIEW", "DOCUMENT_PROTOCOLS", id, "Protocolos vinculados consultados no painel GED", new { documentId = id, visible = visible.Count, correlationId }, ct);
+            if (visible.Count == 0)
+            {
+                return Ok(new DocumentProtocolsResponse
+                {
+                    Success = true,
+                    Outcome = "empty",
+                    Message = "Nenhum protocolo vinculado a este documento.",
+                    CorrelationId = correlationId,
+                    CanCreate = canCreate,
+                    CreateUrl = canCreate ? $"/Protocolo/Novo?gedDocumentId={id}" : null,
+                    Items = Array.Empty<DocumentProtocolLinkDto>()
+                });
+            }
+
+            return Ok(new DocumentProtocolsResponse
+            {
+                Success = true,
+                Outcome = "ok",
+                CorrelationId = correlationId,
+                CanCreate = canCreate,
+                CreateUrl = canCreate ? $"/Protocolo/Novo?gedDocumentId={id}" : null,
+                Items = visible
+            });
+        }
+        catch (PostgresException ex) when (ex.SqlState is "42P01" or "42703")
+        {
+            _logger.LogWarning("Protocolos do documento indisponíveis. DocumentId={DocumentId} SqlState={SqlState} CorrelationId={CorrelationId}", id, ex.SqlState, correlationId);
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, ProtocolResponse(false, "unavailable", "A consulta de protocolos está indisponível.", correlationId, canRetry: true));
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Falha ao carregar protocolos vinculados ao documento. DocumentId={DocumentId}", id);
-            return Ok(new { success = true, items = Array.Empty<object>() });
+            _logger.LogWarning(ex, "Falha ao carregar protocolos do documento. DocumentId={DocumentId} CorrelationId={CorrelationId}", id, correlationId);
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, ProtocolResponse(false, "unavailable", "A consulta de protocolos está indisponível.", correlationId, canRetry: true));
         }
     }
+
+    private static DocumentProtocolsResponse ProtocolResponse(bool success, string outcome, string message, string correlationId, bool canRetry) =>
+        new() { Success = success, Outcome = outcome, Message = message, CorrelationId = correlationId, CanRetry = canRetry, Items = Array.Empty<DocumentProtocolLinkDto>() };
+
+    private sealed class ProtocolLinkRow
+    {
+        public Guid ProtocoloId { get; set; }
+        public string? ProtocoloNumero { get; set; }
+        public string? TipoVinculo { get; set; }
+        public string? Observacao { get; set; }
+        public string? CriadoPorNome { get; set; }
+    }
+
+    private Task<bool> CanViewDocumentAsync(Guid documentId, CancellationToken ct) =>
+        _documentAuthorization.CanAccessDocumentAsync(_currentUser.TenantId, _currentUser.UserId, documentId, "VIEW", new Dictionary<string, string>(), ct);
 
 
     [HttpGet("/Ged/DocumentDetailsJson")]
@@ -2223,7 +2309,12 @@ limit @take";
         string? PendingReason,
         bool HasCalculation,
         bool HasError = false,
-        string? CorrelationId = null);
+        string? CorrelationId = null,
+        string? StartEventCode = null,
+        string? FinalDestinationCode = null,
+        string MemoryState = "calculation_pending",
+        bool ActivePhaseExplicitZero = false,
+        bool ArchivePhaseExplicitZero = false);
 
     private async Task<DocumentClassificationInfo> ResolveDocumentClassificationInfoAsync(
         Guid tenantId,
@@ -2366,7 +2457,8 @@ LIMIT 1;
                 PendingReason: $"Falha ao consultar regras da classe (CorrelationId: {classificationInfo.CorrelationId}). Use 'Tentar novamente'.",
                 HasCalculation: false,
                 HasError: true,
-                CorrelationId: classificationInfo.CorrelationId);
+                CorrelationId: classificationInfo.CorrelationId,
+                MemoryState: "processing_error");
         }
 
         if (!doc.ClassificationId.HasValue || classificationInfo.Code is null)
@@ -2382,8 +2474,9 @@ LIMIT 1;
                 ArchivePhase: null,
                 FinalDestination: null,
                 NormativeReference: null,
-                PendingReason: "Documento sem classificação arquivística. Aplique uma classe do PCD vigente para calcular os prazos de guarda.",
-                HasCalculation: false
+                PendingReason: "Documento sem classificação arquivística. Aplique uma classe do plano vigente para calcular os prazos de guarda.",
+                HasCalculation: false,
+                MemoryState: "no_classification"
             );
         }
 
@@ -2442,53 +2535,97 @@ LIMIT 1;
                 PendingReason: $"Não foi possível consultar os dados de temporalidade (CorrelationId: {corrId}). Tente novamente.",
                 HasCalculation: false,
                 HasError: true,
-                CorrelationId: corrId);
+                CorrelationId: corrId,
+                MemoryState: "processing_error");
         }
 
-        static string FormatPhase(int? days, int? months, int? years, string? termText)
+        if (!string.IsNullOrWhiteSpace(recalcLastError))
+            _logger.LogInformation("Recálculo de temporalidade pendente. DocumentId={DocumentId} CorrelationId={CorrelationId}", doc.Id, corrId);
+
+        static (string? Text, bool ExplicitZero, bool Defined) FormatPhase(int? days, int? months, int? years, string? termText)
         {
-            if (!string.IsNullOrWhiteSpace(termText)) return termText;
+            if (!string.IsNullOrWhiteSpace(termText)) return (termText.Trim(), false, true);
+            if (!days.HasValue && !months.HasValue && !years.HasValue) return (null, false, false);
+            if (days.GetValueOrDefault() == 0 && months.GetValueOrDefault() == 0 && years.GetValueOrDefault() == 0)
+                return (null, true, true);
             var parts = new List<string>();
-            if (years.HasValue && years.Value > 0) parts.Add($"{years.Value} {(years.Value == 1 ? "ano" : "anos")}");
-            if (months.HasValue && months.Value > 0) parts.Add($"{months.Value} {(months.Value == 1 ? "mês" : "meses")}");
-            if (days.HasValue && days.Value > 0) parts.Add($"{days.Value} {(days.Value == 1 ? "dia" : "dias")}");
-            if (parts.Count > 0) return string.Join(" e ", parts);
-            if (days == 0 && months == 0 && years == 0) return "Imediato";
-            return "Não definido";
+            if (years is > 0) parts.Add($"{years.Value} {(years.Value == 1 ? "ano" : "anos")}");
+            if (months is > 0) parts.Add($"{months.Value} {(months.Value == 1 ? "mês" : "meses")}");
+            if (days is > 0) parts.Add($"{days.Value} {(days.Value == 1 ? "dia" : "dias")}");
+            return (parts.Count > 0 ? string.Join(" e ", parts) : null, false, parts.Count > 0);
         }
 
-        var activePhase = FormatPhase(classificationInfo.RetentionActiveDays, classificationInfo.RetentionActiveMonths, classificationInfo.RetentionActiveYears, classificationInfo.CurrentTermText);
-        var archivePhase = FormatPhase(classificationInfo.RetentionArchiveDays, classificationInfo.RetentionArchiveMonths, classificationInfo.RetentionArchiveYears, classificationInfo.IntermediateTermText);
-        var isPermanent = string.Equals(classificationInfo.FinalDestination, "GUARDA_PERMANENTE", StringComparison.OrdinalIgnoreCase);
-        var finalDest = isPermanent ? "Guarda Permanente" : (string.IsNullOrWhiteSpace(classificationInfo.FinalDestination) ? "Conforme PCD" : classificationInfo.FinalDestination);
-
-        var startEvent = classificationInfo.RetentionStartEvent switch
+        var (activePhase, activeZero, activeDefined) = FormatPhase(classificationInfo.RetentionActiveDays, classificationInfo.RetentionActiveMonths, classificationInfo.RetentionActiveYears, classificationInfo.CurrentTermText);
+        var (archivePhase, archiveZero, archiveDefined) = FormatPhase(classificationInfo.RetentionArchiveDays, classificationInfo.RetentionArchiveMonths, classificationInfo.RetentionArchiveYears, classificationInfo.IntermediateTermText);
+        var destinationCode = string.IsNullOrWhiteSpace(classificationInfo.FinalDestination) ? null : classificationInfo.FinalDestination.Trim();
+        var eventCode = string.IsNullOrWhiteSpace(classificationInfo.RetentionStartEvent) ? null : classificationInfo.RetentionStartEvent.Trim();
+        var isPermanent = string.Equals(destinationCode, "GUARDA_PERMANENTE", StringComparison.OrdinalIgnoreCase);
+        var finalDest = destinationCode switch
+        {
+            "GUARDA_PERMANENTE" => "Guarda permanente",
+            "ELIMINACAO" => "Eliminação",
+            "REVISAO" => "Revisão",
+            "AGUARDANDO_EVENTO" => "Aguardando evento",
+            null => null,
+            _ => null
+        };
+        var startEvent = eventCode switch
         {
             "ENCERRAMENTO" => "Encerramento do processo/documento",
             "ARQUIVAMENTO" => "Arquivamento",
-            "ABERTURA" => "Abertura / Criação",
-            _ => classificationInfo.RetentionStartEvent ?? "Criação do documento"
+            "ABERTURA" => "Abertura / criação",
+            null => null,
+            _ => null
         };
-
+        var hasRule = destinationCode is not null || eventCode is not null || activeDefined || archiveDefined || !string.IsNullOrWhiteSpace(classificationInfo.NormativeReference);
         bool hasCalculation = dueAt.HasValue;
         string statusLabel;
         string statusCss;
+        string memoryState;
         string? pendingReason = null;
 
         if (hasHold)
         {
-            statusLabel = "Guarda suspensa (Hold)";
+            statusLabel = "Guarda suspensa";
             statusCss = "bg-warning text-dark";
-            pendingReason = "Contagem suspensa por retenção legal/administrativa (Hold ativo).";
+            memoryState = "suspended";
+            pendingReason = "Contagem suspensa por retenção legal ou administrativa.";
+        }
+        else if (!hasRule)
+        {
+            statusLabel = "Regra ausente";
+            statusCss = "bg-secondary";
+            memoryState = "no_rule";
+            pendingReason = "A classe vinculada não tem regra de temporalidade cadastrada nesta versão do plano.";
         }
         else if (isPermanent)
         {
-            statusLabel = "Guarda Permanente";
+            statusLabel = "Guarda permanente";
             statusCss = "bg-info text-dark";
-            pendingReason = "Documento de valor histórico/probatório destinado à guarda permanente (sem eliminação).";
+            memoryState = "permanent";
+            pendingReason = null;
+        }
+        else if (string.Equals(status, "EVENT_PENDING", StringComparison.OrdinalIgnoreCase) || (eventCode is "ENCERRAMENTO" or "ARQUIVAMENTO" && !basisAt.HasValue))
+        {
+            statusLabel = "Aguardando evento";
+            statusCss = "bg-warning text-dark";
+            memoryState = "event_pending";
+            pendingReason = eventCode == "ENCERRAMENTO"
+                ? "O evento de encerramento ainda não ocorreu. A data-base não foi gerada."
+                : eventCode == "ARQUIVAMENTO"
+                    ? "O evento de arquivamento ainda não ocorreu. A data-base não foi gerada."
+                    : "O evento inicial da regra ainda não ocorreu.";
+        }
+        else if (hasPendingRecalc || string.Equals(status, "PENDING", StringComparison.OrdinalIgnoreCase))
+        {
+            statusLabel = "Cálculo pendente";
+            statusCss = "bg-info text-dark";
+            memoryState = "calculation_pending";
+            pendingReason = "O motor de temporalidade ainda não concluiu este cálculo.";
         }
         else if (hasCalculation)
         {
+            memoryState = "valid";
             if (dueAt!.Value < DateTime.UtcNow)
             {
                 statusLabel = "Prazo vencido";
@@ -2507,28 +2644,10 @@ LIMIT 1;
         }
         else
         {
-            if (status == "EVENT_PENDING" || (classificationInfo.RetentionStartEvent is "ENCERRAMENTO" or "ARQUIVAMENTO" && !basisAt.HasValue))
-            {
-                statusLabel = "Aguardando evento";
-                statusCss = "bg-warning text-dark";
-                pendingReason = classificationInfo.RetentionStartEvent == "ENCERRAMENTO"
-                    ? "Aguardando encerramento formal do protocolo/processo para início da contagem dos prazos de guarda."
-                    : "Aguardando arquivamento do documento para início da contagem dos prazos de guarda.";
-            }
-            else if (hasPendingRecalc)
-            {
-                statusLabel = "Recálculo em fila";
-                statusCss = "bg-info text-dark";
-                pendingReason = !string.IsNullOrWhiteSpace(recalcLastError)
-                    ? $"Recálculo automático em tentativa de recuperação: {recalcLastError}"
-                    : "Temporalidade em fila de processamento automático.";
-            }
-            else
-            {
-                statusLabel = "Cálculo pendente";
-                statusCss = "bg-warning text-dark";
-                pendingReason = "Temporalidade aguardando processamento pelo motor arquivístico.";
-            }
+            statusLabel = "Cálculo pendente";
+            statusCss = "bg-warning text-dark";
+            memoryState = "calculation_pending";
+            pendingReason = "Temporalidade aguardando processamento pelo motor arquivístico.";
         }
 
         return new DocumentRetentionInfo(
@@ -2541,11 +2660,16 @@ LIMIT 1;
             activePhase,
             archivePhase,
             finalDest,
-            classificationInfo.NormativeReference,
+            string.IsNullOrWhiteSpace(classificationInfo.NormativeReference) ? null : classificationInfo.NormativeReference.Trim(),
             pendingReason,
             hasCalculation,
             false,
-            null
+            null,
+            eventCode,
+            destinationCode,
+            memoryState,
+            activeZero,
+            archiveZero
         );
     }
 

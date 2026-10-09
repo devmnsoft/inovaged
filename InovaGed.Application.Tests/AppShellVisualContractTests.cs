@@ -8,11 +8,34 @@ public sealed class AppShellVisualContractTests
     [Trait("Category", "VisualContract")]
     public void Shell_has_one_sidebar_one_topbar_and_one_logout()
     {
-        var layout = ClassicThemeContractTests.Read("InovaGed.Web/Views/Shared/_Layout.cshtml");
-        Assert.True(Regex.IsMatch(layout, @"<partial\s+name=""AppShell/_(App)?Sidebar""") || Regex.IsMatch(layout, @"<aside\s+class=""sidebar"));
-        Assert.True(Regex.IsMatch(layout, @"<header\s+class=""topbar\s+app-topbar""") || Regex.IsMatch(layout, @"<partial\s+name=""AppShell/_Topbar"""));
-        Assert.True(Regex.IsMatch(layout, @"asp-action=""Logout""") || ClassicThemeContractTests.Read("InovaGed.Web/Views/Shared/AppShell/_Sidebar.cshtml").Contains("asp-action=\"Logout\""));
+        var rendered = string.Join("\n", ExpandPartials("InovaGed.Web/Views/Shared/_Layout.cshtml").Select(Read));
+        Assert.Equal(1, Regex.Matches(rendered, @"<aside\s+class=""sidebar").Count);
+        Assert.Equal(1, Regex.Matches(rendered, @"<header\s+class=""[^""]*topbar").Count);
+        Assert.Equal(1, Regex.Matches(rendered, @"asp-action=""Logout""").Count);
     }
+
+    private static IReadOnlyList<string> ExpandPartials(string start)
+    {
+        var pending = new Queue<string>();
+        var seen = new List<string>();
+        pending.Enqueue(start);
+        while (pending.Count > 0)
+        {
+            var relative = pending.Dequeue();
+            if (seen.Contains(relative, StringComparer.OrdinalIgnoreCase)) continue;
+            if (!File.Exists(Find(relative))) continue;
+            seen.Add(relative);
+            foreach (Match match in Regex.Matches(Read(relative), @"<partial\s+name=""([^""]+)"""))
+            {
+                var name = match.Groups[1].Value.Replace('\\', '/');
+                if (!name.EndsWith(".cshtml", StringComparison.OrdinalIgnoreCase)) name += ".cshtml";
+                pending.Enqueue($"InovaGed.Web/Views/Shared/{name}");
+            }
+        }
+        return seen;
+    }
+
+    private static string Read(string relative) => File.ReadAllText(Find(relative));
 
     [Fact]
     [Trait("Category", "VisualContract")]

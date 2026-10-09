@@ -20,6 +20,23 @@ public sealed class LabelCanvasFidelityRc26Tests
     }
 
     [Fact]
+    public void Margin_that_blocks_a_second_column_keeps_one_column()
+    {
+        var result = LabelCanvasSheetLayoutCalculator.Calculate(new("A4", "portrait", null, null, 100, 70, 10, 20, 10, 20, 4, 4, 100, 2));
+        Assert.True(result.IsValid);
+        Assert.Equal(1, result.Columns);
+    }
+
+    [Fact]
+    public void Margin_that_leaves_no_column_is_rejected()
+    {
+        var result = LabelCanvasSheetLayoutCalculator.Calculate(new("A4", "portrait", null, null, 100, 70, 10, 60, 10, 60, 4, 4, 100, 2));
+        Assert.False(result.IsValid);
+        Assert.Equal(0, result.Columns);
+        Assert.Equal(LabelCanvasSheetLayoutCalculator.DoesNotFitError, result.ErrorCode);
+    }
+
+    [Fact]
     public void Label_larger_than_paper_returns_error()
     {
         var result=LabelCanvasSheetLayoutCalculator.Calculate(new("A4","portrait",null,null,300,300,0,0,0,0,0,0,100,1));

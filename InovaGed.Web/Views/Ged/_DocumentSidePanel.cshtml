@@ -25,6 +25,10 @@
         <div class="min-w-0 flex-grow-1">
             <div class="ged-side-kicker"><span class="ged-side-live-dot"></span> Documento em foco</div>
             <div class="ged-side-title" title="@Model.Title">@Model.Title</div>
+            @if (!Model.IsCurrentVersion)
+            {
+                <div class="alert alert-warning py-1 px-2 small mt-2 mb-0">Versão histórica. Estes dados não são a versão atual do documento.</div>
+            }
             <div class="ged-side-file" title="@Model.FileName">@Model.FileName</div>
             <div class="ged-document-badges mt-2">
                 @if (Model.HasClassificationError)
@@ -66,6 +70,10 @@
     </div>
 </div>
 
+<details class="small text-muted px-1 mb-2">
+    <summary>Como usar</summary>
+    <p class="mb-0">O painel mostra o documento e a versão pedidos. Protocolos, OCR e histórico só entram na tela depois de uma resposta válida. Falha de consulta não significa ausência de vínculo: use Tentar novamente. A temporalidade repete a regra persistida, sem completar prazo ou norma que não estejam cadastrados.</p>
+</details>
 <div class="ged-side-tabs" role="tablist" aria-label="Detalhes do documento">
     <button class="btn btn-sm ged-side-tab active" type="button" data-ged-side-tab="summary">Resumo</button>
     <button class="btn btn-sm ged-side-tab" type="button" data-ged-side-tab="preview">Preview</button>
@@ -191,13 +199,14 @@
                         @(Model.PlanVersionTitle ?? (Model.PlanVersionNo.HasValue ? $"v{Model.PlanVersionNo}" : "-"))
                     }
                 </dd>
-                <dt>Referência legal</dt><dd>@(Model.RetentionNormativeReference ?? "-")</dd>
-                <dt>Evento inicial</dt><dd>@(Model.RetentionStartEvent ?? "-")</dd>
-                <dt>Data-base</dt><dd>@(Model.RetentionBasisDateFormatted ?? (Model.RetentionStartEvent is "ENCERRAMENTO" or "ARQUIVAMENTO" ? "Aguardando evento" : "-"))</dd>
-                <dt>Fase corrente</dt><dd>@(Model.RetentionActivePhase ?? "-")</dd>
-                <dt>Fase intermediária</dt><dd>@(Model.RetentionArchivePhase ?? "-")</dd>
-                <dt>Vencimento previsto</dt><dd>@(Model.RetentionDueDateFormatted ?? (Model.RetentionFinalDestination == "GUARDA_PERMANENTE" ? "Não aplicável (guarda permanente)" : "A calcular"))</dd>
-                <dt>Destinação final</dt><dd>@(Model.RetentionFinalDestination ?? "-")</dd>
+                <dt>Referência legal</dt><dd>@(string.IsNullOrWhiteSpace(Model.RetentionNormativeReference) ? "Fonte normativa não cadastrada" : Model.RetentionNormativeReference)</dd>
+                <dt>Evento inicial</dt><dd>@(Model.RetentionStartEvent ?? "Evento inicial não cadastrado")</dd>
+                <dt>Data-base</dt><dd>@(Model.RetentionBasisDateFormatted ?? (Model.RetentionMemoryState == "event_pending" ? "Evento ainda não ocorrido" : "Data-base não calculada"))</dd>
+                <dt>Fase corrente</dt><dd>@(Model.RetentionActivePhaseExplicitZero ? "0 (prazo explicitamente definido)" : Model.RetentionActivePhase ?? "Prazo não cadastrado")</dd>
+                <dt>Fase intermediária</dt><dd>@(Model.RetentionArchivePhaseExplicitZero ? "0 (prazo explicitamente definido)" : Model.RetentionArchivePhase ?? "Prazo não cadastrado")</dd>
+                <dt>Vencimento previsto</dt><dd>@(Model.RetentionDueDateFormatted ?? (Model.RetentionFinalDestinationCode == "GUARDA_PERMANENTE" ? "Não aplicável (guarda permanente)" : "Cálculo pendente"))</dd>
+                <dt>Destinação final</dt><dd>@(Model.RetentionFinalDestination ?? "Destinação não cadastrada")</dd>
+                <dt>Situação</dt><dd>@(Model.RetentionStatusLabel ?? "Pendente")</dd>
             </dl>
 
             <div class="card bg-light border mb-3">
@@ -205,27 +214,25 @@
                     <h6 class="card-title fw-bold fs-7 mb-2 text-primary">
                         <app-icon class="me-1" name="info" size="14" decorative="true" /> Como este prazo foi calculado
                     </h6>
-                    <div class="small text-muted mb-2">
-                        Memória de cálculo baseada na Tabela de Temporalidade Documental (TTD) e no motor de regras do InovaGED:
-                    </div>
+                    <div class="small text-muted mb-2">Memória lida do resultado persistido e da regra da versão do plano vinculada. Nenhum prazo é completado nesta tela.</div>
                     <ul class="list-unstyled small mb-0 ps-1">
-                        <li class="mb-1"><strong>• Classe cadastrada:</strong> @(Model.ClassificationCode ?? "-") — @(Model.ClassificationName ?? "Não classificado") (Plano @(Model.PlanVersionTitle ?? (Model.PlanVersionNo.HasValue ? $"v{Model.PlanVersionNo}" : "Sem versão vinculada")))</li>
-                        <li class="mb-1"><strong>• Fonte normativa:</strong> @(string.IsNullOrWhiteSpace(Model.RetentionNormativeReference) ? "Resolução CONARQ / TTD Institucional" : Model.RetentionNormativeReference)</li>
-                        <li class="mb-1"><strong>• Evento disparador:</strong> @(string.IsNullOrWhiteSpace(Model.RetentionStartEvent) ? "Criação do documento" : Model.RetentionStartEvent)</li>
-                        <li class="mb-1"><strong>• Data-base:</strong> @(Model.RetentionBasisDateFormatted ?? (Model.RetentionStartEvent is "ENCERRAMENTO" or "ARQUIVAMENTO" ? "Aguardando homologação de encerramento do processo" : "-"))</li>
-                        <li class="mb-1"><strong>• Prazos regulamentares:</strong> Fase Corrente: @(Model.RetentionActivePhase ?? "0 anos") | Fase Intermediária: @(Model.RetentionArchivePhase ?? "0 anos")</li>
-                        <li class="mb-1"><strong>• Destinação final:</strong> @(Model.RetentionFinalDestination switch { "GUARDA_PERMANENTE" => "Guarda Permanente (recolhimento arquivístico)", "ELIMINACAO" => "Eliminação após termo de eliminação", _ => Model.RetentionFinalDestination ?? "-" })</li>
-                        @if (Model.RetentionFinalDestination == "GUARDA_PERMANENTE")
+                        <li class="mb-1"><strong>Classe:</strong> @(string.IsNullOrWhiteSpace(Model.ClassificationCode) ? "Pendência de integridade" : Model.ClassificationCode) — @(hasClassification ? Model.ClassificationName : "Sem classificação")</li>
+                        <li class="mb-1"><strong>Versão do plano:</strong> @(Model.IsLegacyUnversioned ? "Versão não vinculada" : Model.PlanVersionTitle ?? (Model.PlanVersionNo.HasValue ? $"v{Model.PlanVersionNo}" : "Versão não informada"))</li>
+                        <li class="mb-1"><strong>Fonte normativa:</strong> @(string.IsNullOrWhiteSpace(Model.RetentionNormativeReference) ? "Não cadastrada" : Model.RetentionNormativeReference)</li>
+                        <li class="mb-1"><strong>Evento e código:</strong> @(Model.RetentionStartEvent ?? "Não cadastrado") <span class="text-muted">(@(Model.RetentionStartEventCode ?? "sem código"))</span></li>
+                        <li class="mb-1"><strong>Data-base persistida:</strong> @(Model.RetentionBasisDateFormatted ?? (Model.RetentionMemoryState == "event_pending" ? "Evento ainda não ocorrido" : "Não calculada"))</li>
+                        <li class="mb-1"><strong>Fase corrente:</strong> @(Model.RetentionActivePhaseExplicitZero ? "0 (definido na regra)" : Model.RetentionActivePhase ?? "Não cadastrado")</li>
+                        <li class="mb-1"><strong>Fase intermediária:</strong> @(Model.RetentionArchivePhaseExplicitZero ? "0 (definido na regra)" : Model.RetentionArchivePhase ?? "Não cadastrado")</li>
+                        <li class="mb-1"><strong>Vencimento persistido:</strong> @(Model.RetentionDueDateFormatted ?? (Model.RetentionFinalDestinationCode == "GUARDA_PERMANENTE" ? "Não aplicável" : "Não calculado"))</li>
+                        <li class="mb-1"><strong>Destinação:</strong> @(Model.RetentionFinalDestination ?? "Não cadastrada") <span class="text-muted">(@(Model.RetentionFinalDestinationCode ?? "sem código"))</span></li>
+                        <li class="mb-1"><strong>Situação do processamento:</strong> @(Model.RetentionStatusLabel ?? "Pendente")</li>
+                        @if (Model.RetentionMemoryState == "suspended")
                         {
-                            <li class="text-info mt-1"><strong>• Regime:</strong> Documento de valor secundário/histórico — isento de eliminação temporal.</li>
+                            <li class="text-warning mt-1"><strong>Suspensão:</strong> @(Model.RetentionPendingReason ?? "Contagem suspensa.")</li>
                         }
-                        else if (!string.IsNullOrWhiteSpace(Model.RetentionPendingReason))
+                        else if (Model.RetentionMemoryState is "event_pending" or "calculation_pending" or "no_rule" or "no_classification" or "processing_error")
                         {
-                            <li class="text-warning mt-1"><strong>• Status:</strong> @Model.RetentionPendingReason</li>
-                        }
-                        else if (Model.RetentionDueDateFormatted != null)
-                        {
-                            <li class="text-success mt-1"><strong>• Vencimento consolidado:</strong> @Model.RetentionDueDateFormatted (conforme aplicação dos prazos somados).</li>
+                            <li class="text-warning mt-1"><strong>Pendência:</strong> @(Model.RetentionPendingReason ?? "Cálculo incompleto.")</li>
                         }
                     </ul>
                 </div>

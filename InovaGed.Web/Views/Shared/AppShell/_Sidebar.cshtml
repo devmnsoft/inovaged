@@ -10,13 +10,6 @@
         <partial name="AppShell/_Menu" model="Model" />
         <p class="sidebar-empty" data-menu-empty hidden>Nenhuma função corresponde à pesquisa.</p>
     </nav>
-    <div class="sidebar-account">
-        <div class="sidebar-section-title">Conta</div>
-        <form asp-controller="Account" asp-action="Logout" method="post">
-            @Html.AntiForgeryToken()
-            <button type="submit" class="sidebar-logout"><app-icon name="arrow-right" decorative="true" size="18" /><span>Sair</span></button>
-        </form>
-    </div>
     <footer class="sidebar-footer">© @DateTime.UtcNow.Year InovaGED</footer>
     <div class="sidebar-preferences" aria-label="Densidade do menu"><button type="button" data-sidebar-density="comfortable">Confortável</button><button type="button" data-sidebar-density="compact">Compacto</button></div>
     <button class="sidebar-collapse" type="button" data-sidebar-toggle aria-expanded="true" title="Recolher menu"><app-icon name="panel-left" decorative="true" size="18" /><span>Recolher menu</span></button>

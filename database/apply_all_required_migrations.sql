@@ -3172,3 +3172,4 @@ COMMIT;
 \ir migrations/2026_10_12_protocol_canonical_drafts.sql
 \ir migrations/2026_10_13_protocol_operational_pending.sql
 \ir migrations/2026_10_14_preview_status_upsert_contract.sql
+\ir migrations/2026_10_15_protocol_ged_links_view.sql

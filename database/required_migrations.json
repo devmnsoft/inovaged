@@ -915,5 +915,12 @@
     "area": "Preview",
     "required": true,
     "description": "Garante unicidade tenant/versão e estados canônicos para o upsert concorrente de preview."
+  },
+  {
+    "name": "2026_10_15_protocol_ged_links_view",
+    "path": "database/migrations/2026_10_15_protocol_ged_links_view.sql",
+    "area": "Protocol",
+    "required": true,
+    "description": "Garante a view ged.vw_protocolo_ged_vinculos em instalação limpa e upgrade, sem recriar dados."
   }
 ]

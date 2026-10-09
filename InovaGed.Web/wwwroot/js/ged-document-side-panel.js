@@ -21,6 +21,38 @@
     function getPage() { return document.querySelector('.ged-page'); }
     let lastPanelTrigger = null;
     let lastScrollY = 0;
+    let panelGeneration = 0;
+    let panelAbort = null;
+
+    function startPanelSession() {
+        panelGeneration += 1;
+        panelAbort?.abort();
+        panelAbort = new AbortController();
+        return panelGeneration;
+    }
+
+    function panelRequest() {
+        const panel = getPanel();
+        return {
+            generation: panelGeneration,
+            documentId: panel?.dataset.documentId || '',
+            versionId: panel?.dataset.versionId || '',
+            signal: panelAbort?.signal
+        };
+    }
+
+    function stillCurrent(request) {
+        const panel = getPanel();
+        const open = !!panel && !panel.hidden && panel.classList.contains('is-open');
+        return open
+            && request.generation === panelGeneration
+            && (panel.dataset.documentId || '') === (request.documentId || '')
+            && (panel.dataset.versionId || '') === (request.versionId || '');
+    }
+
+    function isAbort(err) {
+        return err?.name === 'AbortError';
+    }
     function showToast(message, type) {
         if (typeof window.showGedToast === 'function') { window.showGedToast(message, type || 'info'); return; }
         window.showAppToast?.(message, type || 'info', 'GED');
@@ -54,12 +86,12 @@
         if (!page || !panel) return null;
         lastPanelTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : lastPanelTrigger;
         lastScrollY = window.scrollY || document.documentElement.scrollTop || 0;
+        startPanelSession();
         page.classList.add('with-document-panel');
         page.classList.remove('ged-side-panel-open');
         panel.hidden = false;
         panel.classList.remove('d-none');
         panel.classList.add('is-open');
-        document.body.classList.add('ged-preview-open');
         panel.setAttribute('aria-hidden', 'false');
         panel.dataset.documentId = documentId || '';
         if (versionId) panel.dataset.versionId = versionId;
@@ -81,24 +113,30 @@
         }
         const panel = showPanelShell(documentId, versionId);
         if (!panel) return;
+        const request = panelRequest();
         setActiveDocumentRow(documentId);
         try {
-            const url = `/Ged/DocumentPanel?id=${encodeURIComponent(documentId)}&tab=${encodeURIComponent(initialTab || 'preview')}`;
-            const res = await fetch(url, {
-                headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'text/html' }
+            const params = new URLSearchParams({ id: documentId, tab: initialTab || 'preview' });
+            if (versionId) params.set('versionId', versionId);
+            const res = await fetch(`/Ged/DocumentPanel?${params}`, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'text/html' },
+                signal: request.signal
             });
+            if (!stillCurrent(request)) return;
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const html = await res.text();
+            if (!stillCurrent(request)) return;
             panel.innerHTML = html;
             panel.hidden = false;
             panel.classList.remove('d-none');
             panel.classList.add('is-open');
-            document.body.classList.add('ged-preview-open');
             panel.setAttribute('aria-hidden', 'false');
             panel.dataset.documentId = documentId;
             if (versionId) panel.dataset.versionId = versionId;
+            else delete panel.dataset.versionId;
             activateTab(initialTab || 'summary');
         } catch (err) {
+            if (isAbort(err) || !stillCurrent(request)) return;
             console.warn('[GED] Erro ao abrir painel lateral', err);
             panel.innerHTML = getSidePanelErrorHtml();
             showToast('Não foi possível carregar o painel lateral do documento.', 'error');
@@ -106,6 +144,7 @@
     }
 
     function closeGedDocumentPanel() {
+        startPanelSession();
         const panel = getPanel();
         getPage()?.classList.remove('with-document-panel', 'ged-side-panel-open');
         if (panel) {
@@ -173,13 +212,17 @@
         const body = panel?.querySelector('[data-ged-tab-panel="ocr"]');
         const host = body?.querySelector('[data-ged-ocr-host]');
         if (!body || !host || !versionId) return;
-        body.dataset.ocrLoaded = 'true';
-        body.dataset.versionId = versionId;
+        const request = panelRequest();
         host.innerHTML = '<div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Carregando OCR...</div>';
         try {
             const endpoint = url || `/Ged/DocumentOcrText?versionId=${encodeURIComponent(versionId)}`;
-            const res = await fetch(endpoint, { headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' } });
+            const res = await fetch(endpoint, { headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' }, signal: request.signal });
+            if (!stillCurrent(request)) return;
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
+            if (!stillCurrent(request)) return;
+            body.dataset.ocrLoaded = 'true';
+            body.dataset.versionId = versionId;
             if (data.success && data.text) {
                 const totalParts = body.dataset.totalParts || '';
                 const fileName = body.dataset.fileName || '';
@@ -198,8 +241,9 @@
                 host.innerHTML = `${context}<div class="alert alert-info mb-0"><i class="bi bi-info-circle me-1"></i>${partNumber ? `A Parte ${esc(partNumber)} ainda não possui OCR. Você pode solicitar o processamento.` : esc(data.message || 'OCR ainda não disponível para este documento.')} <span class="badge bg-secondary ms-1">${esc(status)}</span>${action}</div>`;
             }
         } catch (err) {
+            if (isAbort(err) || !stillCurrent(request)) return;
             console.error('[GED OCR]', err);
-            host.innerHTML = '<div class="alert alert-warning mb-0">Não foi possível carregar o OCR agora.</div>';
+            host.innerHTML = '<div class="alert alert-warning mb-0">Não foi possível carregar o OCR agora. <button type="button" class="btn btn-sm btn-outline-warning ms-2" data-ged-ocr-retry>Tentar novamente</button></div>';
         }
     }
 
@@ -208,16 +252,21 @@
         const body = panel?.querySelector('[data-ged-tab-panel="history"]');
         const host = body?.querySelector('[data-ged-history-host]');
         if (!body || !host || !documentId) return;
-        body.dataset.historyLoaded = 'true';
+        const request = panelRequest();
         host.innerHTML = '<div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Carregando histórico...</div>';
         try {
-            const res = await fetch(url || `/Ged/DocumentHistory?id=${encodeURIComponent(documentId)}`, { headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' } });
+            const res = await fetch(url || `/Ged/DocumentHistory?id=${encodeURIComponent(documentId)}`, { headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' }, signal: request.signal });
+            if (!stillCurrent(request)) return;
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
+            if (!stillCurrent(request)) return;
+            body.dataset.historyLoaded = 'true';
             const rows = data.items || [];
             host.innerHTML = rows.length ? `<div class="ged-history-list">${rows.map(x => `<div class="ged-history-item"><div class="fw-semibold">${esc(x.action)}</div><div>${esc(x.description)}</div><div class="small text-muted">${esc(x.occurredAtLocalFormatted)} · ${esc(x.userName || 'Sistema')}</div>${x.correlationId ? `<div class="small text-muted">CorrelationId: ${esc(x.correlationId)}</div>` : ''}</div>`).join('')}</div>${data.hasMore ? '<button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-2" disabled>Ver mais em breve</button>' : ''}` : '<div class="text-muted small">Nenhum evento encontrado.</div>';
         } catch (err) {
+            if (isAbort(err) || !stillCurrent(request)) return;
             console.error('[GED History]', err);
-            host.innerHTML = '<div class="alert alert-warning mb-0">Não foi possível carregar o histórico agora.</div>';
+            host.innerHTML = '<div class="alert alert-warning mb-0">Não foi possível carregar o histórico agora. <button type="button" class="btn btn-sm btn-outline-warning ms-2" data-ged-history-retry>Tentar novamente</button></div>';
         }
     }
 
@@ -226,51 +275,63 @@
         const body = panel?.querySelector('[data-ged-tab-panel="protocols"]');
         const host = body?.querySelector('[data-ged-protocols-host]');
         if (!body || !host || !documentId) return;
-        body.dataset.protocolsLoaded = 'true';
+        const request = panelRequest();
         host.innerHTML = '<div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Carregando protocolos vinculados...</div>';
         try {
             const endpoint = url || `/Ged/DocumentProtocols?id=${encodeURIComponent(documentId)}`;
-            const res = await fetch(endpoint, { headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' } });
-            const data = await res.json();
-            const items = data.items || [];
-            if (!items.length) {
-                host.innerHTML = '<div class="alert alert-info py-2 px-3 small mb-0"><i class="bi bi-info-circle me-1"></i>Nenhum protocolo vinculado a este documento.</div>' +
-                    '<div class="mt-3"><a class="btn btn-sm btn-outline-primary" href="/Protocolo/Novo"><i class="bi bi-plus-lg me-1"></i>Criar novo protocolo</a></div>';
+            const res = await fetch(endpoint, { headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' }, signal: request.signal });
+            if (!stillCurrent(request)) return;
+            let data = null;
+            try { data = await res.json(); } catch { data = null; }
+            if (!stillCurrent(request)) return;
+            const outcome = data?.outcome || data?.Outcome;
+            const items = data?.items || data?.Items || [];
+            const failed = !res.ok || !data || data.success === false || data.Success === false || outcome === 'unavailable' || outcome === 'forbidden' || outcome === 'not_found' || outcome === 'unauthorized';
+            if (failed) {
+                const message = data?.message || data?.Message || (res.status === 403 ? 'Acesso negado.' : 'Não foi possível carregar os protocolos vinculados.');
+                const retry = data?.canRetry || data?.CanRetry || res.status >= 500 || !data
+                    ? '<button type="button" class="btn btn-sm btn-outline-warning ms-2" data-ged-protocols-retry>Tentar novamente</button>'
+                    : '';
+                host.innerHTML = `<div class="alert alert-warning mb-0" role="alert">${esc(message)}${retry}</div>`;
+                return;
+            }
+            body.dataset.protocolsLoaded = 'true';
+            const createUrl = data.createUrl || data.CreateUrl || '';
+            const create = createUrl ? `<a class="btn btn-sm btn-outline-primary" href="${esc(createUrl)}"><i class="bi bi-plus-lg me-1"></i>Criar protocolo deste documento</a>` : '';
+            if (outcome === 'empty' || !items.length) {
+                host.innerHTML = `<div class="alert alert-info py-2 px-3 small mb-0">Nenhum protocolo vinculado a este documento.</div><div class="mt-3">${create}</div>`;
                 return;
             }
             host.innerHTML = `
                 <div class="mb-2 d-flex justify-content-between align-items-center">
                     <span class="small text-muted fw-semibold">${items.length} protocolo(s) vinculado(s)</span>
-                    <a class="btn btn-sm btn-outline-primary" href="/Protocolo/Novo"><i class="bi bi-plus-lg me-1"></i>Novo</a>
+                    ${create}
                 </div>
                 <div class="list-group list-group-flush border rounded">
                     ${items.map(p => {
                         const num = p.protocoloNumero || p.ProtocoloNumero || 'Protocolo';
-                        const id = p.protocoloId || p.ProtocoloId;
+                        const details = p.detailsUrl || p.DetailsUrl || '';
                         const vinculo = p.tipoVinculo || p.TipoVinculo || 'DOCUMENTO_GERAL';
                         const obs = p.observacao || p.Observacao || '';
-                        const autor = p.criadoPorNome || p.CriadoPorNome || 'Sistema';
+                        const autor = p.criadoPorNome || p.CriadoPorNome || '';
+                        const title = details
+                            ? `<a href="${esc(details)}" class="fw-semibold text-decoration-none">${esc(num)}</a>`
+                            : `<span class="fw-semibold">${esc(num)}</span>`;
                         return `
                         <div class="list-group-item p-2">
-                            <div class="d-flex justify-content-between align-items-start gap-2">
-                                <div class="min-w-0">
-                                    <a href="/Protocolo/Detalhes/${encodeURIComponent(id)}" class="fw-semibold text-decoration-none">
-                                        <i class="bi bi-journal-text me-1"></i>${esc(num)}
-                                    </a>
-                                    <div class="small text-muted">Vínculo: <span class="badge bg-secondary">${esc(vinculo)}</span> · ${esc(autor)}</div>
-                                    ${obs ? `<div class="small text-muted mt-1 text-truncate">${esc(obs)}</div>` : ''}
-                                </div>
-                                <a href="/Protocolo/Detalhes/${encodeURIComponent(id)}" class="btn btn-sm btn-outline-secondary" title="Abrir protocolo">
-                                    <i class="bi bi-box-arrow-up-right"></i>
-                                </a>
+                            <div class="min-w-0">
+                                ${title}
+                                <div class="small text-muted">Vínculo: <span class="badge bg-secondary">${esc(vinculo)}</span>${autor ? ` · ${esc(autor)}` : ''}</div>
+                                ${obs ? `<div class="small text-muted mt-1 text-truncate">${esc(obs)}</div>` : ''}
                             </div>
                         </div>`;
                     }).join('')}
                 </div>
             `;
         } catch (err) {
+            if (isAbort(err) || !stillCurrent(request)) return;
             console.error('[GED Protocols]', err);
-            host.innerHTML = '<div class="alert alert-warning mb-0">Não foi possível carregar os protocolos vinculados agora.</div>';
+            host.innerHTML = '<div class="alert alert-warning mb-0">Não foi possível carregar os protocolos vinculados. <button type="button" class="btn btn-sm btn-outline-warning ms-2" data-ged-protocols-retry>Tentar novamente</button></div>';
         }
     }
 
@@ -279,11 +340,15 @@
         const body = panel?.querySelector('[data-ged-tab-panel="parts"]');
         const host = body?.querySelector('[data-ged-parts-host]');
         if (!body || !host || !documentId) return;
-        body.dataset.partsLoaded = 'true';
+        const request = panelRequest();
         host.innerHTML = '<div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Carregando partes...</div>';
         try {
-            const res = await fetch(url || `/Ged/DocumentPartsJson?id=${encodeURIComponent(documentId)}`, { headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' } });
+            const res = await fetch(url || `/Ged/DocumentPartsJson?id=${encodeURIComponent(documentId)}`, { headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' }, signal: request.signal });
+            if (!stillCurrent(request)) return;
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
+            if (!stillCurrent(request)) return;
+            body.dataset.partsLoaded = 'true';
             const parts = data.parts || [];
             const incomplete = panel.querySelector('.ged-side-incomplete-alert') !== null;
             if (!parts.length) {
@@ -296,12 +361,17 @@
             const collapseId = `documentPartsCollapse_${esc(documentId).replace(/[^a-zA-Z0-9_-]/g, '')}`;
             host.innerHTML = `<div class="document-parts-summary border rounded p-3 d-flex justify-content-between align-items-center gap-3 flex-wrap"><div><strong><i class="bi bi-files me-1"></i>Partes do documento</strong><div class="small text-muted">${esc(parts.length)}${data.totalParts ? ' de ' + esc(data.totalParts) : ''} partes recebidas · <span class="badge ${esc(data.ocrSummaryCss || 'bg-secondary')}">${esc(data.ocrSummary || '')}</span></div>${data.totalParts ? `<div class="progress mt-2" style="height:.5rem"><div class="progress-bar" style="width:${percent}%"></div></div>` : ''}</div><button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="false" aria-controls="${collapseId}">Expandir partes</button></div><div id="${collapseId}" class="collapse mt-3"><div class="document-parts-tabs d-flex flex-wrap gap-2 mb-3" role="tablist">${parts.map(p => `<button type="button" class="btn btn-sm btn-outline-primary js-open-document-part" data-preview-url="${esc(p.previewUrl)}" data-ocr-url="${esc(p.ocrUrl || '')}" data-version-id="${esc(p.versionId)}" data-part-number="${esc(p.partNumber)}" data-file-name="${esc(p.fileName || '')}" data-ocr-label="${esc(p.ocrLabel || 'Sem OCR')}" data-total-parts="${esc(p.totalParts || data.totalParts || parts.length)}">Parte ${esc(p.partNumber)} · ${esc(p.ocrLabel || 'Sem OCR')}</button>`).join('')}</div><div class="ged-side-actions-bar mb-2"><button type="button" class="btn btn-sm btn-outline-warning js-add-document-part" data-document-id="${esc(documentId)}"><i class="bi bi-file-earmark-plus me-1"></i>Adicionar parte</button></div><div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>Parte</th><th>Arquivo</th><th>Upload</th><th>Status OCR</th><th class="text-end">Ações</th></tr></thead><tbody>${parts.map(p => `<tr><td>Parte ${esc(p.partNumber)}${p.totalParts ? `/${esc(p.totalParts)}` : ''}</td><td>${esc(p.fileName || '-')}</td><td>${esc(p.uploadedAtLabel || '-')}</td><td><span class="badge ${esc(p.ocrCss || 'bg-secondary')}">${esc(p.ocrLabel || 'Sem OCR')}</span></td><td class="text-end"><div class="btn-group btn-group-sm"><button type="button" class="btn btn-light border js-open-document-part" data-preview-url="${esc(p.previewUrl)}" data-ocr-url="${esc(p.ocrUrl || '')}" data-version-id="${esc(p.versionId)}" data-part-number="${esc(p.partNumber)}" data-file-name="${esc(p.fileName || '')}" data-ocr-label="${esc(p.ocrLabel || 'Sem OCR')}" data-total-parts="${esc(p.totalParts || data.totalParts || parts.length)}">Visualizar</button><button type="button" class="btn btn-light border js-open-document-part-ocr" data-ocr-url="${esc(p.ocrUrl || '')}" data-version-id="${esc(p.versionId)}" data-part-number="${esc(p.partNumber)}" data-file-name="${esc(p.fileName || '')}" data-ocr-label="${esc(p.ocrLabel || 'Sem OCR')}" data-total-parts="${esc(p.totalParts || data.totalParts || parts.length)}">OCR</button><a class="btn btn-light border" href="${esc(p.downloadUrl)}">Baixar</a></div></td></tr>`).join('')}</tbody></table></div></div>`;
         } catch (err) {
+            if (isAbort(err) || !stillCurrent(request)) return;
             console.error('[GED Parts]', err);
-            host.innerHTML = '<div class="alert alert-warning mb-0">Não foi possível carregar as partes agora.</div>';
+            host.innerHTML = '<div class="alert alert-warning mb-0">Não foi possível carregar as partes agora. <button type="button" class="btn btn-sm btn-outline-warning ms-2" data-ged-parts-retry>Tentar novamente</button></div>';
         }
     }
 
     document.addEventListener('click', function (e) {
+        if (e.target.closest('[data-ged-protocols-retry]')) { e.preventDefault(); const body = getPanel()?.querySelector('[data-ged-tab-panel="protocols"]'); if (body) delete body.dataset.protocolsLoaded; loadGedDocumentProtocols(getPanel()?.dataset.documentId, getPanel()?.querySelector('[data-protocols-url]')?.dataset.protocolsUrl); return; }
+        if (e.target.closest('[data-ged-ocr-retry]')) { e.preventDefault(); const body = getPanel()?.querySelector('[data-ged-tab-panel="ocr"]'); if (body) body.dataset.ocrLoaded = 'false'; loadGedDocumentOcr(body?.dataset.versionId || getPanel()?.dataset.versionId); return; }
+        if (e.target.closest('[data-ged-history-retry]')) { e.preventDefault(); const body = getPanel()?.querySelector('[data-ged-tab-panel="history"]'); if (body) delete body.dataset.historyLoaded; loadGedDocumentHistory(getPanel()?.dataset.documentId, getPanel()?.querySelector('[data-history-url]')?.dataset.historyUrl); return; }
+        if (e.target.closest('[data-ged-parts-retry]')) { e.preventDefault(); const body = getPanel()?.querySelector('[data-ged-tab-panel="parts"]'); if (body) body.dataset.partsLoaded = 'false'; loadGedDocumentParts(getPanel()?.dataset.documentId, getPanel()?.querySelector('[data-parts-url]')?.dataset.partsUrl); return; }
         if (e.target.closest('.js-close-document-panel, .js-close-side-panel')) { e.preventDefault(); closeGedDocumentPanel(); return; }
         if (e.target.closest('.js-expand-side-panel')) {
             e.preventDefault();
@@ -425,5 +495,11 @@
     window.openGedDocumentSidePanel = openGedDocumentPanel;
     window.closeGedDocumentSidePanel = closeGedDocumentPanel;
     window.activateGedSidePanelTab = activateTab;
-    window.GedDocumentSidePanel = { open: openGedDocumentPanel, close: closeGedDocumentPanel };
+    async function reloadGedDocumentPanel() {
+        const panel = getPanel();
+        if (!panel || panel.hidden || !panel.dataset.documentId) return;
+        await openGedDocumentPanel(panel.dataset.documentId, panel.dataset.versionId || null, panel.dataset.activeTab || 'summary');
+    }
+    window.GedDocumentSidePanel = { open: openGedDocumentPanel, close: closeGedDocumentPanel, reload: reloadGedDocumentPanel };
+    window.InovaGedSidePanel = window.GedDocumentSidePanel;
 })();
