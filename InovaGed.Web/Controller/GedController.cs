@@ -526,6 +526,8 @@ LIMIT 30;
             DetailsUrl = Url.Action(nameof(Details), "Ged", new { id }) ?? string.Empty,
             PartsUrl = $"/Ged/DocumentParts?id={id}",
             HistoryUrl = Url.Action(nameof(DocumentHistory), "Ged", new { id }) ?? string.Empty,
+            ProtocolsUrl = $"/Ged/DocumentProtocols?id={id}",
+            LabelPrintUrl = $"/Labels/PrintWizard?subjectType=DOCUMENT&subjectId={id}&mode=FACTORY&templateCode=FACTORY_DOCUMENT_V1",
             CanMove = canMove,
             CanClassify = true,
             CanAddPart = canAddPart,
@@ -627,6 +629,38 @@ LIMIT 30;
         var rows = await LoadDocumentHistoryAsync(_currentUser.TenantId, id, 20, ct);
         await WriteGedAuditAsync("DOCUMENT_HISTORY_VIEW", "DOCUMENT_HISTORY", id, "Histórico do documento aberto no painel lateral GED", new { documentId = id, correlationId = HttpContext.TraceIdentifier }, ct);
         return Ok(new { items = rows, hasMore = rows.Count >= 20 });
+    }
+
+    [HttpGet("/Ged/DocumentProtocols")]
+    public async Task<IActionResult> DocumentProtocols(Guid id, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+        var tenantId = _currentUser.TenantId;
+        try
+        {
+            await using var con = await _db.OpenAsync(ct);
+            const string sql = """
+select
+    id as "Id",
+    protocolo_id as "ProtocoloId",
+    protocolo_numero as "ProtocoloNumero",
+    tipo_vinculo as "TipoVinculo",
+    observacao as "Observacao",
+    criado_por_nome as "CriadoPorNome",
+    created_at as "CreatedAt"
+from ged.vw_protocolo_ged_vinculos
+where tenant_id = @tenantId and ged_document_id = @id
+order by created_at desc;
+""";
+            var rows = (await con.QueryAsync<dynamic>(new CommandDefinition(sql, new { tenantId, id }, cancellationToken: ct))).ToList();
+            await WriteGedAuditAsync("DOCUMENT_PROTOCOLS_VIEW", "DOCUMENT_PROTOCOLS", id, "Protocolos vinculados ao documento abertos no painel lateral GED", new { documentId = id, correlationId = HttpContext.TraceIdentifier }, ct);
+            return Ok(new { success = true, items = rows });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Falha ao carregar protocolos vinculados ao documento. DocumentId={DocumentId}", id);
+            return Ok(new { success = true, items = Array.Empty<object>() });
+        }
     }
 
 

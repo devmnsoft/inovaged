@@ -129,7 +129,7 @@ set name = @resolvedName,
     branding_profile_id = @branding,
     updated_by = @userId,
     updated_at = now()
-where id = @id and tenant_id = @tenantId and reg_status = 'ACTIVE'
+where id = @id and tenant_id=@tenantId and reg_status = 'ACTIVE'
 """;
 
         await db.ExecuteAsync(new CommandDefinition(sql, new
@@ -160,7 +160,7 @@ select id, tenant_id TenantId, name, template_key TemplateKey, template_version 
        created_by CreatedBy, created_at CreatedAt, updated_by UpdatedBy, updated_at UpdatedAt,
        printed_at PrintedAt, archived_at ArchivedAt, archived_by ArchivedBy
 from ged.label_manual_instance
-where tenant_id = @tenantId and reg_status = 'ACTIVE'
+where tenant_id=@tenantId and reg_status = 'ACTIVE'
 """ + (string.IsNullOrWhiteSpace(status) ? "" : " and status = @status") + " order by coalesce(updated_at, created_at) desc";
 
         var rows = await db.QueryAsync<Row>(new CommandDefinition(sql, new { tenantId, status }, cancellationToken: cancellationToken));
@@ -176,7 +176,7 @@ select id, tenant_id TenantId, name, template_key TemplateKey, template_version 
        created_by CreatedBy, created_at CreatedAt, updated_by UpdatedBy, updated_at UpdatedAt,
        printed_at PrintedAt, archived_at ArchivedAt, archived_by ArchivedBy
 from ged.label_manual_instance
-where id = @id and tenant_id = @tenantId and reg_status = 'ACTIVE'
+where id = @id and tenant_id=@tenantId and reg_status = 'ACTIVE'
 """;
         var row = await db.QuerySingleOrDefaultAsync<Row>(new CommandDefinition(sql, new { id, tenantId }, cancellationToken: cancellationToken));
         return row is null ? null : Map(row);
@@ -198,7 +198,7 @@ insert into ged.label_manual_instance(
 select @newId, tenant_id, @copyName, template_key, template_version, values_json,
        branding_profile_id, 'DRAFT', @userId, now(), @userId, now(), 'ACTIVE'
 from ged.label_manual_instance
-where id = @id and tenant_id = @tenantId and reg_status = 'ACTIVE'
+where id = @id and tenant_id=@tenantId and reg_status = 'ACTIVE'
 """;
 
         await db.ExecuteAsync(new CommandDefinition(sql, new { newId, copyName, id, tenantId, userId }, cancellationToken: cancellationToken));
@@ -215,7 +215,7 @@ set status = 'ARCHIVED',
     archived_by = @userId,
     updated_by = @userId,
     updated_at = now()
-where id = @id and tenant_id = @tenantId and reg_status = 'ACTIVE'
+where id = @id and tenant_id=@tenantId and reg_status = 'ACTIVE'
 """;
         var changed = await db.ExecuteAsync(new CommandDefinition(sql, new { id, tenantId, userId }, cancellationToken: cancellationToken));
         if (changed != 1) throw new KeyNotFoundException("Etiqueta avulsa não encontrada.");
@@ -231,7 +231,7 @@ set status = 'PRINTED',
     printed_at = coalesce(printed_at, now()),
     updated_by = @userId,
     updated_at = now()
-where id = @id and tenant_id = @tenantId and reg_status = 'ACTIVE'
+where id = @id and tenant_id=@tenantId and reg_status = 'ACTIVE'
 """;
         var changed = await db.ExecuteAsync(new CommandDefinition(sql, new { id, tenantId, userId }, cancellationToken: cancellationToken));
         if (changed != 1) throw new KeyNotFoundException("Etiqueta avulsa não encontrada.");

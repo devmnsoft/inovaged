@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text;
 using Dapper;
 using InovaGed.Application.Audit;
@@ -35,6 +35,9 @@ public sealed class ReportsController : Controller
 
     private Guid TenantId => _ctx.TenantId;
     private Guid UserId => _ctx.UserId;
+
+    [NonAction]
+    public IActionResult Index() => Index(CancellationToken.None).GetAwaiter().GetResult();
 
     [HttpGet]
     public async Task<IActionResult> Index(CancellationToken ct)

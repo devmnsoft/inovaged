@@ -71,7 +71,7 @@
     async function openGedDocumentPanel(documentId, versionIdOrInitialTab, initialTabMaybe) {
         let versionId = versionIdOrInitialTab;
         let initialTab = initialTabMaybe || 'summary';
-        if (versionIdOrInitialTab && !initialTabMaybe && ['summary', 'preview', 'ocr', 'metadata', 'parts', 'history', 'actions'].includes(String(versionIdOrInitialTab).toLowerCase())) {
+        if (versionIdOrInitialTab && !initialTabMaybe && ['summary', 'preview', 'ocr', 'metadata', 'retention', 'protocols', 'parts', 'history', 'actions'].includes(String(versionIdOrInitialTab).toLowerCase())) {
             initialTab = String(versionIdOrInitialTab).toLowerCase();
             versionId = null;
         }
@@ -160,6 +160,9 @@
         if (tabName === 'history' && active?.dataset.historyLoaded !== 'true') {
             loadGedDocumentHistory(panel.dataset.documentId, panel.querySelector('[data-history-url]')?.dataset.historyUrl);
         }
+        if (tabName === 'protocols' && active?.dataset.protocolsLoaded !== 'true') {
+            loadGedDocumentProtocols(panel.dataset.documentId, panel.querySelector('[data-protocols-url]')?.dataset.protocolsUrl);
+        }
         if (tabName === 'parts' && active?.dataset.partsLoaded !== 'true') {
             loadGedDocumentParts(panel.dataset.documentId, panel.querySelector('[data-parts-url]')?.dataset.partsUrl);
         }
@@ -215,6 +218,59 @@
         } catch (err) {
             console.error('[GED History]', err);
             host.innerHTML = '<div class="alert alert-warning mb-0">Não foi possível carregar o histórico agora.</div>';
+        }
+    }
+
+    async function loadGedDocumentProtocols(documentId, url) {
+        const panel = getPanel();
+        const body = panel?.querySelector('[data-ged-tab-panel="protocols"]');
+        const host = body?.querySelector('[data-ged-protocols-host]');
+        if (!body || !host || !documentId) return;
+        body.dataset.protocolsLoaded = 'true';
+        host.innerHTML = '<div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Carregando protocolos vinculados...</div>';
+        try {
+            const endpoint = url || `/Ged/DocumentProtocols?id=${encodeURIComponent(documentId)}`;
+            const res = await fetch(endpoint, { headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' } });
+            const data = await res.json();
+            const items = data.items || [];
+            if (!items.length) {
+                host.innerHTML = '<div class="alert alert-info py-2 px-3 small mb-0"><i class="bi bi-info-circle me-1"></i>Nenhum protocolo vinculado a este documento.</div>' +
+                    '<div class="mt-3"><a class="btn btn-sm btn-outline-primary" href="/Protocolo/Novo"><i class="bi bi-plus-lg me-1"></i>Criar novo protocolo</a></div>';
+                return;
+            }
+            host.innerHTML = `
+                <div class="mb-2 d-flex justify-content-between align-items-center">
+                    <span class="small text-muted fw-semibold">${items.length} protocolo(s) vinculado(s)</span>
+                    <a class="btn btn-sm btn-outline-primary" href="/Protocolo/Novo"><i class="bi bi-plus-lg me-1"></i>Novo</a>
+                </div>
+                <div class="list-group list-group-flush border rounded">
+                    ${items.map(p => {
+                        const num = p.protocoloNumero || p.ProtocoloNumero || 'Protocolo';
+                        const id = p.protocoloId || p.ProtocoloId;
+                        const vinculo = p.tipoVinculo || p.TipoVinculo || 'DOCUMENTO_GERAL';
+                        const obs = p.observacao || p.Observacao || '';
+                        const autor = p.criadoPorNome || p.CriadoPorNome || 'Sistema';
+                        return `
+                        <div class="list-group-item p-2">
+                            <div class="d-flex justify-content-between align-items-start gap-2">
+                                <div class="min-w-0">
+                                    <a href="/Protocolo/Detalhes/${encodeURIComponent(id)}" class="fw-semibold text-decoration-none">
+                                        <i class="bi bi-journal-text me-1"></i>${esc(num)}
+                                    </a>
+                                    <div class="small text-muted">Vínculo: <span class="badge bg-secondary">${esc(vinculo)}</span> · ${esc(autor)}</div>
+                                    ${obs ? `<div class="small text-muted mt-1 text-truncate">${esc(obs)}</div>` : ''}
+                                </div>
+                                <a href="/Protocolo/Detalhes/${encodeURIComponent(id)}" class="btn btn-sm btn-outline-secondary" title="Abrir protocolo">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </div>
+                        </div>`;
+                    }).join('')}
+                </div>
+            `;
+        } catch (err) {
+            console.error('[GED Protocols]', err);
+            host.innerHTML = '<div class="alert alert-warning mb-0">Não foi possível carregar os protocolos vinculados agora.</div>';
         }
     }
 
@@ -358,10 +414,12 @@
     window.closeGedDocumentPanel = closeGedDocumentPanel;
     window.loadGedDocumentOcr = loadGedDocumentOcr;
     window.loadGedDocumentHistory = loadGedDocumentHistory;
+    window.loadGedDocumentProtocols = loadGedDocumentProtocols;
     window.loadGedDocumentParts = loadGedDocumentParts;
     window.activateGedPanelTab = activateTab;
     window.loadGedPanelOcr = loadGedDocumentOcr;
     window.loadGedPanelHistory = loadGedDocumentHistory;
+    window.loadGedPanelProtocols = loadGedDocumentProtocols;
     window.loadGedPanelParts = loadGedDocumentParts;
     window.setActiveDocumentRow = setActiveDocumentRow;
     window.openGedDocumentSidePanel = openGedDocumentPanel;

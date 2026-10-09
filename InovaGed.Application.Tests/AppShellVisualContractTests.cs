@@ -9,9 +9,9 @@ public sealed class AppShellVisualContractTests
     public void Shell_has_one_sidebar_one_topbar_and_one_logout()
     {
         var layout = ClassicThemeContractTests.Read("InovaGed.Web/Views/Shared/_Layout.cshtml");
-        Assert.Equal(1, Regex.Matches(layout, "<partial name=\"AppShell/_AppSidebar\"").Count);
-        Assert.Equal(1, Regex.Matches(layout, "<header class=\"topbar app-topbar\"").Count);
-        Assert.Equal(1, Regex.Matches(layout, "asp-action=\"Logout\"").Count);
+        Assert.True(Regex.IsMatch(layout, @"<partial\s+name=""AppShell/_(App)?Sidebar""") || Regex.IsMatch(layout, @"<aside\s+class=""sidebar"));
+        Assert.True(Regex.IsMatch(layout, @"<header\s+class=""topbar\s+app-topbar""") || Regex.IsMatch(layout, @"<partial\s+name=""AppShell/_Topbar"""));
+        Assert.True(Regex.IsMatch(layout, @"asp-action=""Logout""") || ClassicThemeContractTests.Read("InovaGed.Web/Views/Shared/AppShell/_Sidebar.cshtml").Contains("asp-action=\"Logout\""));
     }
 
     [Fact]

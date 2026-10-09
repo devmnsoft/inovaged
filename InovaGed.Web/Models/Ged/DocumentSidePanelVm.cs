@@ -37,6 +37,8 @@ public sealed class DocumentSidePanelVm
     public string DetailsUrl { get; set; } = "";
     public string PartsUrl { get; set; } = "";
     public string HistoryUrl { get; set; } = "";
+    public string ProtocolsUrl { get; set; } = "";
+    public string LabelPrintUrl { get; set; } = "";
     public bool CanMove { get; set; }
     public bool CanClassify { get; set; }
     public bool CanAddPart { get; set; }

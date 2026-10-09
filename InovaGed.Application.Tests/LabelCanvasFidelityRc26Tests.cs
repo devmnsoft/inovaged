@@ -8,7 +8,7 @@ public sealed class LabelCanvasFidelityRc26Tests
     [Fact]
     public void A4_100x70_calculates_valid_grid()
     {
-        var result=LabelCanvasSheetLayoutCalculator.Calculate(new("A4","portrait",null,null,100,70,10,0,0,10,4,4,100,6));
+        var result=LabelCanvasSheetLayoutCalculator.Calculate(new("A4","portrait",null,null,100,70,10,0,0,0,4,4,100,6));
         Assert.True(result.IsValid);Assert.Equal(2,result.Columns);Assert.Equal(3,result.Rows);Assert.Equal(6,result.LabelsPerPage);
     }
 

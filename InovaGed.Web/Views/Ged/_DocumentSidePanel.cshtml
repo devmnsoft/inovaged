@@ -72,6 +72,7 @@
     <button class="btn btn-sm ged-side-tab" type="button" data-ged-side-tab="ocr" data-version-id="@Model.VersionId" data-ocr-url="@Model.OcrTextUrl">OCR</button>
     <button class="btn btn-sm ged-side-tab" type="button" data-ged-side-tab="retention">Temporalidade</button>
     <button class="btn btn-sm ged-side-tab" type="button" data-ged-side-tab="metadata">Metadados</button>
+    <button class="btn btn-sm ged-side-tab" type="button" data-ged-side-tab="protocols" data-document-id="@Model.DocumentId" data-protocols-url="@Model.ProtocolsUrl">Protocolos</button>
     <button class="btn btn-sm ged-side-tab" type="button" data-ged-side-tab="parts" data-document-id="@Model.DocumentId" data-parts-url="@Model.PartsUrl">Partes</button>
     <button class="btn btn-sm ged-side-tab" type="button" data-ged-side-tab="history" data-document-id="@Model.DocumentId" data-history-url="@Model.HistoryUrl">Histórico</button>
     <button class="btn btn-sm ged-side-tab" type="button" data-ged-side-tab="actions">Ações</button>
@@ -199,6 +200,37 @@
                 <dt>Destinação final</dt><dd>@(Model.RetentionFinalDestination ?? "-")</dd>
             </dl>
 
+            <div class="card bg-light border mb-3">
+                <div class="card-body p-3">
+                    <h6 class="card-title fw-bold fs-7 mb-2 text-primary">
+                        <app-icon class="me-1" name="info" size="14" decorative="true" /> Como este prazo foi calculado
+                    </h6>
+                    <div class="small text-muted mb-2">
+                        Memória de cálculo baseada na Tabela de Temporalidade Documental (TTD) e no motor de regras do InovaGED:
+                    </div>
+                    <ul class="list-unstyled small mb-0 ps-1">
+                        <li class="mb-1"><strong>• Classe cadastrada:</strong> @(Model.ClassificationCode ?? "-") — @(Model.ClassificationName ?? "Não classificado") (Plano @(Model.PlanVersionTitle ?? (Model.PlanVersionNo.HasValue ? $"v{Model.PlanVersionNo}" : "Sem versão vinculada")))</li>
+                        <li class="mb-1"><strong>• Fonte normativa:</strong> @(string.IsNullOrWhiteSpace(Model.RetentionNormativeReference) ? "Resolução CONARQ / TTD Institucional" : Model.RetentionNormativeReference)</li>
+                        <li class="mb-1"><strong>• Evento disparador:</strong> @(string.IsNullOrWhiteSpace(Model.RetentionStartEvent) ? "Criação do documento" : Model.RetentionStartEvent)</li>
+                        <li class="mb-1"><strong>• Data-base:</strong> @(Model.RetentionBasisDateFormatted ?? (Model.RetentionStartEvent is "ENCERRAMENTO" or "ARQUIVAMENTO" ? "Aguardando homologação de encerramento do processo" : "-"))</li>
+                        <li class="mb-1"><strong>• Prazos regulamentares:</strong> Fase Corrente: @(Model.RetentionActivePhase ?? "0 anos") | Fase Intermediária: @(Model.RetentionArchivePhase ?? "0 anos")</li>
+                        <li class="mb-1"><strong>• Destinação final:</strong> @(Model.RetentionFinalDestination switch { "GUARDA_PERMANENTE" => "Guarda Permanente (recolhimento arquivístico)", "ELIMINACAO" => "Eliminação após termo de eliminação", _ => Model.RetentionFinalDestination ?? "-" })</li>
+                        @if (Model.RetentionFinalDestination == "GUARDA_PERMANENTE")
+                        {
+                            <li class="text-info mt-1"><strong>• Regime:</strong> Documento de valor secundário/histórico — isento de eliminação temporal.</li>
+                        }
+                        else if (!string.IsNullOrWhiteSpace(Model.RetentionPendingReason))
+                        {
+                            <li class="text-warning mt-1"><strong>• Status:</strong> @Model.RetentionPendingReason</li>
+                        }
+                        else if (Model.RetentionDueDateFormatted != null)
+                        {
+                            <li class="text-success mt-1"><strong>• Vencimento consolidado:</strong> @Model.RetentionDueDateFormatted (conforme aplicação dos prazos somados).</li>
+                        }
+                    </ul>
+                </div>
+            </div>
+
             @if (!string.IsNullOrWhiteSpace(Model.RetentionPendingReason))
             {
                 <div class="alert alert-warning py-2 px-3 small mb-0">
@@ -232,6 +264,12 @@
             <dt>Partial status</dt><dd>@Model.PartialStatus</dd>
             <dt>Confidencialidade</dt><dd>@Model.Visibility</dd>
         </dl>
+    </section>
+
+    <section class="d-none" data-ged-tab-panel="protocols" data-protocols-loaded="false">
+        <div data-ged-protocols-host>
+            <div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>Carregando protocolos vinculados…</div>
+        </div>
     </section>
 
     <section class="d-none" data-ged-tab-panel="parts" data-parts-loaded="true">
@@ -380,6 +418,10 @@
             @if (Model.CanDelete)
             {
                 <button type="button" class="btn btn-outline-danger js-delete-document" data-document-id="@Model.DocumentId" data-document-title="@Model.Title" data-is-partial-document="@(Model.IsPartialDocument || Model.IsDocumentIncomplete ? "true" : "false")" data-partial-parts-count="@Model.PartialPartsCount"><app-icon class="me-1" name="delete" size="16" decorative="true" />Excluir</button>
+            }
+            @if (!string.IsNullOrWhiteSpace(Model.LabelPrintUrl))
+            {
+                <a class="btn btn-outline-info" href="@Model.LabelPrintUrl" target="_blank" rel="noopener"><app-icon class="me-1" name="label" size="16" decorative="true" />Gerar etiqueta</a>
             }
             <button type="button" class="btn btn-outline-dark js-copy-document-reference" data-reference="GED:@Model.DocumentId:@Model.VersionId"><app-icon class="me-1" name="document-link" size="16" decorative="true" />Copiar referência</button>
         </div>

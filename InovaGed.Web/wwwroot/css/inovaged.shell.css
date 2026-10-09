@@ -42,3 +42,10 @@
     font-size: 0.75rem;
     color: var(--ig-text-muted, #64748b);
 }
+
+html.ged-preview-open,
+body.ged-preview-open,
+html.ged-drawer-lock,
+body.ged-drawer-lock {
+    overflow: hidden;
+}
