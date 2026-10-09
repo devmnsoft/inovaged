@@ -3,16 +3,22 @@
 
     let root;
     let events;
+    let folderDrawerTrigger;
 
     const emit = (name, detail = {}) => root?.dispatchEvent(new CustomEvent(name, { bubbles: true, detail }));
 
     function setFolderDrawer(open) {
         if (!root) return;
         root.classList.toggle("is-folder-drawer-open", open);
+        if (open) folderDrawerTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : root.querySelector("[data-ged-open-folders]");
         root.querySelector("[data-ged-open-folders]")?.setAttribute("aria-expanded", String(open));
         root.querySelector(".ged-folder-panel")?.setAttribute("aria-hidden", String(!open && root.clientWidth < 860));
         document.body.classList.toggle("ged-drawer-lock", open);
         if (open) root.querySelector("#gedFolderSearch")?.focus();
+        if (!open) {
+            folderDrawerTrigger?.focus?.({ preventScroll: true });
+            folderDrawerTrigger = null;
+        }
     }
 
     function handleClick(event) {

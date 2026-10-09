@@ -51,6 +51,41 @@ public sealed class AtlasGedIconContractTests
         Assert.Contains("data-ged-open-folders", index);
     }
 
+    [Fact]
+    public void Ged_workspace_scroll_locks_match_runtime_classes()
+    {
+        var workspace = File.ReadAllText(Path.Combine(Root, "InovaGed.Web/wwwroot/css/pages/ged-workspace.css"));
+        var sidePanel = File.ReadAllText(Path.Combine(Root, "InovaGed.Web/wwwroot/js/ged-document-side-panel.js"));
+        var explorer = File.ReadAllText(Path.Combine(Root, "InovaGed.Web/wwwroot/js/ged-explorer-controller.js"));
+
+        Assert.Contains("document.body.classList.add('ged-preview-open')", sidePanel);
+        Assert.Contains("body.ged-preview-open", workspace);
+        Assert.Contains("document.body.classList.toggle(\"ged-drawer-lock\"", explorer);
+        Assert.Contains("body.ged-drawer-lock", workspace);
+    }
+
+    [Fact]
+    public void Ged_panel_interactions_restore_focus_and_use_canonical_loader()
+    {
+        var sidePanel = File.ReadAllText(Path.Combine(Root, "InovaGed.Web/wwwroot/js/ged-document-side-panel.js"));
+        var drawer = File.ReadAllText(Path.Combine(Root, "InovaGed.Web/wwwroot/js/ged-explorer-controller.js"));
+        var preview = File.ReadAllText(Path.Combine(Root, "InovaGed.Web/wwwroot/js/ged-document-preview.js"));
+
+        Assert.Contains("lastPanelTrigger.focus", sidePanel);
+        Assert.Contains("window.scrollTo(window.scrollX", sidePanel);
+        Assert.Contains("folderDrawerTrigger?.focus", drawer);
+        Assert.Contains("window.openGedDocumentPanel(row.dataset.documentId", preview);
+    }
+
+    [Fact]
+    public void Ged_component_styles_do_not_override_workspace_geometry()
+    {
+        var components = File.ReadAllText(Path.Combine(Root, "InovaGed.Web/wwwroot/css/ged-explorer.css"));
+
+        Assert.DoesNotContain("max-height:calc(100vh - 220px)", components);
+        Assert.DoesNotContain(".ged-page", components);
+    }
+
     private static string FindRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

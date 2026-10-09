@@ -70,6 +70,7 @@ public sealed class AtlasIconRegistry : IAtlasIconRegistry
         new("help", "atlas-icon-help", "Ações", "help", "outline", Array.Empty<string>()),
         new("refresh", "atlas-icon-refresh", "Ações", "refresh", "outline", new[] { "rotate-ccw" }),
         new("history", "atlas-icon-history", "Ações", "history", "outline", new[] { "git-branch" }),
+        new("calendar", "atlas-icon-calendar", "Ações", "calendar", "outline", Array.Empty<string>()),
         new("download", "atlas-icon-download", "Ações", "download", "outline", new[] { "file-down" }),
         new("share", "atlas-icon-share", "Ações", "share", "outline", new[] { "external-link", "send" }),
         new("comments", "atlas-icon-comments", "Ações", "comments", "outline", new[] { "message-circle" }),

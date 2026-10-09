@@ -53,7 +53,7 @@
 .ged-preview-panel.is-open { display: block; }
 
 .ged-page.with-document-panel {
-    grid-template-columns: var(--ged-folder-width) minmax(320px, 1fr) var(--ged-preview-width);
+    grid-template-columns: var(--ged-folder-width) minmax(0, 1fr) var(--ged-preview-width);
     grid-template-areas: "alerts alerts alerts" "folders documents preview";
 }
 
@@ -126,7 +126,8 @@
     .ged-page { min-height: calc(100dvh - 118px); border-radius: 12px; }
     .ged-main-panel { height: auto; min-height: calc(100dvh - 136px); }
     .ged-document-side-panel { inset: 0; width: 100vw; border-radius: 0; }
-    :root.ged-preview-open { overflow: hidden; }
+    html.ged-preview-open,
+    body.ged-preview-open { overflow: hidden; }
     .ged-folder-header { padding: 12px; }
     .ged-folder-actions { width: 100%; justify-content: flex-start; }
     .ged-folder-actions .btn { min-height: 44px; white-space: nowrap; }
@@ -144,7 +145,8 @@
 @media (prefers-reduced-motion: reduce) {
     .ged-folder-panel { transition: none; }
 }
-:root.ged-drawer-lock { overflow: hidden; }
+html.ged-drawer-lock,
+body.ged-drawer-lock { overflow: hidden; }
 .ged-main-panel{display:flex;flex-direction:column;background:linear-gradient(180deg,#fff 0,#fff 78%,#f8fafc 100%)}
 .ged-document-workspace{flex:1 1 auto;min-height:0}
 .ged-upload-dock{display:grid;grid-template-columns:auto minmax(220px,1fr) auto auto;align-items:center;gap:14px;flex:0 0 auto;margin:12px;padding:14px 15px;border:1px solid #d9e5f3;border-radius:16px;background:linear-gradient(115deg,#f8fbff,#fff 58%,#f2fbf7);box-shadow:0 8px 24px rgba(15,23,42,.06)}

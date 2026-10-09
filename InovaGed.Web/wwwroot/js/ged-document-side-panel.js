@@ -19,6 +19,8 @@
 
     function getPanel() { return document.getElementById('gedDocumentSidePanel'); }
     function getPage() { return document.querySelector('.ged-page'); }
+    let lastPanelTrigger = null;
+    let lastScrollY = 0;
     function showToast(message, type) {
         if (typeof window.showGedToast === 'function') { window.showGedToast(message, type || 'info'); return; }
         window.showAppToast?.(message, type || 'info', 'GED');
@@ -50,6 +52,8 @@
         const page = getPage();
         const panel = getPanel();
         if (!page || !panel) return null;
+        lastPanelTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : lastPanelTrigger;
+        lastScrollY = window.scrollY || document.documentElement.scrollTop || 0;
         page.classList.add('with-document-panel');
         page.classList.remove('ged-side-panel-open');
         panel.hidden = false;
@@ -121,6 +125,13 @@
                 x.classList.remove('is-active', 'ged-row-active');
                 x.removeAttribute('aria-current');
             });
+        window.scrollTo(window.scrollX || 0, lastScrollY);
+        if (lastPanelTrigger?.isConnected) {
+            lastPanelTrigger.focus({ preventScroll: true });
+        } else {
+            document.querySelector('[data-ged-upload-dock], [data-ged-open-folders], #legacySmartSearchInput')?.focus?.({ preventScroll: true });
+        }
+        lastPanelTrigger = null;
     }
 
     function activateTab(tabName) {

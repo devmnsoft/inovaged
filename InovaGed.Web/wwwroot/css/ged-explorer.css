@@ -3,7 +3,7 @@
     #pageAlertHost { grid-column:1 / -1; }
     .ged-folder-panel, .ged-main-panel { background:#fff; border-radius:18px; border:1px solid rgba(15,23,42,.08); box-shadow:0 14px 35px rgba(15,23,42,.06); overflow:hidden; }
     .ged-folder-panel-header { display:flex; justify-content:space-between; align-items:center; gap:.75rem; padding:1rem; border-bottom:1px solid rgba(15,23,42,.08); background:linear-gradient(180deg,#fff,#f8fafc); }
-    .ged-folder-tree { max-height:calc(100vh - 220px); overflow:auto; padding:.75rem; }
+    .ged-folder-tree { min-height:0; overflow:auto; padding:.75rem; }
     .ged-tree { list-style:none; padding-left:.65rem; margin:0; }
     .ged-tree-node { margin:1px 0; }
     .ged-tree-row, .ged-tree-root { display:flex; align-items:center; gap:.55rem; min-height:36px; padding:.45rem .55rem; border-radius:10px; color:#1f2937; text-decoration:none; user-select:none; transition:background .16s ease,color .16s ease,box-shadow .16s ease; }
