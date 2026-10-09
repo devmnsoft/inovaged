@@ -54,7 +54,23 @@ order by created_at desc;", new { TenantId, ProtocoloId = protocoloId })).ToList
         foreach (var link in vm.Vinculos)
             if (link.GedDocumentId is Guid documentId && await CanDocumentAsync(documentId, "VIEW"))
             {
-                link.GedDocumentName = await db.ExecuteScalarAsync<string>("select coalesce(nullif(title,''),code,'Documento') from ged.document where tenant_id=@TenantId and id=@documentId", new { TenantId, documentId });
+                var docInfo = await db.QueryFirstOrDefaultAsync<(string? Title, int? VersionNumber, string? ClassCode, string? ClassName)>(@"
+select 
+  coalesce(nullif(d.title,''), d.code, 'Documento') as Title,
+  coalesce(v.version_number, 1) as VersionNumber,
+  coalesce(pvi.code, cp.code) as ClassCode,
+  coalesce(pvi.title, cp.name) as ClassName
+from ged.document d
+left join ged.document_version v on v.tenant_id = d.tenant_id and v.id = d.current_version_id
+left join ged.classification_plan cp on cp.tenant_id = d.tenant_id and cp.id = d.classification_id
+left join ged.classification_plan_version_item pvi on pvi.tenant_id = d.tenant_id and pvi.classification_id = d.classification_id and coalesce(pvi.is_active, true)
+where d.tenant_id = @TenantId and d.id = @documentId
+limit 1", new { TenantId, documentId });
+
+                link.GedDocumentName = docInfo.Title ?? "Documento";
+                link.GedDocumentVersionNumber = docInfo.VersionNumber.HasValue ? $"v{docInfo.VersionNumber.Value}" : "v1";
+                link.GedClassificationCode = docInfo.ClassCode;
+                link.GedClassificationName = docInfo.ClassName;
                 visible.Add(link);
             }
         vm.Vinculos = visible;

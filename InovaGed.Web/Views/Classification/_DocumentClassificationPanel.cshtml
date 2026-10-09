@@ -1,8 +1,9 @@
-﻿@model InovaGed.Application.Classification.DocumentClassificationViewDto?
+@model InovaGed.Application.Classification.DocumentClassificationViewDto?
 
 @{
     var documentId = (Guid)(ViewData["DocumentId"] ?? Guid.Empty);
 
+    bool hasArchival = Model?.ClassificationId != null && Model.ClassificationId != Guid.Empty;
     bool hasCurrent = Model?.DocumentTypeId != null && Model.DocumentTypeId != Guid.Empty;
     bool hasSuggestion = Model?.SuggestedTypeId != null && Model.SuggestedTypeId != Guid.Empty;
 
@@ -31,7 +32,31 @@
         <div class="row g-3">
             <div class="col-md-6">
                 <div class="border rounded p-3 h-100">
-                    <div class="text-muted small mb-1">Classificação atual</div>
+                    <div class="text-muted small mb-1 fw-bold">Classificação Arquivística (PCD)</div>
+
+                    @if (hasArchival)
+                    {
+                        <div class="fw-semibold text-primary">
+                            <i class="bi bi-diagram-3 me-1"></i>
+                            @(string.IsNullOrWhiteSpace(Model.ClassificationCode) ? Model.ClassificationName : $"{Model.ClassificationCode} — {Model.ClassificationName}")
+                        </div>
+                        @if (Model.PlanVersionNo.HasValue)
+                        {
+                            <div class="small text-muted mt-1">
+                                Versão do plano: v@(Model.PlanVersionNo.Value) @(string.IsNullOrWhiteSpace(Model.PlanVersionTitle) ? "" : $"({Model.PlanVersionTitle})")
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="text-muted small mb-2">
+                            <i class="bi bi-dash-circle me-1"></i> Sem classificação arquivística vinculada.
+                        </div>
+                    }
+
+                    <hr class="my-2" />
+
+                    <div class="text-muted small mb-1 fw-bold">Tipo Documental</div>
 
                     @if (hasCurrent)
                     {
@@ -57,8 +82,8 @@
                     }
                     else
                     {
-                        <div class="text-muted">
-                            Nenhuma classificação aplicada.
+                        <div class="text-muted small">
+                            Nenhum tipo documental específico aplicado.
                         </div>
                     }
                 </div>

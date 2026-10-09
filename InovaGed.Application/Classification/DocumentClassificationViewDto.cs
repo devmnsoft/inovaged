@@ -1,4 +1,4 @@
-﻿
+
 namespace InovaGed.Application.Classification;
 
 public sealed class DocumentClassificationViewDto
@@ -11,6 +11,12 @@ public sealed class DocumentClassificationViewDto
 
     public Guid? DocumentTypeId { get; init; }
     public string? DocumentTypeName { get; init; }
+
+    public Guid? ClassificationId { get; set; }
+    public string? ClassificationCode { get; set; }
+    public string? ClassificationName { get; set; }
+    public int? PlanVersionNo { get; set; }
+    public string? PlanVersionTitle { get; set; }
 
     public decimal? Confidence { get; init; }
     public string Method { get; init; } = "RULES";

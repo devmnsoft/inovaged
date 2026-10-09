@@ -577,9 +577,12 @@ limit 1;", cancellationToken: ct));
         catch (NpgsqlException ex)
         {
             report.Status = SchemaHealthStatus.DatabaseUnavailable;
-            report.ErrorMessage = "Banco PostgreSQL indisponível ou conexão recusada.";
-            _logger.LogError(ex, "Falha de disponibilidade/conexão ao executar diagnóstico de schema.");
-            AddCheck(report, "GED_DIAGNOSTIC_DATABASE", "Banco", "Conexão/diagnóstico", "Disponibilidade", "Critical", false, report.ErrorMessage, "Verifique serviço PostgreSQL, rede, credenciais e o banco dedicado configurado.");
+            var isAuth = IsAuthFailure(ex);
+            report.ErrorMessage = isAuth
+                ? "Falha de autenticação no banco PostgreSQL (senha ausente ou inválida para o usuário configurado)."
+                : "Banco PostgreSQL indisponível ou conexão recusada.";
+            _logger.LogError(ex, isAuth ? "Falha de autenticação ao conectar no banco PostgreSQL." : "Falha de disponibilidade/conexão ao executar diagnóstico de schema.");
+            AddCheck(report, "GED_DIAGNOSTIC_DATABASE", "Banco", "Conexão/diagnóstico", isAuth ? "Autenticação" : "Disponibilidade", "Critical", false, report.ErrorMessage, isAuth ? "Configure a senha via User Secrets (desenvolvimento: dotnet user-secrets set \"ConnectionStrings:DefaultConnection\" \"...\") ou variável de ambiente ConnectionStrings__DefaultConnection (produção/serviço). Não aplique migrations para corrigir autenticação." : "Verifique serviço PostgreSQL, rede, credenciais e o banco dedicado configurado.");
         }
         catch (Exception ex)
         {
@@ -605,7 +608,9 @@ limit 1;", cancellationToken: ct));
         report.Recommendations.Add(report.Status switch
         {
             SchemaHealthStatus.RuntimeDependencyError => report.ErrorMessage!,
-            SchemaHealthStatus.DatabaseUnavailable => "Restabeleça a conexão com o banco dedicado e execute novamente o diagnóstico; migrations não corrigem indisponibilidade.",
+            SchemaHealthStatus.DatabaseUnavailable => report.ErrorMessage?.Contains("autenticação", StringComparison.OrdinalIgnoreCase) == true
+                ? "Configure a credencial correta do PostgreSQL via User Secrets ou variável de ambiente; migrations não corrigem falha de autenticação/senha."
+                : "Restabeleça a conexão com o banco dedicado e execute novamente o diagnóstico; migrations não corrigem indisponibilidade.",
             SchemaHealthStatus.UnexpectedError => "Consulte a exceção registrada e corrija a causa antes de aplicar qualquer migration.",
             _ when report.IsHealthy => hasRecommendedFailures
                 ? "Schema funcional com recomendações de performance."
@@ -623,6 +628,22 @@ limit 1;", cancellationToken: ct));
         for (Exception? current = exception; current is not null; current = current.InnerException)
         {
             if (current is FileNotFoundException && current.Message.Contains("System.Diagnostics.DiagnosticSource", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsAuthFailure(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is PostgresException pg && (pg.SqlState == "28P01" || pg.SqlState == "28000"))
+                return true;
+            if (current.Message.Contains("password", StringComparison.OrdinalIgnoreCase) ||
+                current.Message.Contains("SASL", StringComparison.OrdinalIgnoreCase) ||
+                current.Message.Contains("SCRAM", StringComparison.OrdinalIgnoreCase) ||
+                current.Message.Contains("authentication", StringComparison.OrdinalIgnoreCase))
                 return true;
         }
 

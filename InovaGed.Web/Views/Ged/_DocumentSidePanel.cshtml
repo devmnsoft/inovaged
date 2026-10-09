@@ -15,15 +15,30 @@
     };
 }
 
+@{
+    var hasClassification = !string.IsNullOrWhiteSpace(Model.ClassificationName) && Model.ClassificationName != "Sem classificação";
+    var hasType = !string.IsNullOrWhiteSpace(Model.TypeName) && Model.TypeName != "Sem classificação" && Model.TypeName != Model.ClassificationName;
+}
+
 <div class="ged-side-header" data-document-id="@Model.DocumentId" data-version-id="@Model.VersionId">
     <div class="d-flex justify-content-between gap-3 align-items-start">
-        <div class="min-w-0">
+        <div class="min-w-0 flex-grow-1">
             <div class="ged-side-kicker"><span class="ged-side-live-dot"></span> Documento em foco</div>
-            <div class="ged-side-title">@Model.Title</div>
-            <div class="ged-side-file">@Model.FileName</div>
+            <div class="ged-side-title" title="@Model.Title">@Model.Title</div>
+            <div class="ged-side-file" title="@Model.FileName">@Model.FileName</div>
             <div class="ged-document-badges mt-2">
-                <span class="badge @(string.IsNullOrWhiteSpace(Model.TypeName) || Model.TypeName == "Sem classificação" ? "bg-secondary" : "bg-primary")">@(string.IsNullOrWhiteSpace(Model.TypeName) ? "Sem classificação" : Model.TypeName)</span>
+                <span class="badge @(hasClassification ? "bg-primary" : "bg-secondary")" title="Classificação arquivística: @Model.ClassificationName">
+                    @(hasClassification ? Model.ClassificationName : "Sem classificação")
+                </span>
+                @if (hasType)
+                {
+                    <span class="badge bg-light text-dark border" title="Tipo documental: @Model.TypeName">@Model.TypeName</span>
+                }
                 <span class="badge @Model.OcrBadgeCss">@(string.IsNullOrWhiteSpace(Model.PartialOcrSummaryText) ? Model.OcrBadgeText : Model.PartialOcrSummaryText)</span>
+                @if (!string.IsNullOrWhiteSpace(Model.RetentionStatusLabel))
+                {
+                    <span class="badge @Model.RetentionStatusCss" title="Temporalidade: @Model.RetentionStatusLabel">@Model.RetentionStatusLabel</span>
+                }
                 @if (Model.IsDocumentIncomplete)
                 {
                     <span class="badge bg-warning text-dark"><app-icon class="me-1" name="warning" size="16" decorative="true" />Documento incompleto</span>
@@ -46,6 +61,7 @@
     <button class="btn btn-sm ged-side-tab active" type="button" data-ged-side-tab="summary">Resumo</button>
     <button class="btn btn-sm ged-side-tab" type="button" data-ged-side-tab="preview">Preview</button>
     <button class="btn btn-sm ged-side-tab" type="button" data-ged-side-tab="ocr" data-version-id="@Model.VersionId" data-ocr-url="@Model.OcrTextUrl">OCR</button>
+    <button class="btn btn-sm ged-side-tab" type="button" data-ged-side-tab="retention">Temporalidade</button>
     <button class="btn btn-sm ged-side-tab" type="button" data-ged-side-tab="metadata">Metadados</button>
     <button class="btn btn-sm ged-side-tab" type="button" data-ged-side-tab="parts" data-document-id="@Model.DocumentId" data-parts-url="@Model.PartsUrl">Partes</button>
     <button class="btn btn-sm ged-side-tab" type="button" data-ged-side-tab="history" data-document-id="@Model.DocumentId" data-history-url="@Model.HistoryUrl">Histórico</button>
@@ -76,13 +92,18 @@
         }
 
         <dl class="ged-metadata-list ged-summary-list">
-            <dt>Título</dt><dd>@Model.Title</dd>
-            <dt>Nome do arquivo</dt><dd>@Model.FileName</dd>
+            <dt>Título</dt><dd title="@Model.Title">@Model.Title</dd>
+            <dt>Nome do arquivo</dt><dd title="@Model.FileName">@Model.FileName</dd>
             <dt>Pasta atual</dt><dd>@Model.FolderName</dd>
             <dt>Versão atual</dt><dd>@versionLabel</dd>
             <dt>Upload em</dt><dd>@Model.UploadedAtLocalFormatted</dd>
-            <dt>Classificação</dt><dd>@Model.ClassificationName</dd>
+            <dt>Classificação arquivística</dt><dd>@Model.ClassificationName</dd>
+            <dt>Tipo documental</dt><dd>@Model.TypeName</dd>
             <dt>Status OCR</dt><dd><span class="badge @Model.OcrBadgeCss">@(Model.IsOcrAvailable ? "OCR disponível" : ocrUnavailableText)</span></dd>
+            @if (!string.IsNullOrWhiteSpace(Model.RetentionStatusLabel))
+            {
+                <dt>Temporalidade</dt><dd><span class="badge @Model.RetentionStatusCss">@Model.RetentionStatusLabel</span> @(Model.RetentionDueDateFormatted != null ? $"· Vencimento em {Model.RetentionDueDateFormatted}" : "")</dd>
+            }
             <dt>Status incompleto</dt><dd>@(Model.IsDocumentIncomplete ? "Documento incompleto" : partialLabel)</dd>
             <dt>Criado por</dt><dd>@Model.CreatedByName</dd>
             <dt>Tamanho</dt><dd>@Model.SizeBytesFormatted</dd>
@@ -93,11 +114,11 @@
 
     <section class="d-none" data-ged-tab-panel="preview">
         <div class="ged-preview-toolbar">
-          <div class="ged-preview-context" data-part-preview-title><span>Visualização segura</span><strong>@Model.FileName</strong></div>
+          <div class="ged-preview-context" data-part-preview-title title="@Model.FileName"><span>Visualização segura</span><strong>@Model.FileName</strong></div>
           <div class="ged-side-actions-bar">
-            <a class="btn btn-sm btn-outline-primary" href="@Model.PreviewUrl" target="_blank" rel="noopener"><app-icon class="me-1" name="preview" size="16" decorative="true" />Abrir em nova aba</a>
-            <a class="btn btn-sm btn-outline-secondary" href="@Model.DownloadUrl"><app-icon class="me-1" name="download" size="16" decorative="true" />Baixar</a>
-            <button type="button" class="btn btn-sm btn-outline-secondary js-expand-side-panel" data-expanded-label="Restaurar"><app-icon class="me-1" name="fullscreen" size="16" decorative="true" /><span>Expandir</span></button>
+            <a class="btn btn-sm btn-outline-primary" href="@Model.PreviewUrl" target="_blank" rel="noopener" title="Abrir em nova aba"><app-icon class="me-1" name="preview" size="16" decorative="true" /><span>Abrir</span></a>
+            <a class="btn btn-sm btn-outline-secondary" href="@Model.DownloadUrl" title="Baixar documento"><app-icon class="me-1" name="download" size="16" decorative="true" /><span>Baixar</span></a>
+            <button type="button" class="btn btn-sm btn-outline-secondary js-expand-side-panel" data-expanded-label="Restaurar" title="Expandir/Restaurar painel"><app-icon class="me-1" name="fullscreen" size="16" decorative="true" /><span>Expandir</span></button>
           </div>
         </div>
         @if (!string.IsNullOrWhiteSpace(Model.PreviewUrl))
@@ -123,6 +144,41 @@
     <section class="d-none" data-ged-tab-panel="ocr" data-version-id="@Model.VersionId" data-ocr-loaded="false">
         <div class="ged-ocr-host" data-ged-ocr-host data-download-url="@Model.OcrTextUrl">
             <div class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>O texto OCR será carregado sob demanda.</div>
+        </div>
+    </section>
+
+    <section class="d-none" data-ged-tab-panel="retention">
+        <div class="p-1">
+            <div class="d-flex align-items-center justify-content-between mb-3">
+                <h6 class="m-0 fw-bold"><app-icon class="me-1 text-primary" name="calendar" size="18" decorative="true" /> Temporalidade Documental (TTD)</h6>
+                <span class="badge @Model.RetentionStatusCss">@(Model.RetentionStatusLabel ?? "Pendente")</span>
+            </div>
+
+            <dl class="ged-metadata-list mb-3">
+                <dt>Classificação</dt><dd>@(hasClassification ? Model.ClassificationName : "Sem classificação arquivística")</dd>
+                <dt>Versão do plano</dt><dd>@(Model.PlanVersionTitle ?? (Model.PlanVersionNo.HasValue ? $"v{Model.PlanVersionNo}" : "Plano vigente"))</dd>
+                <dt>Referência legal</dt><dd>@(Model.RetentionNormativeReference ?? "Tabela de Temporalidade vigente")</dd>
+                <dt>Evento inicial</dt><dd>@(Model.RetentionStartEvent ?? "Data de criação/upload")</dd>
+                <dt>Data-base</dt><dd>@(Model.RetentionBasisDateFormatted ?? Model.UploadedAtLocalFormatted)</dd>
+                <dt>Fase corrente</dt><dd>@(Model.RetentionActivePhase ?? "-")</dd>
+                <dt>Fase intermediária</dt><dd>@(Model.RetentionArchivePhase ?? "-")</dd>
+                <dt>Vencimento previsto</dt><dd>@(Model.RetentionDueDateFormatted ?? "A calcular")</dd>
+                <dt>Destinação final</dt><dd>@(Model.RetentionFinalDestination ?? "Conforme avaliação")</dd>
+            </dl>
+
+            @if (!string.IsNullOrWhiteSpace(Model.RetentionPendingReason))
+            {
+                <div class="alert alert-warning py-2 px-3 small mb-0">
+                    <strong><app-icon class="me-1" name="warning" size="16" decorative="true" />Pendência de Temporalidade:</strong>
+                    <div>@Model.RetentionPendingReason</div>
+                </div>
+            }
+            else if (!Model.HasRetentionCalculation)
+            {
+                <div class="alert alert-info py-2 px-3 small mb-0">
+                    <strong>Orientação:</strong> Para calcular prazos automaticamente, aplique uma classe arquivística com regra cadastrada no plano de classificação.
+                </div>
+            }
         </div>
     </section>
 

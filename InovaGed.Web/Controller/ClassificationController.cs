@@ -1,7 +1,11 @@
-﻿using System.Text.Json;
+using System.Text.Json;
+using Dapper;
 using InovaGed.Application.Classification;
+using InovaGed.Application.Common.Database;
+using InovaGed.Application.Ged.Documents;
 using InovaGed.Application.Identity;
 using InovaGed.Application.Retention;
+using InovaGed.Application.Ged.Instruments;
 using InovaGed.Web.Models.Classification;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -18,6 +22,9 @@ public sealed class ClassificationController : Controller
     private readonly IDocumentClassificationCommands _commands;
     private readonly IDocumentClassificationAuditQueries _auditQueries;
     private readonly RetentionRecalcService _retention;
+    private readonly IDbConnectionFactory _db;
+    private readonly IDocumentBulkClassificationService _bulkClassification;
+    private readonly IClassificationPlanQueries _planQueries;
 
     public ClassificationController(
         ILogger<ClassificationController> logger,
@@ -25,7 +32,10 @@ public sealed class ClassificationController : Controller
         IDocumentClassificationQueries queries,
         IDocumentClassificationCommands commands,
         IDocumentClassificationAuditQueries auditQueries,
-        RetentionRecalcService retention)
+        RetentionRecalcService retention,
+        IDbConnectionFactory db,
+        IDocumentBulkClassificationService bulkClassification,
+        IClassificationPlanQueries planQueries)
     {
         _logger = logger;
         _currentUser = currentUser;
@@ -33,6 +43,9 @@ public sealed class ClassificationController : Controller
         _commands = commands;
         _auditQueries = auditQueries;
         _retention = retention;
+        _db = db;
+        _bulkClassification = bulkClassification;
+        _planQueries = planQueries;
     }
 
     [HttpGet("")]
@@ -117,9 +130,35 @@ public sealed class ClassificationController : Controller
                 tenantId,
                 ct);
 
+            var planItems = await _planQueries.ListAsync(
+                tenantId,
+                ct);
+
+            await using var conn = await _db.OpenAsync(ct);
+            var currentClassification = await conn.QueryFirstOrDefaultAsync<(Guid? ClassificationId, string? Code, string? Name)>(
+                new CommandDefinition("""
+                SELECT 
+                    d.classification_id AS "ClassificationId",
+                    COALESCE(pvi.code, cp.code) AS "Code",
+                    COALESCE(pvi.name, cp.name) AS "Name"
+                FROM ged.document d
+                LEFT JOIN ged.classification_plan cp 
+                    ON cp.tenant_id = d.tenant_id AND cp.id = d.classification_id
+                LEFT JOIN ged.classification_plan_version_item pvi 
+                    ON pvi.tenant_id = d.tenant_id AND pvi.classification_id = d.classification_id AND COALESCE(pvi.is_active, true)
+                WHERE d.tenant_id = @tenantId AND d.id = @documentId
+                LIMIT 1
+                """, new { tenantId, documentId }, cancellationToken: ct));
+
             var vm = new EditClassificationVM
             {
                 DocumentId = documentId,
+                ClassificationId = currentClassification.ClassificationId,
+                ClassificationLabel = currentClassification.ClassificationId.HasValue
+                    ? (!string.IsNullOrWhiteSpace(currentClassification.Code)
+                        ? $"{currentClassification.Code} — {currentClassification.Name}"
+                        : currentClassification.Name)
+                    : null,
                 DocumentTypeId = classification?.DocumentTypeId,
                 TagsCsv = classification?.Tags is { Count: > 0 }
                     ? string.Join(", ", classification.Tags)
@@ -130,6 +169,16 @@ public sealed class ClassificationController : Controller
                         classification.Metadata.Select(kv => $"{kv.Key}={kv.Value}"))
                     : ""
             };
+
+            vm.AvailableClassifications = (planItems ?? Array.Empty<ClassificationPlanRow>())
+                .Where(c => c.IsActive)
+                .Select(c => new EditClassificationVM.ClassificationPlanItem
+                {
+                    Id = c.Id,
+                    Code = c.Code,
+                    Name = c.Name
+                })
+                .ToList();
 
             vm.AvailableTypes = (types ?? Array.Empty<DocumentTypeRowDto>())
                 .Select(t => new EditClassificationVM.DocumentTypeItem
@@ -156,6 +205,7 @@ public sealed class ClassificationController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> SaveManual(
         [FromForm] Guid documentId,
+        [FromForm] Guid? classificationId,
         [FromForm] Guid? documentTypeId,
         [FromForm] string? tagsCsv,
         [FromForm] string? metadataJson,
@@ -181,12 +231,13 @@ public sealed class ClassificationController : Controller
                 return RedirectToAction("Index", "Ged");
             }
 
-            if (!documentTypeId.HasValue || documentTypeId.Value == Guid.Empty)
+            if ((!classificationId.HasValue || classificationId.Value == Guid.Empty) &&
+                (!documentTypeId.HasValue || documentTypeId.Value == Guid.Empty))
             {
                 if (IsAjaxRequest())
-                    return BadRequest("Informe o tipo documental.");
+                    return BadRequest("Informe a classificação arquivística ou o tipo documental.");
 
-                TempData["Error"] = "Informe o tipo documental.";
+                TempData["Error"] = "Informe a classificação arquivística ou o tipo documental.";
                 return RedirectToAction("Details", "Ged", new
                 {
                     id = documentId,
@@ -203,14 +254,55 @@ public sealed class ClassificationController : Controller
                 ? ParseMetadataLines(metadataLines)
                 : ParseMetadataJson(metadataJson);
 
-            await _commands.SaveManualAsync(
-                tenantId: tenantId,
-                documentId: documentId,
-                documentTypeId: documentTypeId,
-                userId: userId,
-                tags: tags,
-                metadata: metadata,
-                ct: ct);
+            // 1. Aplica classificação arquivística (PCD) se fornecida
+            if (classificationId.HasValue && classificationId.Value != Guid.Empty)
+            {
+                var bulkResult = await _bulkClassification.ApplyAsync(
+                    tenantId,
+                    userId,
+                    new[] { documentId },
+                    classificationId.Value,
+                    ct);
+
+                if (bulkResult.Failed > 0 || bulkResult.Denied > 0)
+                {
+                    var item = bulkResult.Items.FirstOrDefault(x => !x.Success);
+                    var msg = item?.Message ?? "Erro ao aplicar classificação arquivística.";
+                    if (IsAjaxRequest())
+                        return BadRequest(msg);
+
+                    TempData["Error"] = msg;
+                    return RedirectToAction("Details", "Ged", new
+                    {
+                        id = documentId,
+                        openClassify = true
+                    });
+                }
+            }
+
+            // 2. Aplica tipo documental, tags e metadados se fornecidos
+            if (documentTypeId.HasValue && documentTypeId.Value != Guid.Empty)
+            {
+                await _commands.SaveManualAsync(
+                    tenantId: tenantId,
+                    documentId: documentId,
+                    documentTypeId: documentTypeId,
+                    userId: userId,
+                    tags: tags,
+                    metadata: metadata,
+                    ct: ct);
+            }
+            else if ((tags != null && tags.Count > 0) || (metadata != null && metadata.Count > 0))
+            {
+                await _commands.SaveManualAsync(
+                    tenantId: tenantId,
+                    documentId: documentId,
+                    documentTypeId: null,
+                    userId: userId,
+                    tags: tags,
+                    metadata: metadata,
+                    ct: ct);
+            }
 
             var retentionResult = await RecalculateRetentionSafeAsync(
                 tenantId,

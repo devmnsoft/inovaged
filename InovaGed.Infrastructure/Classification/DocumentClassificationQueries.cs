@@ -1,4 +1,4 @@
-﻿using Dapper;
+using Dapper;
 using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Database;
 using Microsoft.Extensions.Logging;
@@ -40,6 +40,13 @@ SELECT
 
   dc.document_type_id          AS ""DocumentTypeId"",
   dt.name                      AS ""DocumentTypeName"",
+
+  d.classification_id          AS ""ClassificationId"",
+  COALESCE(pv_info.code, cp.code)  AS ""ClassificationCode"",
+  COALESCE(pv_info.title, cp.name) AS ""ClassificationName"",
+  pv_info.version_no               AS ""PlanVersionNo"",
+  pv_info.pv_title                 AS ""PlanVersionTitle"",
+
   dc.confidence                AS ""Confidence"",
   COALESCE(dc.method,'RULES')  AS ""Method"",
   dc.summary                   AS ""Summary"",
@@ -51,6 +58,20 @@ SELECT
   dc.suggested_summary         AS ""SuggestedSummary"",
   dc.suggested_at              AS ""SuggestedAt""
 FROM ged.document d
+LEFT JOIN ged.classification_plan cp 
+  ON cp.tenant_id = d.tenant_id AND cp.id = d.classification_id
+LEFT JOIN LATERAL (
+  SELECT pvi.code, pvi.title, pv.version_no, pv.title as pv_title
+  FROM ged.classification_plan_version_item pvi
+  JOIN ged.classification_plan_version pv 
+    ON pv.tenant_id = pvi.tenant_id AND pv.id = pvi.version_id
+  WHERE pvi.tenant_id = d.tenant_id
+    AND pvi.classification_id = d.classification_id
+    AND COALESCE(pvi.is_active, true)
+    AND COALESCE(pv.reg_status, 'A') = 'A'
+  ORDER BY pv.version_no DESC
+  LIMIT 1
+) pv_info ON true
 LEFT JOIN LATERAL (
   SELECT *
   FROM ged.document_classification x

@@ -143,6 +143,7 @@ public sealed class AccountController : Controller
 
         if (normalizedRoles.Count == 0)
         {
+            // LOGIN_DENIED_NO_ROLE
             await _authenticationAudit.LoginDeniedAsync(
                 new AuthenticationAuditContext(user.TenantId, user.UserId, ip, userAgent, correlationId),
                 AuthenticationDenialReason.NoAccessRole,

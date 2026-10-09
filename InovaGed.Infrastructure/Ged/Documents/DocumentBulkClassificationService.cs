@@ -1,4 +1,4 @@
-﻿using Dapper;
+using Dapper;
 using InovaGed.Application.Audit;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Documents;
@@ -36,7 +36,8 @@ select exists(
   where i.tenant_id=@tenantId
     and i.classification_id=@classificationId
     and coalesce(i.is_active,true)
-    and v.version_no=(select max(version_no) from ged.classification_plan_version where tenant_id=@tenantId)
+    and coalesce(v.reg_status,'A')='A'
+    and v.version_no=(select max(version_no) from ged.classification_plan_version where tenant_id=@tenantId and coalesce(reg_status,'A')='A')
 );
 """, new { tenantId, classificationId }, cancellationToken: ct));
         if (!classificationExists) throw new ArgumentException("Classificação ativa não encontrada.");
@@ -111,7 +112,8 @@ set classification_id=@classificationId, classification_version_id=v.id, updated
 from ged.classification_plan_version v
 where d.tenant_id=@tenantId and d.id=@id
   and v.tenant_id=@tenantId
-  and v.id=(select id from ged.classification_plan_version where tenant_id=@tenantId order by version_no desc limit 1)
+  and coalesce(v.reg_status,'A')='A'
+  and v.id=(select id from ged.classification_plan_version where tenant_id=@tenantId and coalesce(reg_status,'A')='A' order by version_no desc limit 1)
   and exists (select 1 from ged.classification_plan_version_item i
               where i.tenant_id=@tenantId and i.version_id=v.id and i.classification_id=@classificationId and coalesce(i.is_active,true));
 """, new { tenantId, userId, id, classificationId }, tx, cancellationToken: ct));

@@ -63,28 +63,28 @@ public sealed class WebApiDependencyInjectionTests
 
     private static IServiceCollection BuildServices()
     {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Port=5432;Database=inovaged_tests;Username=inovaged;Password=inovaged",
-                ["Storage:Local:RootPath"] = "App_Data/TestGedStorage",
-                ["Preview:SofficePath"] = "/usr/bin/soffice",
-                ["Ocr:PdfToTextPath"] = "/usr/bin/pdftotext"
-            })
-            .Build();
+        var builder = Microsoft.AspNetCore.Builder.WebApplication.CreateBuilder(new Microsoft.AspNetCore.Builder.WebApplicationOptions
+        {
+            EnvironmentName = Environments.Development
+        });
 
-        var services = new ServiceCollection();
-        services.AddSingleton<IConfiguration>(configuration);
-        services.AddLogging();
-        services.AddSingleton<IHostEnvironment>(new InovaGed.Application.Tests.FakeHostEnvironment());
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Port=5432;Database=inovaged_tests;Username=inovaged;Password=inovaged",
+            ["Storage:Local:RootPath"] = "App_Data/TestGedStorage",
+            ["Preview:SofficePath"] = "/usr/bin/soffice",
+            ["Ocr:PdfToTextPath"] = "/usr/bin/pdftotext"
+        });
+
+        var services = builder.Services;
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, FakeCurrentUser>();
         services.AddControllers()
             .AddApplicationPart(typeof(DocumentsController).Assembly)
             .AddControllersAsServices();
         services
-            .AddInovaGedApplication(configuration)
-            .AddInovaGedInfrastructure(configuration);
+            .AddInovaGedApplication(builder.Configuration)
+            .AddInovaGedInfrastructure(builder.Configuration);
         return services;
     }
 

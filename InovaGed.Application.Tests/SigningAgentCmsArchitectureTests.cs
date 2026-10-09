@@ -45,7 +45,7 @@ public sealed class SigningAgentCmsEndToEndGuards
     [Fact]
     public void AgentCmsModeRegistersPostgresRepositoriesInsteadOfNoopDefaults()
     {
-        var source = File.ReadAllText(Path.Combine(Root, "InovaGed.Infrastructure/DependencyInjection.cs"));
+        var source = File.ReadAllText(Path.Combine(Root, "InovaGed.Infrastructure/DependencyInjection.cs")).Replace("\r\n", "\n");
         Assert.Contains("services.AddScoped<ISigningSessionRepository, PostgresSigningSessionRepository>()", source);
         Assert.Contains("services.AddScoped<ISignatureEvidenceRepository, PostgresSignatureEvidenceRepository>()", source);
         Assert.Contains("else\n        {\n            services.AddScoped<ISigningSessionRepository, NoopSigningSessionRepository>()", source);

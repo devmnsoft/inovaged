@@ -109,10 +109,12 @@ public sealed class DiArchitectureTests
     }
 }
 
-internal sealed class FakeHostEnvironment : IHostEnvironment
+internal sealed class FakeHostEnvironment : Microsoft.AspNetCore.Hosting.IWebHostEnvironment
 {
     public string EnvironmentName { get; set; } = Environments.Development;
     public string ApplicationName { get; set; } = "InovaGed.Tests";
     public string ContentRootPath { get; set; } = Path.GetTempPath();
     public Microsoft.Extensions.FileProviders.IFileProvider ContentRootFileProvider { get; set; } = new Microsoft.Extensions.FileProviders.NullFileProvider();
+    public string WebRootPath { get; set; } = Path.GetTempPath();
+    public Microsoft.Extensions.FileProviders.IFileProvider WebRootFileProvider { get; set; } = new Microsoft.Extensions.FileProviders.NullFileProvider();
 }

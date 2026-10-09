@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using Dapper;
 using InovaGed.Application;
 using InovaGed.Application.Common.Database;
@@ -223,7 +223,7 @@ on conflict do nothing;",
 
     public async Task ApplyClassificationAsync(Guid tenantId, Guid userId, Guid documentId, Guid classificationId, CancellationToken ct)
     {
-        const string sql = @"
+        const string updateDocSql = @"
 update ged.document d
 set classification_id = @classificationId,
     classification_version_id = v.id,
@@ -232,17 +232,54 @@ set classification_id = @classificationId,
 from ged.classification_plan_version v
 where d.tenant_id = @tenantId
   and d.id = @documentId
+  and coalesce(d.reg_status, 'A') = 'A'
   and v.tenant_id = @tenantId
-  and v.id = (select id from ged.classification_plan_version where tenant_id = @tenantId order by version_no desc limit 1)
+  and coalesce(v.reg_status, 'A') = 'A'
+  and v.id = (select id from ged.classification_plan_version where tenant_id = @tenantId and coalesce(reg_status, 'A') = 'A' order by version_no desc limit 1)
   and exists (
     select 1 from ged.classification_plan_version_item i
     where i.tenant_id = @tenantId and i.version_id = v.id and i.classification_id = @classificationId and coalesce(i.is_active, true));";
 
+        const string upsertClassificationSql = @"
+insert into ged.document_classification
+  (document_id, tenant_id, document_version_id, classification_id, classification_version_id, confidence, method, summary, classified_at, classified_by, source, updated_at, reg_status)
+select d.id, d.tenant_id, d.current_version_id, d.classification_id, d.classification_version_id, null, 'MANUAL', 'Classificação aplicada via IDocumentCommands', now(), @userId, 'DOCUMENT_COMMANDS', now(), 'A'
+from ged.document d
+where d.tenant_id = @tenantId and d.id = @documentId
+on conflict (document_id)
+do update set
+  tenant_id = excluded.tenant_id,
+  document_version_id = excluded.document_version_id,
+  classification_id = excluded.classification_id,
+  classification_version_id = excluded.classification_version_id,
+  confidence = null,
+  method = 'MANUAL',
+  summary = excluded.summary,
+  classified_at = now(),
+  classified_by = @userId,
+  source = 'DOCUMENT_COMMANDS',
+  updated_at = now(),
+  reg_status = 'A'
+where ged.document_classification.tenant_id = excluded.tenant_id;";
+
+        const string pendingRecalcSql = @"
+insert into ged.ai_retention_recalc_pending (id, tenant_id, document_id, application_id, reason, attempts, next_attempt_at)
+select gen_random_uuid(), @tenantId, @documentId, null, 'DOCUMENT_COMMANDS_APPLY', 0, now()
+where not exists (select 1 from ged.ai_retention_recalc_pending
+                  where tenant_id = @tenantId and document_id = @documentId and application_id is null and resolved_at is null);";
+
         try
         {
             await using var conn = await _db.OpenAsync(ct);
-            var rows = await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, userId, documentId, classificationId }, cancellationToken: ct));
+            await using var tx = await conn.BeginTransactionAsync(ct);
+
+            var rows = await conn.ExecuteAsync(new CommandDefinition(updateDocSql, new { tenantId, userId, documentId, classificationId }, tx, cancellationToken: ct));
             if (rows == 0) throw new InvalidOperationException("A classe não pertence à versão vigente do plano ou o documento não foi encontrado.");
+
+            await conn.ExecuteAsync(new CommandDefinition(upsertClassificationSql, new { tenantId, userId, documentId }, tx, cancellationToken: ct));
+            await conn.ExecuteAsync(new CommandDefinition(pendingRecalcSql, new { tenantId, documentId }, tx, cancellationToken: ct));
+
+            await tx.CommitAsync(ct);
         }
         catch (Exception ex)
         {

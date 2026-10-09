@@ -20,6 +20,7 @@ public sealed class AtlasIconRegistry : IAtlasIconRegistry
         new("document-link", "atlas-icon-document-link", "Documentos", "document link", "outline", Array.Empty<string>()),
         new("preview", "atlas-icon-preview", "Documentos", "preview", "outline", Array.Empty<string>()),
         new("metadata", "atlas-icon-metadata", "Documentos", "metadata", "outline", Array.Empty<string>()),
+        new("tag", "atlas-icon-metadata", "Documentos", "tag", "outline", new[] { "label", "etiqueta" }),
         new("folder", "atlas-icon-folder", "Pastas", "folder", "outline", new[] { "folder-tree" }),
         new("folder-open", "atlas-icon-folder-open", "Pastas", "folder open", "outline", Array.Empty<string>()),
         new("folder-add", "atlas-icon-folder-add", "Pastas", "folder add", "outline", Array.Empty<string>()),

@@ -17,6 +17,75 @@
 <div class="col-md-4"><label asp-for="TipoVinculo" class="form-label">Tipo</label><select asp-for="TipoVinculo" class="form-select"><option value="VINCULO">Vínculo</option><option value="ANEXO_CONVERTIDO">Anexo Convertido</option><option value="DOCUMENTO_ORIGEM">Documento Origem</option><option value="DOCUMENTO_RESULTANTE">Documento Resultante</option></select></div>
 <div class="col-md-12"><label asp-for="Observacao" class="form-label">Observação</label><textarea asp-for="Observacao" class="form-control"></textarea></div>
 </div><div class="card-footer bg-white text-end"><button class="btn btn-primary">Vincular</button></div></form>
-<div class="card border-0 shadow-sm"><table class="table mb-0"><thead><tr><th>Anexo</th><th>GED</th><th>Tipo</th><th>Obs.</th><th></th></tr></thead><tbody>
-@foreach (var v in Model.Vinculos) { <tr><td>@v.ProtocoloAnexoNome</td><td>@v.GedDocumentName</td><td>@v.TipoVinculo</td><td>@v.Observacao</td><td><form method="post" action="/Protocolo/Ged/RemoverVinculo">@Html.AntiForgeryToken()<input type="hidden" name="id" value="@v.Id" /><input type="hidden" name="protocoloId" value="@Model.ProtocoloId" /><button class="btn btn-sm btn-outline-danger">Remover</button></form></td></tr> }
-</tbody></table></div>
+<div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+        <table class="table align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Anexo do Protocolo</th>
+                    <th>Documento GED</th>
+                    <th>Classificação PCD</th>
+                    <th>Tipo de Vínculo</th>
+                    <th>Observação</th>
+                    <th class="text-end">Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+            @if (Model.Vinculos.Count == 0)
+            {
+                <tr>
+                    <td colspan="6" class="text-center text-muted py-4">
+                        <i class="bi bi-inbox fs-4 d-block mb-1"></i>
+                        Nenhum documento do GED vinculado a este protocolo.
+                    </td>
+                </tr>
+            }
+            else
+            {
+                @foreach (var v in Model.Vinculos)
+                {
+                    <tr>
+                        <td>
+                            @(string.IsNullOrWhiteSpace(v.ProtocoloAnexoNome) ? "(Sem anexo específico)" : v.ProtocoloAnexoNome)
+                        </td>
+                        <td>
+                            <div class="fw-semibold">@v.GedDocumentName</div>
+                            @if (!string.IsNullOrWhiteSpace(v.GedDocumentVersionNumber))
+                            {
+                                <span class="badge bg-secondary-subtle text-secondary border">@v.GedDocumentVersionNumber</span>
+                            }
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrWhiteSpace(v.GedClassificationName) || !string.IsNullOrWhiteSpace(v.GedClassificationCode))
+                            {
+                                <span class="badge bg-primary-subtle text-primary border">
+                                    <i class="bi bi-diagram-3 me-1"></i>
+                                    @(string.IsNullOrWhiteSpace(v.GedClassificationCode) ? v.GedClassificationName : $"{v.GedClassificationCode} — {v.GedClassificationName}")
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-light text-muted border">Sem classificação</span>
+                            }
+                        </td>
+                        <td>
+                            <span class="badge bg-info-subtle text-dark border">@v.TipoVinculo</span>
+                        </td>
+                        <td class="small text-muted">@v.Observacao</td>
+                        <td class="text-end">
+                            <form method="post" action="/Protocolo/Ged/RemoverVinculo" class="d-inline">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="id" value="@v.Id" />
+                                <input type="hidden" name="protocoloId" value="@Model.ProtocoloId" />
+                                <button class="btn btn-sm btn-outline-danger" title="Desvincular do protocolo">
+                                    <i class="bi bi-trash me-1"></i> Remover
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+            }
+            </tbody>
+        </table>
+    </div>
+</div>

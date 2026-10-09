@@ -46,6 +46,22 @@ public sealed class DocumentSidePanelVm
     public bool CanReprocessOcr { get; set; }
     public bool CanCancelPartial { get; set; }
     public bool CanDelete { get; set; }
+    public Guid? ClassificationId { get; set; }
+    public string? ClassificationCode { get; set; }
+    public int? PlanVersionNo { get; set; }
+    public string? PlanVersionTitle { get; set; }
+    public string? RetentionStatus { get; set; }
+    public string? RetentionStatusLabel { get; set; }
+    public string? RetentionStatusCss { get; set; } = "bg-secondary";
+    public string? RetentionBasisDateFormatted { get; set; }
+    public string? RetentionDueDateFormatted { get; set; }
+    public string? RetentionStartEvent { get; set; }
+    public string? RetentionActivePhase { get; set; }
+    public string? RetentionArchivePhase { get; set; }
+    public string? RetentionFinalDestination { get; set; }
+    public string? RetentionNormativeReference { get; set; }
+    public string? RetentionPendingReason { get; set; }
+    public bool HasRetentionCalculation { get; set; }
     public IReadOnlyList<DocumentSidePanelPartVm> Parts { get; set; } = Array.Empty<DocumentSidePanelPartVm>();
     public IReadOnlyList<DocumentSidePanelHistoryVm> History { get; set; } = Array.Empty<DocumentSidePanelHistoryVm>();
 }

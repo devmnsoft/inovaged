@@ -959,6 +959,7 @@
                 showBulkUploadMessage(`Upload concluído com falhas: ${success} arquivos enviados com sucesso e ${error} falharam. Verifique a lista, reenvie falhas ou abra o log do lote.`, 'warning');
                 showAppToast('Alguns documentos não foram enviados.', 'warning', 'Upload parcial');
                 showRefreshAfterUploadButton(true);
+                await onBatchFinished(finished);
                 updateFooterActions();
                 return;
             }

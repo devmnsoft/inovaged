@@ -84,6 +84,7 @@ public static class InfrastructureServiceCollectionExtensions
             .AddDigitalSignatureModule(configuration)
             .AddStabilityCriticalServices();
         services.AddHttpContextAccessor();
+        services.TryAddSingleton<IConfiguration>(configuration);
         services.TryAddSingleton<global::InovaGed.Application.Common.Time.ITenantTimeZoneService, Common.Time.TenantTimeZoneService>();
         services.TryAddScoped<ICurrentUser, AnonymousCurrentUser>();
 

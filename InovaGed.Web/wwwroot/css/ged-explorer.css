@@ -244,8 +244,8 @@
 .ged-document-side-panel { display:flex; flex-direction:column; background:#f8fafc; }
 .ged-side-header { flex:0 0 auto; padding:18px 18px 14px; border-bottom:1px solid #e5edf6; background:linear-gradient(180deg,#fff,#fbfdff); }
 .ged-side-kicker { color:#2563eb; font-size:.66rem; font-weight:800; letter-spacing:.09em; text-transform:uppercase; }
-.ged-side-title { margin-top:7px; color:#0f172a; font-size:1.08rem; font-weight:760; line-height:1.25; letter-spacing:-.02em; }
-.ged-side-file { margin-top:3px; overflow:hidden; color:#64748b; font-size:.78rem; text-overflow:ellipsis; white-space:nowrap; }
+.ged-side-title { margin-top:7px; color:#0f172a; font-size:1.08rem; font-weight:760; line-height:1.25; letter-spacing:-.02em; overflow-wrap:anywhere; word-break:break-word; min-width:0; }
+.ged-side-file { margin-top:3px; overflow:hidden; color:#64748b; font-size:.78rem; text-overflow:ellipsis; white-space:nowrap; overflow-wrap:anywhere; min-width:0; }
 .ged-side-close { width:36px; height:36px; display:grid; place-items:center; flex:0 0 auto; padding:0; border:1px solid #e2e8f0; border-radius:11px; color:#64748b; background:#fff; transition:background .15s,color .15s,transform .15s; }
 .ged-side-close:hover { color:#0f172a; background:#f1f5f9; transform:rotate(3deg); }
 .ged-side-tabs { flex:0 0 auto; display:flex; gap:4px; overflow-x:auto; padding:9px 12px 7px; border-bottom:1px solid #e5edf6; background:#fff; scrollbar-width:none; scroll-snap-type:x proximity; }
