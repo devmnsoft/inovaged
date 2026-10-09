@@ -130,7 +130,7 @@ public sealed class ClassificationController : Controller
                 tenantId,
                 ct);
 
-            var planItems = await _planQueries.ListAsync(
+            var planItems = await _planQueries.ListEligibleActiveItemsAsync(
                 tenantId,
                 ct);
 
@@ -145,7 +145,9 @@ public sealed class ClassificationController : Controller
                 LEFT JOIN ged.classification_plan cp 
                     ON cp.tenant_id = d.tenant_id AND cp.id = d.classification_id
                 LEFT JOIN ged.classification_plan_version_item pvi 
-                    ON pvi.tenant_id = d.tenant_id AND pvi.classification_id = d.classification_id AND COALESCE(pvi.is_active, true)
+                    ON pvi.tenant_id = d.tenant_id 
+                   AND pvi.version_id = d.classification_version_id 
+                   AND pvi.classification_id = d.classification_id
                 WHERE d.tenant_id = @tenantId AND d.id = @documentId
                 LIMIT 1
                 """, new { tenantId, documentId }, cancellationToken: ct));
@@ -170,8 +172,7 @@ public sealed class ClassificationController : Controller
                     : ""
             };
 
-            vm.AvailableClassifications = (planItems ?? Array.Empty<ClassificationPlanRow>())
-                .Where(c => c.IsActive)
+            vm.AvailableClassifications = (planItems ?? Array.Empty<ClassificationPlanItemSelectorRow>())
                 .Select(c => new EditClassificationVM.ClassificationPlanItem
                 {
                     Id = c.Id,
@@ -231,13 +232,52 @@ public sealed class ClassificationController : Controller
                 return RedirectToAction("Index", "Ged");
             }
 
-            if ((!classificationId.HasValue || classificationId.Value == Guid.Empty) &&
-                (!documentTypeId.HasValue || documentTypeId.Value == Guid.Empty))
+            var hasClassification = Request.Form.ContainsKey("classificationId");
+            var hasDocumentType = Request.Form.ContainsKey("documentTypeId");
+            var hasTags = Request.Form.ContainsKey("tagsCsv");
+            var hasMetadata = Request.Form.ContainsKey("metadataLines") || Request.Form.ContainsKey("metadataJson");
+
+            if (!hasClassification && !hasDocumentType && !hasTags && !hasMetadata)
             {
                 if (IsAjaxRequest())
-                    return BadRequest("Informe a classificação arquivística ou o tipo documental.");
+                    return BadRequest("Nenhuma alteração informada.");
 
-                TempData["Error"] = "Informe a classificação arquivística ou o tipo documental.";
+                TempData["Error"] = "Nenhuma alteração informada.";
+                return RedirectToAction("Details", "Ged", new { id = documentId, openClassify = true });
+            }
+
+            var tenantId = _currentUser.TenantId;
+            var userId = _currentUser.UserId;
+
+            var tags = hasTags ? ParseTags(tagsCsv) : null;
+            var metadata = hasMetadata
+                ? (!string.IsNullOrWhiteSpace(metadataLines)
+                    ? ParseMetadataLines(metadataLines)
+                    : ParseMetadataJson(metadataJson))
+                : null;
+
+            var cmd = new SaveManualIntegratedCommand(
+                TenantId: tenantId,
+                DocumentId: documentId,
+                UserId: userId,
+                HasClassification: hasClassification,
+                ClassificationId: classificationId,
+                HasDocumentType: hasDocumentType,
+                DocumentTypeId: documentTypeId,
+                HasTags: hasTags,
+                Tags: tags,
+                HasMetadata: hasMetadata,
+                Metadata: metadata
+            );
+
+            var result = await _commands.SaveManualIntegratedAsync(cmd, ct);
+
+            if (!result.Success)
+            {
+                if (IsAjaxRequest())
+                    return BadRequest(result.Message);
+
+                TempData["Error"] = result.Message;
                 return RedirectToAction("Details", "Ged", new
                 {
                     id = documentId,
@@ -245,86 +285,17 @@ public sealed class ClassificationController : Controller
                 });
             }
 
-            var tenantId = _currentUser.TenantId;
-            var userId = _currentUser.UserId;
-
-            var tags = ParseTags(tagsCsv);
-
-            var metadata = !string.IsNullOrWhiteSpace(metadataLines)
-                ? ParseMetadataLines(metadataLines)
-                : ParseMetadataJson(metadataJson);
-
-            // 1. Aplica classificação arquivística (PCD) se fornecida
-            if (classificationId.HasValue && classificationId.Value != Guid.Empty)
-            {
-                var bulkResult = await _bulkClassification.ApplyAsync(
-                    tenantId,
-                    userId,
-                    new[] { documentId },
-                    classificationId.Value,
-                    ct);
-
-                if (bulkResult.Failed > 0 || bulkResult.Denied > 0)
-                {
-                    var item = bulkResult.Items.FirstOrDefault(x => !x.Success);
-                    var msg = item?.Message ?? "Erro ao aplicar classificação arquivística.";
-                    if (IsAjaxRequest())
-                        return BadRequest(msg);
-
-                    TempData["Error"] = msg;
-                    return RedirectToAction("Details", "Ged", new
-                    {
-                        id = documentId,
-                        openClassify = true
-                    });
-                }
-            }
-
-            // 2. Aplica tipo documental, tags e metadados se fornecidos
-            if (documentTypeId.HasValue && documentTypeId.Value != Guid.Empty)
-            {
-                await _commands.SaveManualAsync(
-                    tenantId: tenantId,
-                    documentId: documentId,
-                    documentTypeId: documentTypeId,
-                    userId: userId,
-                    tags: tags,
-                    metadata: metadata,
-                    ct: ct);
-            }
-            else if ((tags != null && tags.Count > 0) || (metadata != null && metadata.Count > 0))
-            {
-                await _commands.SaveManualAsync(
-                    tenantId: tenantId,
-                    documentId: documentId,
-                    documentTypeId: null,
-                    userId: userId,
-                    tags: tags,
-                    metadata: metadata,
-                    ct: ct);
-            }
-
-            var retentionResult = await RecalculateRetentionSafeAsync(
-                tenantId,
-                documentId,
-                "MANUAL_SAVE",
-                ct);
-
-            var message = retentionResult.Success
-                ? "Classificação salva e temporalidade recalculada."
-                : "Classificação salva, mas a temporalidade não foi recalculada automaticamente. Verifique os logs.";
-
             if (IsAjaxRequest())
             {
                 return Ok(new
                 {
                     success = true,
-                    retentionRecalculated = retentionResult.Success,
-                    message
+                    retentionRecalculated = result.RetentionRecalculated,
+                    message = result.Message
                 });
             }
 
-            TempData["Success"] = message;
+            TempData["Success"] = result.Message;
 
             return RedirectToAction("Details", "Ged", new
             {

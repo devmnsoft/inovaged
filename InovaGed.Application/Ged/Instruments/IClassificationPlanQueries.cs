@@ -1,8 +1,10 @@
-﻿namespace InovaGed.Application.Ged.Instruments
+namespace InovaGed.Application.Ged.Instruments
 {
     public interface IClassificationPlanQueries
     {
         Task<IReadOnlyList<ClassificationPlanRow>> ListAsync(Guid tenantId, CancellationToken ct);
+
+        Task<IReadOnlyList<ClassificationPlanItemSelectorRow>> ListEligibleActiveItemsAsync(Guid tenantId, CancellationToken ct);
 
         Task<IReadOnlyList<ClassificationPlanVersionRow>> ListVersionsAsync(Guid tenantId, CancellationToken ct);
 
@@ -18,5 +20,12 @@
         public string? Notes { get; init; }
         public DateTimeOffset PublishedAt { get; init; }
         public Guid? PublishedBy { get; init; }
+    }
+
+    public sealed class ClassificationPlanItemSelectorRow
+    {
+        public Guid Id { get; init; }
+        public string Code { get; init; } = "";
+        public string Name { get; init; } = "";
     }
 }

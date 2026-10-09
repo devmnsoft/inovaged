@@ -62,6 +62,12 @@ public sealed class DocumentSidePanelVm
     public string? RetentionNormativeReference { get; set; }
     public string? RetentionPendingReason { get; set; }
     public bool HasRetentionCalculation { get; set; }
+    public bool HasClassificationError { get; set; }
+    public string? ClassificationDiagnosticCode { get; set; }
+    public string? ClassificationCorrelationId { get; set; }
+    public bool IsLegacyUnversioned { get; set; }
+    public bool HasRetentionError { get; set; }
+    public string? RetentionCorrelationId { get; set; }
     public IReadOnlyList<DocumentSidePanelPartVm> Parts { get; set; } = Array.Empty<DocumentSidePanelPartVm>();
     public IReadOnlyList<DocumentSidePanelHistoryVm> History { get; set; } = Array.Empty<DocumentSidePanelHistoryVm>();
 }

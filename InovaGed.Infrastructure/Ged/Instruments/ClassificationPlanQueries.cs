@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using Dapper;
 using InovaGed.Application.Audit;
 using InovaGed.Application.Common.Database;
@@ -58,6 +58,48 @@ order by sort_order, code;
 ";
         var rows = await conn.QueryAsync<ClassificationPlanRow>(new CommandDefinition(sql, new { tenant_id = tenantId }, cancellationToken: ct));
         return rows.AsList();
+    }
+
+    public async Task<IReadOnlyList<ClassificationPlanItemSelectorRow>> ListEligibleActiveItemsAsync(Guid tenantId, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        const string sql = @"
+select
+  i.classification_id as Id,
+  i.code as Code,
+  i.name as Name
+from ged.classification_plan_version_item i
+join ged.classification_plan_version v on v.tenant_id = i.tenant_id and v.id = i.version_id
+where i.tenant_id = @tenant_id
+  and coalesce(i.is_active, true)
+  and coalesce(v.reg_status, 'A') = 'A'
+  and v.version_no = (
+    select max(version_no)
+    from ged.classification_plan_version
+    where tenant_id = @tenant_id and coalesce(reg_status, 'A') = 'A'
+  )
+order by i.code;
+";
+        var rows = await conn.QueryAsync<ClassificationPlanItemSelectorRow>(
+            new CommandDefinition(sql, new { tenant_id = tenantId }, cancellationToken: ct));
+        var list = rows.AsList();
+        if (list.Count > 0)
+            return list;
+
+        const string fallbackSql = @"
+select
+  id as Id,
+  code as Code,
+  name as Name
+from ged.classification_plan
+where tenant_id = @tenant_id
+  and is_active = true
+  and coalesce(reg_status, 'A') = 'A'
+order by code;
+";
+        var fallback = await conn.QueryAsync<ClassificationPlanItemSelectorRow>(
+            new CommandDefinition(fallbackSql, new { tenant_id = tenantId }, cancellationToken: ct));
+        return fallback.AsList();
     }
 
     public async Task<IReadOnlyList<ClassificationPlanVersionRow>> ListVersionsAsync(Guid tenantId, CancellationToken ct)

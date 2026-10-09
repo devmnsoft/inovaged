@@ -1,8 +1,10 @@
-﻿using System.Data;
+using System.Data;
 using System.Text.Json;
 using Dapper;
 using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Database;
+using InovaGed.Application.Retention;
+using InovaGed.Application.Security;
 using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Infrastructure.Classification;
@@ -11,13 +13,19 @@ public sealed class DocumentClassificationCommands : IDocumentClassificationComm
 {
     private readonly IDbConnectionFactory _db;
     private readonly ILogger<DocumentClassificationCommands> _logger;
+    private readonly IRetentionRecalcService? _retention;
+    private readonly IAbacAuthorizationService? _authorization;
 
     public DocumentClassificationCommands(
         IDbConnectionFactory db,
-        ILogger<DocumentClassificationCommands> logger)
+        ILogger<DocumentClassificationCommands> logger,
+        IRetentionRecalcService? retention = null,
+        IAbacAuthorizationService? authorization = null)
     {
         _db = db;
         _logger = logger;
+        _retention = retention;
+        _authorization = authorization;
     }
 
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -228,6 +236,311 @@ WHERE tenant_id = @TenantId
                 documentId);
 
             throw;
+        }
+    }
+
+    public async Task<SaveManualIntegratedResult> SaveManualIntegratedAsync(
+        SaveManualIntegratedCommand command,
+        CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (command.DocumentId == Guid.Empty)
+            return new(false, false, false, false, false, false, "ID do documento inválido.", "INVALID_ID");
+
+        if (_authorization != null && command.UserId.HasValue)
+        {
+            var allowed = await _authorization.FilterDocumentsAsync(command.TenantId, command.UserId.Value, new[] { command.DocumentId }, "EDIT", ct);
+            if (!allowed.Contains(command.DocumentId))
+                return new(false, false, false, false, false, false, "Acesso negado para edição deste documento.", "FORBIDDEN");
+        }
+
+        await using var con = await _db.OpenAsync(ct);
+        await using var tx = await con.BeginTransactionAsync(ct);
+
+        try
+        {
+            const string lockSql = @"
+select id, current_version_id as CurrentVersionId, classification_id as ClassificationId, classification_version_id as ClassificationVersionId, type_id as TypeId
+from ged.document
+where tenant_id = @TenantId and id = @DocumentId and coalesce(reg_status, 'A') = 'A'
+for update;";
+
+            var doc = await con.QueryFirstOrDefaultAsync<(Guid Id, Guid? CurrentVersionId, Guid? ClassificationId, Guid? ClassificationVersionId, Guid? TypeId)>(
+                new CommandDefinition(lockSql, new { command.TenantId, command.DocumentId }, tx, cancellationToken: ct));
+
+            if (doc.Id == Guid.Empty)
+            {
+                await tx.RollbackAsync(ct);
+                return new(false, false, false, false, false, false, "Documento não encontrado ou inativo.", "NOT_FOUND");
+            }
+
+            var beforeJson = await SnapshotAsync(con, tx, command.TenantId, command.DocumentId, ct);
+            var versionId = doc.CurrentVersionId ?? await GetLatestVersionIdAsync(con, tx, command.TenantId, command.DocumentId, ct);
+
+            bool classificationChanged = false;
+            bool typeChanged = false;
+            bool tagsChanged = false;
+            bool metadataChanged = false;
+
+            // Classificação
+            if (command.HasClassification)
+            {
+                if (command.ClassificationId.HasValue && command.ClassificationId.Value != Guid.Empty)
+                {
+                    const string checkClassSql = @"
+select v.id
+from ged.classification_plan_version_item i
+join ged.classification_plan_version v on v.tenant_id = i.tenant_id and v.id = i.version_id
+where i.tenant_id = @TenantId
+  and i.classification_id = @ClassificationId
+  and coalesce(i.is_active, true)
+  and coalesce(v.reg_status, 'A') = 'A'
+  and v.version_no = (
+    select max(version_no)
+    from ged.classification_plan_version
+    where tenant_id = @TenantId and coalesce(reg_status, 'A') = 'A'
+  );";
+
+                    var targetVersionId = await con.ExecuteScalarAsync<Guid?>(
+                        new CommandDefinition(checkClassSql, new { command.TenantId, command.ClassificationId }, tx, cancellationToken: ct));
+
+                    if (targetVersionId == null || targetVersionId == Guid.Empty)
+                    {
+                        await tx.RollbackAsync(ct);
+                        return new(false, false, false, false, false, false, "A classificação informada não pertence ao plano vigente ou está inativa.", "INVALID_CLASSIFICATION");
+                    }
+
+                    const string updateClassSql = @"
+update ged.document
+set classification_id = @ClassificationId,
+    classification_version_id = @VersionId,
+    updated_at = now(),
+    updated_by = @UserId
+where tenant_id = @TenantId and id = @DocumentId;";
+
+                    await con.ExecuteAsync(new CommandDefinition(updateClassSql, new
+                    {
+                        command.TenantId,
+                        command.DocumentId,
+                        command.ClassificationId,
+                        VersionId = targetVersionId,
+                        command.UserId
+                    }, tx, cancellationToken: ct));
+
+                    const string upsertClassItemSql = @"
+insert into ged.document_classification
+  (document_id, tenant_id, document_version_id, classification_id, classification_version_id, confidence, method, summary, classified_at, classified_by, source, updated_at, reg_status)
+values
+  (@DocumentId, @TenantId, @DocumentVersionId, @ClassificationId, @ClassificationVersionId, null, 'MANUAL', null, now(), @UserId, 'WEB', now(), 'A')
+on conflict (document_id)
+do update set
+  tenant_id = excluded.tenant_id,
+  document_version_id = excluded.document_version_id,
+  classification_id = excluded.classification_id,
+  classification_version_id = excluded.classification_version_id,
+  method = 'MANUAL',
+  classified_at = now(),
+  classified_by = @UserId,
+  source = 'WEB',
+  updated_at = now(),
+  reg_status = 'A';";
+
+                    await con.ExecuteAsync(new CommandDefinition(upsertClassItemSql, new
+                    {
+                        command.TenantId,
+                        command.DocumentId,
+                        DocumentVersionId = versionId,
+                        command.ClassificationId,
+                        ClassificationVersionId = targetVersionId,
+                        command.UserId
+                    }, tx, cancellationToken: ct));
+
+                    const string insertPendingSql = @"
+insert into ged.ai_retention_recalc_pending (id, tenant_id, document_id, application_id, reason, attempts, next_attempt_at)
+select gen_random_uuid(), @TenantId, @DocumentId, null, 'MANUAL_SAVE_RECALC', 0, now()
+where not exists (select 1 from ged.ai_retention_recalc_pending
+                  where tenant_id=@TenantId and document_id=@DocumentId and application_id is null and resolved_at is null);";
+
+                    await con.ExecuteAsync(new CommandDefinition(insertPendingSql, new { command.TenantId, command.DocumentId }, tx, cancellationToken: ct));
+                    classificationChanged = true;
+                }
+                else
+                {
+                    const string clearDocClassSql = @"
+update ged.document
+set classification_id = null,
+    classification_version_id = null,
+    updated_at = now(),
+    updated_by = @UserId
+where tenant_id = @TenantId and id = @DocumentId;";
+
+                    await con.ExecuteAsync(new CommandDefinition(clearDocClassSql, new
+                    {
+                        command.TenantId,
+                        command.DocumentId,
+                        command.UserId
+                    }, tx, cancellationToken: ct));
+
+                    const string clearClassItemSql = @"
+update ged.document_classification
+set classification_id = null,
+    classification_version_id = null,
+    updated_at = now(),
+    classified_by = @UserId
+where tenant_id = @TenantId and document_id = @DocumentId;";
+
+                    await con.ExecuteAsync(new CommandDefinition(clearClassItemSql, new
+                    {
+                        command.TenantId,
+                        command.DocumentId,
+                        command.UserId
+                    }, tx, cancellationToken: ct));
+
+                    const string insertPendingSql = @"
+insert into ged.ai_retention_recalc_pending (id, tenant_id, document_id, application_id, reason, attempts, next_attempt_at)
+select gen_random_uuid(), @TenantId, @DocumentId, null, 'MANUAL_SAVE_RECALC', 0, now()
+where not exists (select 1 from ged.ai_retention_recalc_pending
+                  where tenant_id=@TenantId and document_id=@DocumentId and application_id is null and resolved_at is null);";
+
+                    await con.ExecuteAsync(new CommandDefinition(insertPendingSql, new { command.TenantId, command.DocumentId }, tx, cancellationToken: ct));
+                    classificationChanged = true;
+                }
+            }
+
+            // Tipo Documental
+            if (command.HasDocumentType)
+            {
+                if (command.DocumentTypeId.HasValue && command.DocumentTypeId.Value != Guid.Empty)
+                {
+                    var typeExists = await con.ExecuteScalarAsync<bool>(new CommandDefinition(
+                        "select exists(select 1 from ged.document_type where tenant_id = @TenantId and id = @Id);",
+                        new { command.TenantId, Id = command.DocumentTypeId.Value }, tx, cancellationToken: ct));
+
+                    if (!typeExists)
+                    {
+                        await tx.RollbackAsync(ct);
+                        return new(false, classificationChanged, false, false, false, false, "Tipo documental não encontrado.", "INVALID_TYPE");
+                    }
+
+                    await con.ExecuteAsync(new CommandDefinition(@"
+update ged.document
+set type_id = @TypeId,
+    updated_at = now(),
+    updated_by = @UserId
+where tenant_id = @TenantId and id = @DocumentId;", new { command.TenantId, command.DocumentId, TypeId = command.DocumentTypeId.Value, command.UserId }, tx, cancellationToken: ct));
+
+                    await con.ExecuteAsync(new CommandDefinition(@"
+insert into ged.document_classification
+  (document_id, tenant_id, document_version_id, document_type_id, method, classified_at, classified_by, source, updated_at, reg_status)
+values
+  (@DocumentId, @TenantId, @DocumentVersionId, @TypeId, 'MANUAL', now(), @UserId, 'WEB', now(), 'A')
+on conflict (document_id)
+do update set
+  tenant_id = excluded.tenant_id,
+  document_version_id = excluded.document_version_id,
+  document_type_id = excluded.document_type_id,
+  method = 'MANUAL',
+  classified_at = now(),
+  classified_by = @UserId,
+  source = 'WEB',
+  updated_at = now(),
+  reg_status = 'A';", new { command.TenantId, command.DocumentId, DocumentVersionId = versionId, TypeId = command.DocumentTypeId.Value, command.UserId }, tx, cancellationToken: ct));
+
+                    typeChanged = true;
+                }
+                else
+                {
+                    await con.ExecuteAsync(new CommandDefinition(@"
+update ged.document
+set type_id = null,
+    updated_at = now(),
+    updated_by = @UserId
+where tenant_id = @TenantId and id = @DocumentId;", new { command.TenantId, command.DocumentId, command.UserId }, tx, cancellationToken: ct));
+
+                    await con.ExecuteAsync(new CommandDefinition(@"
+update ged.document_classification
+set document_type_id = null,
+    updated_at = now(),
+    classified_by = @UserId
+where tenant_id = @TenantId and document_id = @DocumentId;", new { command.TenantId, command.DocumentId, command.UserId }, tx, cancellationToken: ct));
+
+                    typeChanged = true;
+                }
+            }
+
+            // Tags
+            if (command.HasTags)
+            {
+                await SaveTagsAsync(con, tx, command.TenantId, command.DocumentId, command.UserId, command.Tags ?? Array.Empty<string>(), "MANUAL", ct);
+                tagsChanged = true;
+            }
+
+            // Metadados
+            if (command.HasMetadata)
+            {
+                const string delMetaSql = @"
+delete from ged.document_metadata
+where tenant_id = @TenantId
+  and document_id = @DocumentId
+  and coalesce(method, 'MANUAL') = 'MANUAL';";
+
+                await con.ExecuteAsync(new CommandDefinition(delMetaSql, new { command.TenantId, command.DocumentId }, tx, cancellationToken: ct));
+
+                if (command.Metadata != null && command.Metadata.Count > 0)
+                {
+                    await SaveMetadataAsync(con, tx, command.TenantId, command.DocumentId, command.Metadata, "MANUAL", ct);
+                }
+                metadataChanged = true;
+            }
+
+            if (classificationChanged || typeChanged || tagsChanged || metadataChanged)
+            {
+                var afterJson = await SnapshotAsync(con, tx, command.TenantId, command.DocumentId, ct);
+                await InsertAuditAsync(con, tx, command.TenantId, command.DocumentId, command.UserId,
+                    "MANUAL_SAVE", "MANUAL", beforeJson, afterJson, "WEB", ct);
+            }
+
+            await tx.CommitAsync(ct);
+
+            bool recalcOk = false;
+            if (classificationChanged && _retention != null)
+            {
+                try
+                {
+                    var calculated = await _retention.RunOneAsync(command.TenantId, command.DocumentId, 30, ct);
+                    if (calculated == 1)
+                    {
+                        recalcOk = true;
+                        using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                        await con.ExecuteAsync(new CommandDefinition("""
+update ged.ai_retention_recalc_pending set resolved_at=now(), last_error=null, claimed_at=null, claim_token=null
+where tenant_id=@TenantId and document_id=@DocumentId and application_id is null and resolved_at is null;
+""", new { command.TenantId, DocumentId = command.DocumentId }, cancellationToken: cleanup.Token));
+                    }
+                }
+                catch (Exception rex)
+                {
+                    _logger.LogWarning(rex, "Recálculo imediato de temporalidade pendente de worker. DocumentId={DocumentId}", command.DocumentId);
+                }
+            }
+
+            return new SaveManualIntegratedResult(
+                Success: true,
+                ClassificationChanged: classificationChanged,
+                TypeChanged: typeChanged,
+                TagsChanged: tagsChanged,
+                MetadataChanged: metadataChanged,
+                RetentionRecalculated: recalcOk,
+                Message: classificationChanged
+                    ? (recalcOk ? "Classificação e dados salvos com sucesso. Temporalidade recalculada." : "Classificação e dados salvos com sucesso. Temporalidade enfileirada para recálculo.")
+                    : "Dados salvos com sucesso."
+            );
+        }
+        catch (Exception ex)
+        {
+            try { await tx.RollbackAsync(ct); } catch { }
+            _logger.LogError(ex, "Erro ao salvar classificação manual integrada. Tenant={TenantId} DocumentId={DocumentId}", command.TenantId, command.DocumentId);
+            return new(false, false, false, false, false, false, "Falha interna ao salvar alterações.", "UNEXPECTED_ERROR");
         }
     }
 

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace InovaGed.Domain.Documents;
@@ -20,6 +20,7 @@ public sealed class DocumentDetailsDto
     public Guid? TypeId { get; init; }
 
     public Guid? ClassificationId { get; init; }
+    public Guid? ClassificationVersionId { get; init; }
 
     public DocumentStatus Status { get; init; }
 

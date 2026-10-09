@@ -17,6 +17,7 @@ public sealed class DocumentClassificationViewDto
     public string? ClassificationName { get; set; }
     public int? PlanVersionNo { get; set; }
     public string? PlanVersionTitle { get; set; }
+    public bool IsLegacyUnversioned { get; set; }
 
     public decimal? Confidence { get; init; }
     public string Method { get; init; } = "RULES";

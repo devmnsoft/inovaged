@@ -51,28 +51,71 @@ order by created_at desc;", new { TenantId, ProtocoloId = protocoloId })).ToList
         };
 
         var visible = new List<ProtocoloGedVinculoVM>();
-        foreach (var link in vm.Vinculos)
-            if (link.GedDocumentId is Guid documentId && await CanDocumentAsync(documentId, "VIEW"))
-            {
-                var docInfo = await db.QueryFirstOrDefaultAsync<(string? Title, int? VersionNumber, string? ClassCode, string? ClassName)>(@"
+        var docIds = vm.Vinculos
+            .Where(l => l.GedDocumentId.HasValue && l.GedDocumentId != Guid.Empty)
+            .Select(l => l.GedDocumentId!.Value)
+            .Distinct()
+            .ToArray();
+
+        var authorizedIds = new HashSet<Guid>();
+        foreach (var id in docIds)
+        {
+            if (await CanDocumentAsync(id, "VIEW"))
+                authorizedIds.Add(id);
+        }
+
+        Dictionary<Guid, (string Title, int? VersionNumber, string? ClassCode, string? ClassName, int? PlanVersionNo, string? PlanVersionTitle, string? Status)> docMap = new();
+        if (authorizedIds.Count > 0)
+        {
+            const string batchSql = @"
 select 
+  d.id as DocumentId,
   coalesce(nullif(d.title,''), d.code, 'Documento') as Title,
-  coalesce(v.version_number, 1) as VersionNumber,
+  v.version_number as VersionNumber,
   coalesce(pvi.code, cp.code) as ClassCode,
-  coalesce(pvi.title, cp.name) as ClassName
+  coalesce(pvi.name, cp.name) as ClassName,
+  pv.version_no as PlanVersionNo,
+  case
+    when d.classification_id is null then null
+    when d.classification_version_id is null then 'Versão não vinculada (legado)'
+    else pv.title
+  end as PlanVersionTitle,
+  coalesce(d.status::text, 'ACTIVE') as Status
 from ged.document d
 left join ged.document_version v on v.tenant_id = d.tenant_id and v.id = d.current_version_id
 left join ged.classification_plan cp on cp.tenant_id = d.tenant_id and cp.id = d.classification_id
-left join ged.classification_plan_version_item pvi on pvi.tenant_id = d.tenant_id and pvi.classification_id = d.classification_id and coalesce(pvi.is_active, true)
-where d.tenant_id = @TenantId and d.id = @documentId
-limit 1", new { TenantId, documentId });
+left join ged.classification_plan_version pv on pv.tenant_id = d.tenant_id and pv.id = d.classification_version_id
+left join ged.classification_plan_version_item pvi on pvi.tenant_id = d.tenant_id and pvi.version_id = d.classification_version_id and pvi.classification_id = d.classification_id
+where d.tenant_id = @TenantId and d.id = any(@Ids);";
 
-                link.GedDocumentName = docInfo.Title ?? "Documento";
-                link.GedDocumentVersionNumber = docInfo.VersionNumber.HasValue ? $"v{docInfo.VersionNumber.Value}" : "v1";
-                link.GedClassificationCode = docInfo.ClassCode;
-                link.GedClassificationName = docInfo.ClassName;
+            var docs = await db.QueryAsync<(Guid DocumentId, string Title, int? VersionNumber, string? ClassCode, string? ClassName, int? PlanVersionNo, string? PlanVersionTitle, string? Status)>(
+                batchSql, new { TenantId, Ids = authorizedIds.ToArray() });
+
+            docMap = docs.ToDictionary(x => x.DocumentId, x => (x.Title, x.VersionNumber, x.ClassCode, x.ClassName, x.PlanVersionNo, x.PlanVersionTitle, x.Status));
+        }
+
+        foreach (var link in vm.Vinculos)
+        {
+            if (link.GedDocumentId.HasValue && authorizedIds.Contains(link.GedDocumentId.Value))
+            {
+                if (docMap.TryGetValue(link.GedDocumentId.Value, out var info))
+                {
+                    link.GedDocumentName = info.Title;
+                    link.GedDocumentVersionNumber = info.VersionNumber.HasValue ? $"v{info.VersionNumber.Value}" : null;
+                    link.GedClassificationCode = info.ClassCode;
+                    link.GedClassificationName = info.ClassName;
+                    link.GedPlanVersionNo = info.PlanVersionNo;
+                    link.GedPlanVersionTitle = info.PlanVersionTitle;
+                    link.GedDocumentStatus = info.Status;
+                }
+                else
+                {
+                    link.GedDocumentName = "Documento";
+                    link.GedDocumentVersionNumber = null;
+                }
                 visible.Add(link);
             }
+        }
         vm.Vinculos = visible;
         vm.Q = q;
         var candidates = await db.QueryAsync<(Guid Id, string Name)>("""

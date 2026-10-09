@@ -203,6 +203,7 @@ SELECT
     d.folder_id          AS "FolderId",
     d.type_id            AS "TypeId",
     COALESCE(dc.classification_id, d.classification_id) AS "ClassificationId",
+    COALESCE(dc.classification_version_id, d.classification_version_id) AS "ClassificationVersionId",
     d.status             AS "Status",
     d.visibility::text   AS "Visibility",
     d.current_version_id AS "CurrentVersionId",
@@ -213,7 +214,7 @@ SELECT
     0                    AS "CurrentVersion"
 FROM ged.document d
 LEFT JOIN LATERAL (
-    SELECT x.classification_id
+    SELECT x.classification_id, x.classification_version_id
     FROM ged.document_classification x
     WHERE x.tenant_id = d.tenant_id
       AND x.document_id = d.id

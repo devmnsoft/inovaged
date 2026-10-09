@@ -27,9 +27,18 @@
             <div class="ged-side-title" title="@Model.Title">@Model.Title</div>
             <div class="ged-side-file" title="@Model.FileName">@Model.FileName</div>
             <div class="ged-document-badges mt-2">
-                <span class="badge @(hasClassification ? "bg-primary" : "bg-secondary")" title="Classificação arquivística: @Model.ClassificationName">
-                    @(hasClassification ? Model.ClassificationName : "Sem classificação")
-                </span>
+                @if (Model.HasClassificationError)
+                {
+                    <span class="badge bg-danger" title="Falha ao carregar classificação: @Model.ClassificationCorrelationId">
+                        <app-icon name="warning" size="12" decorative="true" /> Erro na classificação
+                    </span>
+                }
+                else
+                {
+                    <span class="badge @(hasClassification ? "bg-primary" : "bg-secondary")" title="Classificação arquivística: @Model.ClassificationName">
+                        @(hasClassification ? Model.ClassificationName : "Sem classificação")
+                    </span>
+                }
                 @if (hasType)
                 {
                     <span class="badge bg-light text-dark border" title="Tipo documental: @Model.TypeName">@Model.TypeName</span>
@@ -154,16 +163,40 @@
                 <span class="badge @Model.RetentionStatusCss">@(Model.RetentionStatusLabel ?? "Pendente")</span>
             </div>
 
+            @if (Model.HasClassificationError || Model.HasRetentionError)
+            {
+                <div class="alert alert-danger py-2 px-3 small mb-3" role="alert">
+                    <strong><app-icon class="me-1" name="warning" size="16" decorative="true" />Falha na consulta</strong>
+                    <div>Não foi possível carregar os dados arquivísticos completos no momento.</div>
+                    @if (!string.IsNullOrWhiteSpace(Model.ClassificationCorrelationId ?? Model.RetentionCorrelationId))
+                    {
+                        <div class="text-muted mt-1 font-monospace">Diagnóstico: @(Model.ClassificationCorrelationId ?? Model.RetentionCorrelationId)</div>
+                    }
+                    <button type="button" class="btn btn-sm btn-outline-danger mt-2" onclick="window.InovaGedSidePanel?.reload?.() || location.reload();">
+                        <app-icon class="me-1" name="refresh" size="14" decorative="true" /> Tentar novamente
+                    </button>
+                </div>
+            }
+
             <dl class="ged-metadata-list mb-3">
                 <dt>Classificação</dt><dd>@(hasClassification ? Model.ClassificationName : "Sem classificação arquivística")</dd>
-                <dt>Versão do plano</dt><dd>@(Model.PlanVersionTitle ?? (Model.PlanVersionNo.HasValue ? $"v{Model.PlanVersionNo}" : "Plano vigente"))</dd>
-                <dt>Referência legal</dt><dd>@(Model.RetentionNormativeReference ?? "Tabela de Temporalidade vigente")</dd>
-                <dt>Evento inicial</dt><dd>@(Model.RetentionStartEvent ?? "Data de criação/upload")</dd>
-                <dt>Data-base</dt><dd>@(Model.RetentionBasisDateFormatted ?? Model.UploadedAtLocalFormatted)</dd>
+                <dt>Versão do plano</dt><dd>
+                    @if (Model.IsLegacyUnversioned)
+                    {
+                        <span class="badge bg-warning text-dark">Legado (sem versão vinculada - requer revisão)</span>
+                    }
+                    else
+                    {
+                        @(Model.PlanVersionTitle ?? (Model.PlanVersionNo.HasValue ? $"v{Model.PlanVersionNo}" : "-"))
+                    }
+                </dd>
+                <dt>Referência legal</dt><dd>@(Model.RetentionNormativeReference ?? "-")</dd>
+                <dt>Evento inicial</dt><dd>@(Model.RetentionStartEvent ?? "-")</dd>
+                <dt>Data-base</dt><dd>@(Model.RetentionBasisDateFormatted ?? (Model.RetentionStartEvent is "ENCERRAMENTO" or "ARQUIVAMENTO" ? "Aguardando evento" : "-"))</dd>
                 <dt>Fase corrente</dt><dd>@(Model.RetentionActivePhase ?? "-")</dd>
                 <dt>Fase intermediária</dt><dd>@(Model.RetentionArchivePhase ?? "-")</dd>
-                <dt>Vencimento previsto</dt><dd>@(Model.RetentionDueDateFormatted ?? "A calcular")</dd>
-                <dt>Destinação final</dt><dd>@(Model.RetentionFinalDestination ?? "Conforme avaliação")</dd>
+                <dt>Vencimento previsto</dt><dd>@(Model.RetentionDueDateFormatted ?? (Model.RetentionFinalDestination == "GUARDA_PERMANENTE" ? "Não aplicável (guarda permanente)" : "A calcular"))</dd>
+                <dt>Destinação final</dt><dd>@(Model.RetentionFinalDestination ?? "-")</dd>
             </dl>
 
             @if (!string.IsNullOrWhiteSpace(Model.RetentionPendingReason))

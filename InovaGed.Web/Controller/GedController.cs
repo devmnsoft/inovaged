@@ -449,7 +449,7 @@ LIMIT 30;
 
         var folderName = await ResolveFolderNameAsync(tenantId, doc.FolderId, ct);
         var typeName = await ResolveDocumentTypeNameAsync(tenantId, doc.TypeId, ct);
-        var classificationInfo = await ResolveDocumentClassificationInfoAsync(tenantId, doc.ClassificationId, ct);
+        var classificationInfo = await ResolveDocumentClassificationInfoAsync(tenantId, doc.ClassificationId, doc.ClassificationVersionId, ct);
         var retentionInfo = await ResolveDocumentRetentionInfoAsync(tenantId, doc, classificationInfo, ct);
         var createdByName = await ResolveUserNameAsync(tenantId, current.CreatedBy ?? doc.CreatedBy, ct);
         var canMove = await _accessPolicy.CanMoveDocumentAsync(tenantId, _currentUser.UserId, id, User, ct);
@@ -492,6 +492,12 @@ LIMIT 30;
             RetentionNormativeReference = retentionInfo.NormativeReference,
             RetentionPendingReason = retentionInfo.PendingReason,
             HasRetentionCalculation = retentionInfo.HasCalculation,
+            HasClassificationError = classificationInfo.HasError,
+            ClassificationDiagnosticCode = classificationInfo.DiagnosticCode,
+            ClassificationCorrelationId = classificationInfo.CorrelationId,
+            IsLegacyUnversioned = classificationInfo.IsLegacyUnversioned,
+            HasRetentionError = retentionInfo.HasError,
+            RetentionCorrelationId = retentionInfo.CorrelationId,
             VersionNumber = current.VersionNumber,
             UploadedAtLocalFormatted = _dateTimeDisplay.FormatUploadDate(current.UploadedAtUtc == default ? current.CreatedAt : current.UploadedAtUtc),
             CreatedAtLocalFormatted = _dateTimeDisplay.FormatUploadDate(doc.CreatedAt),
@@ -2160,7 +2166,14 @@ limit @take";
         int? RetentionArchiveMonths,
         int? RetentionArchiveYears,
         string? FinalDestination,
-        string? NormativeReference);
+        string? NormativeReference,
+        string? CurrentTermText = null,
+        string? IntermediateTermText = null,
+        bool HasError = false,
+        string? DiagnosticCode = null,
+        string? CorrelationId = null,
+        bool IsLegacyUnversioned = false,
+        bool IsInactive = false);
 
     private sealed record DocumentRetentionInfo(
         string? Status,
@@ -2174,138 +2187,247 @@ limit @take";
         string? FinalDestination,
         string? NormativeReference,
         string? PendingReason,
-        bool HasCalculation);
+        bool HasCalculation,
+        bool HasError = false,
+        string? CorrelationId = null);
 
-    private async Task<DocumentClassificationInfo> ResolveDocumentClassificationInfoAsync(Guid tenantId, Guid? classificationId, CancellationToken ct)
+    private async Task<DocumentClassificationInfo> ResolveDocumentClassificationInfoAsync(
+        Guid tenantId,
+        Guid? classificationId,
+        Guid? classificationVersionId,
+        CancellationToken ct)
     {
         if (!classificationId.HasValue || classificationId.Value == Guid.Empty)
             return new DocumentClassificationInfo("Sem classificação", null, null, null, null, null, null, null, null, null, null, null, null);
 
+        var correlationId = Guid.NewGuid().ToString("N")[..8];
         try
         {
             const string sql = """
 SELECT
-  c.code AS "Code",
-  c.name AS "Name",
-  v.version_no AS "PlanVersionNo",
-  v.title AS "PlanVersionTitle",
-  c.retention_start_event::text AS "RetentionStartEvent",
-  c.retention_active_days AS "RetentionActiveDays",
-  c.retention_active_months AS "RetentionActiveMonths",
-  c.retention_active_years AS "RetentionActiveYears",
-  c.retention_archive_days AS "RetentionArchiveDays",
-  c.retention_archive_months AS "RetentionArchiveMonths",
-  c.retention_archive_years AS "RetentionArchiveYears",
-  c.final_destination::text AS "FinalDestination",
-  COALESCE(c.description, '') AS "NormativeReference"
-FROM ged.classification_plan c
-LEFT JOIN LATERAL (
-    SELECT pv.id, pv.version_no, pv.title
-    FROM ged.classification_plan_version pv
-    JOIN ged.classification_plan_version_item pvi
-      ON pvi.tenant_id = pv.tenant_id
-     AND pvi.version_id = pv.id
-     AND pvi.classification_id = c.id
-    WHERE pv.tenant_id = c.tenant_id
-      AND COALESCE(pv.reg_status, 'A') = 'A'
-      AND COALESCE(pvi.is_active, true)
-    ORDER BY pv.version_no DESC
-    LIMIT 1
-) v ON true
-WHERE c.tenant_id = @tenantId
-  AND c.id = @classificationId
-  AND COALESCE(c.reg_status, 'A') = 'A'
+  cp.code AS "PlanCode",
+  cp.name AS "PlanName",
+  cp.is_active AS "PlanIsActive",
+  pvi.code AS "VersionItemCode",
+  pvi.name AS "VersionItemName",
+  pvi.is_active AS "VersionItemIsActive",
+  pv.version_no AS "PlanVersionNo",
+  pv.title AS "PlanVersionTitle",
+  COALESCE(pvi.retention_start_event::text, cp.retention_start_event::text) AS "RetentionStartEvent",
+  COALESCE(pvi.retention_active_days, cp.retention_active_days) AS "RetentionActiveDays",
+  COALESCE(pvi.retention_active_months, cp.retention_active_months) AS "RetentionActiveMonths",
+  COALESCE(pvi.retention_active_years, cp.retention_active_years) AS "RetentionActiveYears",
+  COALESCE(pvi.retention_archive_days, cp.retention_archive_days) AS "RetentionArchiveDays",
+  COALESCE(pvi.retention_archive_months, cp.retention_archive_months) AS "RetentionArchiveMonths",
+  COALESCE(pvi.retention_archive_years, cp.retention_archive_years) AS "RetentionArchiveYears",
+  COALESCE(pvi.final_destination::text, cp.final_destination::text) AS "FinalDestination",
+  NULLIF(TRIM(COALESCE(pvi.normative_source, cp.normative_source, '')), '') AS "NormativeReference",
+  NULLIF(TRIM(COALESCE(pvi.current_retention_text, cp.current_term_text, '')), '') AS "CurrentTermText",
+  NULLIF(TRIM(COALESCE(pvi.intermediate_retention_text, cp.intermediate_term_text, '')), '') AS "IntermediateTermText"
+FROM ged.classification_plan cp
+LEFT JOIN ged.classification_plan_version pv
+  ON pv.tenant_id = cp.tenant_id AND pv.id = @classificationVersionId
+LEFT JOIN ged.classification_plan_version_item pvi
+  ON pvi.tenant_id = cp.tenant_id
+ AND pvi.version_id = @classificationVersionId
+ AND pvi.classification_id = cp.id
+WHERE cp.tenant_id = @tenantId
+  AND cp.id = @classificationId
+  AND COALESCE(cp.reg_status, 'A') = 'A'
 LIMIT 1;
 """;
             await using var con = await _db.OpenAsync(ct);
-            var row = await con.QueryFirstOrDefaultAsync<dynamic>(new CommandDefinition(sql, new { tenantId, classificationId }, cancellationToken: ct));
-            if (row is null)
-                return new DocumentClassificationInfo("Sem classificação", null, null, null, null, null, null, null, null, null, null, null, null);
+            var row = await con.QueryFirstOrDefaultAsync<dynamic>(
+                new CommandDefinition(sql, new { tenantId, classificationId, classificationVersionId }, cancellationToken: ct));
 
-            string name = row.Name ?? string.Empty;
-            string? code = row.Code;
+            if (row is null)
+            {
+                return new DocumentClassificationInfo(
+                    Name: "Referência inconsistente (classe não encontrada)",
+                    Code: null,
+                    PlanVersionNo: null,
+                    PlanVersionTitle: null,
+                    RetentionStartEvent: null,
+                    RetentionActiveDays: null,
+                    RetentionActiveMonths: null,
+                    RetentionActiveYears: null,
+                    RetentionArchiveDays: null,
+                    RetentionArchiveMonths: null,
+                    RetentionArchiveYears: null,
+                    FinalDestination: null,
+                    NormativeReference: null,
+                    HasError: true,
+                    DiagnosticCode: "REFERENCE_NOT_FOUND",
+                    CorrelationId: correlationId);
+            }
+
+            string name = row.VersionItemName ?? row.PlanName ?? string.Empty;
+            string? code = row.VersionItemCode ?? row.PlanCode;
             string displayName = string.IsNullOrWhiteSpace(code) ? name : $"{code} — {name}";
+            bool isLegacy = !classificationVersionId.HasValue || classificationVersionId.Value == Guid.Empty;
+            string? planTitle = isLegacy ? "Versão não vinculada (legado - requer revisão)" : (string?)row.PlanVersionTitle;
+            bool isInactive = row.VersionItemIsActive != null ? !(bool)row.VersionItemIsActive : (row.PlanIsActive != null && !(bool)row.PlanIsActive);
+
             return new DocumentClassificationInfo(
-                string.IsNullOrWhiteSpace(displayName) ? "Sem classificação" : displayName,
-                code,
-                (int?)row.PlanVersionNo,
-                (string?)row.PlanVersionTitle,
-                (string?)row.RetentionStartEvent,
-                (int?)row.RetentionActiveDays,
-                (int?)row.RetentionActiveMonths,
-                (int?)row.RetentionActiveYears,
-                (int?)row.RetentionArchiveDays,
-                (int?)row.RetentionArchiveMonths,
-                (int?)row.RetentionArchiveYears,
-                (string?)row.FinalDestination,
-                (string?)row.NormativeReference
+                Name: string.IsNullOrWhiteSpace(displayName) ? "Sem classificação" : displayName,
+                Code: code,
+                PlanVersionNo: isLegacy ? null : (int?)row.PlanVersionNo,
+                PlanVersionTitle: planTitle,
+                RetentionStartEvent: (string?)row.RetentionStartEvent,
+                RetentionActiveDays: (int?)row.RetentionActiveDays,
+                RetentionActiveMonths: (int?)row.RetentionActiveMonths,
+                RetentionActiveYears: (int?)row.RetentionActiveYears,
+                RetentionArchiveDays: (int?)row.RetentionArchiveDays,
+                RetentionArchiveMonths: (int?)row.RetentionArchiveMonths,
+                RetentionArchiveYears: (int?)row.RetentionArchiveYears,
+                FinalDestination: (string?)row.FinalDestination,
+                NormativeReference: (string?)row.NormativeReference,
+                CurrentTermText: (string?)row.CurrentTermText,
+                IntermediateTermText: (string?)row.IntermediateTermText,
+                HasError: false,
+                DiagnosticCode: null,
+                CorrelationId: null,
+                IsLegacyUnversioned: isLegacy,
+                IsInactive: isInactive
             );
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Falha ao resolver classificação arquivística. Tenant={TenantId} ClassificationId={ClassificationId}", tenantId, classificationId);
-            return new DocumentClassificationInfo("Sem classificação", null, null, null, null, null, null, null, null, null, null, null, null);
+            _logger.LogError(ex, "Falha ao resolver classificação arquivística. Tenant={TenantId} ClassificationId={ClassificationId} CorrId={CorrelationId}", tenantId, classificationId, correlationId);
+            return new DocumentClassificationInfo(
+                Name: $"Erro ao consultar classificação (ID: {correlationId})",
+                Code: null,
+                PlanVersionNo: null,
+                PlanVersionTitle: null,
+                RetentionStartEvent: null,
+                RetentionActiveDays: null,
+                RetentionActiveMonths: null,
+                RetentionActiveYears: null,
+                RetentionArchiveDays: null,
+                RetentionArchiveMonths: null,
+                RetentionArchiveYears: null,
+                FinalDestination: null,
+                NormativeReference: null,
+                HasError: true,
+                DiagnosticCode: "QUERY_UNAVAILABLE",
+                CorrelationId: correlationId);
         }
     }
 
     private async Task<DocumentRetentionInfo> ResolveDocumentRetentionInfoAsync(Guid tenantId, DocumentDetailsDto doc, DocumentClassificationInfo classificationInfo, CancellationToken ct)
     {
+        if (classificationInfo.HasError)
+        {
+            return new DocumentRetentionInfo(
+                Status: "ERROR",
+                StatusLabel: "Consulta indisponível",
+                StatusCss: "bg-danger",
+                BasisDateFormatted: null,
+                DueDateFormatted: null,
+                StartEvent: null,
+                ActivePhase: null,
+                ArchivePhase: null,
+                FinalDestination: null,
+                NormativeReference: null,
+                PendingReason: $"Falha ao consultar regras da classe (CorrelationId: {classificationInfo.CorrelationId}). Use 'Tentar novamente'.",
+                HasCalculation: false,
+                HasError: true,
+                CorrelationId: classificationInfo.CorrelationId);
+        }
+
         if (!doc.ClassificationId.HasValue || classificationInfo.Code is null)
         {
             return new DocumentRetentionInfo(
-                null,
-                "Sem temporalidade",
-                "bg-secondary",
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                "Documento sem classificação arquivística. Aplique uma classe do PCD vigente para calcular os prazos de guarda.",
-                false
+                Status: null,
+                StatusLabel: "Sem temporalidade",
+                StatusCss: "bg-secondary",
+                BasisDateFormatted: null,
+                DueDateFormatted: null,
+                StartEvent: null,
+                ActivePhase: null,
+                ArchivePhase: null,
+                FinalDestination: null,
+                NormativeReference: null,
+                PendingReason: "Documento sem classificação arquivística. Aplique uma classe do PCD vigente para calcular os prazos de guarda.",
+                HasCalculation: false
             );
         }
 
         DateTime? basisAt = null;
         DateTime? dueAt = null;
         string? status = null;
+        bool hasHold = false;
+        bool hasPendingRecalc = false;
+        string? recalcLastError = null;
+        var corrId = Guid.NewGuid().ToString("N")[..8];
 
         try
         {
             const string sql = """
-SELECT retention_basis_at, retention_due_at, retention_status
-FROM ged.document
-WHERE tenant_id = @tenantId AND id = @documentId
+SELECT
+  d.retention_basis_at,
+  d.retention_due_at,
+  d.retention_status,
+  d.retention_hold,
+  p.last_error as recalc_last_error,
+  (p.id IS NOT NULL AND p.resolved_at IS NULL) as is_recalc_pending
+FROM ged.document d
+LEFT JOIN ged.ai_retention_recalc_pending p
+  ON p.tenant_id = d.tenant_id AND p.document_id = d.id AND p.resolved_at IS NULL
+WHERE d.tenant_id = @tenantId AND d.id = @documentId
 LIMIT 1;
 """;
             await using var con = await _db.OpenAsync(ct);
-            var row = await con.QueryFirstOrDefaultAsync<dynamic>(new CommandDefinition(sql, new { tenantId, documentId = doc.Id }, cancellationToken: ct));
+            var row = await con.QueryFirstOrDefaultAsync<dynamic>(
+                new CommandDefinition(sql, new { tenantId, documentId = doc.Id }, cancellationToken: ct));
+
             if (row is not null)
             {
                 basisAt = (DateTime?)row.retention_basis_at;
                 dueAt = (DateTime?)row.retention_due_at;
                 status = (string?)row.retention_status;
+                hasHold = (bool?)row.retention_hold ?? false;
+                hasPendingRecalc = (bool?)row.is_recalc_pending ?? false;
+                recalcLastError = (string?)row.recalc_last_error;
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Falha ao consultar estado de temporalidade de documento. DocumentId={DocumentId}", doc.Id);
+            _logger.LogError(ex, "Falha ao consultar estado de temporalidade. DocumentId={DocumentId} CorrId={CorrId}", doc.Id, corrId);
+            return new DocumentRetentionInfo(
+                Status: "ERROR",
+                StatusLabel: "Consulta indisponível",
+                StatusCss: "bg-danger",
+                BasisDateFormatted: null,
+                DueDateFormatted: null,
+                StartEvent: null,
+                ActivePhase: null,
+                ArchivePhase: null,
+                FinalDestination: null,
+                NormativeReference: null,
+                PendingReason: $"Não foi possível consultar os dados de temporalidade (CorrelationId: {corrId}). Tente novamente.",
+                HasCalculation: false,
+                HasError: true,
+                CorrelationId: corrId);
         }
 
-        static string FormatPhase(int? days, int? months, int? years)
+        static string FormatPhase(int? days, int? months, int? years, string? termText)
         {
+            if (!string.IsNullOrWhiteSpace(termText)) return termText;
             var parts = new List<string>();
             if (years.HasValue && years.Value > 0) parts.Add($"{years.Value} {(years.Value == 1 ? "ano" : "anos")}");
             if (months.HasValue && months.Value > 0) parts.Add($"{months.Value} {(months.Value == 1 ? "mês" : "meses")}");
             if (days.HasValue && days.Value > 0) parts.Add($"{days.Value} {(days.Value == 1 ? "dia" : "dias")}");
-            return parts.Count > 0 ? string.Join(" e ", parts) : "Imediato";
+            if (parts.Count > 0) return string.Join(" e ", parts);
+            if (days == 0 && months == 0 && years == 0) return "Imediato";
+            return "Não definido";
         }
 
-        var activePhase = FormatPhase(classificationInfo.RetentionActiveDays, classificationInfo.RetentionActiveMonths, classificationInfo.RetentionActiveYears);
-        var archivePhase = FormatPhase(classificationInfo.RetentionArchiveDays, classificationInfo.RetentionArchiveMonths, classificationInfo.RetentionArchiveYears);
-        var finalDest = string.IsNullOrWhiteSpace(classificationInfo.FinalDestination) ? "Conforme PCD" : classificationInfo.FinalDestination;
+        var activePhase = FormatPhase(classificationInfo.RetentionActiveDays, classificationInfo.RetentionActiveMonths, classificationInfo.RetentionActiveYears, classificationInfo.CurrentTermText);
+        var archivePhase = FormatPhase(classificationInfo.RetentionArchiveDays, classificationInfo.RetentionArchiveMonths, classificationInfo.RetentionArchiveYears, classificationInfo.IntermediateTermText);
+        var isPermanent = string.Equals(classificationInfo.FinalDestination, "GUARDA_PERMANENTE", StringComparison.OrdinalIgnoreCase);
+        var finalDest = isPermanent ? "Guarda Permanente" : (string.IsNullOrWhiteSpace(classificationInfo.FinalDestination) ? "Conforme PCD" : classificationInfo.FinalDestination);
+
         var startEvent = classificationInfo.RetentionStartEvent switch
         {
             "ENCERRAMENTO" => "Encerramento do processo/documento",
@@ -2314,14 +2436,26 @@ LIMIT 1;
             _ => classificationInfo.RetentionStartEvent ?? "Criação do documento"
         };
 
-        var hasCalculation = dueAt.HasValue;
+        bool hasCalculation = dueAt.HasValue;
         string statusLabel;
         string statusCss;
         string? pendingReason = null;
 
-        if (hasCalculation)
+        if (hasHold)
         {
-            if (dueAt.Value < DateTime.UtcNow)
+            statusLabel = "Guarda suspensa (Hold)";
+            statusCss = "bg-warning text-dark";
+            pendingReason = "Contagem suspensa por retenção legal/administrativa (Hold ativo).";
+        }
+        else if (isPermanent)
+        {
+            statusLabel = "Guarda Permanente";
+            statusCss = "bg-info text-dark";
+            pendingReason = "Documento de valor histórico/probatório destinado à guarda permanente (sem eliminação).";
+        }
+        else if (hasCalculation)
+        {
+            if (dueAt!.Value < DateTime.UtcNow)
             {
                 statusLabel = "Prazo vencido";
                 statusCss = "bg-danger";
@@ -2339,14 +2473,28 @@ LIMIT 1;
         }
         else
         {
-            statusLabel = "Cálculo pendente";
-            statusCss = "bg-warning text-dark";
-            pendingReason = classificationInfo.RetentionStartEvent switch
+            if (status == "EVENT_PENDING" || (classificationInfo.RetentionStartEvent is "ENCERRAMENTO" or "ARQUIVAMENTO" && !basisAt.HasValue))
             {
-                "ENCERRAMENTO" => "Aguardando encerramento formal para início da contagem dos prazos de guarda.",
-                "ARQUIVAMENTO" => "Aguardando arquivamento para início da contagem dos prazos de guarda.",
-                _ => "Temporalidade em fila para recálculo automático."
-            };
+                statusLabel = "Aguardando evento";
+                statusCss = "bg-warning text-dark";
+                pendingReason = classificationInfo.RetentionStartEvent == "ENCERRAMENTO"
+                    ? "Aguardando encerramento formal do protocolo/processo para início da contagem dos prazos de guarda."
+                    : "Aguardando arquivamento do documento para início da contagem dos prazos de guarda.";
+            }
+            else if (hasPendingRecalc)
+            {
+                statusLabel = "Recálculo em fila";
+                statusCss = "bg-info text-dark";
+                pendingReason = !string.IsNullOrWhiteSpace(recalcLastError)
+                    ? $"Recálculo automático em tentativa de recuperação: {recalcLastError}"
+                    : "Temporalidade em fila de processamento automático.";
+            }
+            else
+            {
+                statusLabel = "Cálculo pendente";
+                statusCss = "bg-warning text-dark";
+                pendingReason = "Temporalidade aguardando processamento pelo motor arquivístico.";
+            }
         }
 
         return new DocumentRetentionInfo(
@@ -2361,7 +2509,9 @@ LIMIT 1;
             finalDest,
             classificationInfo.NormativeReference,
             pendingReason,
-            hasCalculation
+            hasCalculation,
+            false,
+            null
         );
     }
 

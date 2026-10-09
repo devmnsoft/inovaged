@@ -1498,7 +1498,9 @@
     async function navigateToUploadedFolder(folderId, folderName, createdDocuments = [], options = {}) {
         if (!folderId || folderId === '00000000-0000-0000-0000-000000000000') {
             console.warn('[BulkUpload] pasta de destino inválida após upload', { folderId, folderName });
-            window.location.reload();
+            if (!hasBatchFailures()) {
+                window.location.reload();
+            }
             return;
         }
         console.log('[BulkUpload] navegando para pasta do upload', { folderId, folderName, createdDocuments });
@@ -1511,7 +1513,7 @@
         if (!options.preserveCurrentFolder) history.pushState({}, '', url.toString());
         if (window.GedFolderNavigation?.loadFolderDocuments) {
             await window.GedFolderNavigation.loadFolderDocuments(folderId, { forceRefresh: true, visualFolderId: options.preserveCurrentFolder ? (getSelectedUploadFolder()?.folderId || state.requestedFolderId || folderId) : (state.requestedFolderId || getSelectedUploadFolder()?.folderId || folderId), listingFolderId: folderId, highlightDocumentIds: createdDocuments.map(x => x.documentId).filter(Boolean), folderName }, !options.preserveCurrentFolder);
-        } else {
+        } else if (!hasBatchFailures()) {
             window.location.href = url.toString();
         }
     }

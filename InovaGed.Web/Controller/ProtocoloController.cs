@@ -744,6 +744,63 @@ where tenant_id=@TenantId and id=@PendingId and protocolo_id=@ProtocolId
         if (pendente > 0) { TempData["erro"] = "Há movimentação pendente. Receba, confirme o retorno ou estorne antes de encerrar. Arquivar o protocolo não elimina o documento nem cumpre a temporalidade."; return RedirectToAction(nameof(Details), new { id }); }
         await db.ExecuteAsync("update ged.protocolo set status=@Status, situacao_custodia='ENCERRADO', data_encerramento=now(),justificativa_encerramento=@Just,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id", new { TenantId, Id = id, Status = status, Just = just, UserId }, tx);
         await db.ExecuteAsync("insert into ged.protocolo_tramitacao(tenant_id,protocolo_id,setor_origem_id,setor_destino_id,usuario_id,usuario_nome,acao,status_anterior,status_novo,justificativa,ativa) values(@TenantId,@Id,@Setor,@Setor,@UserId,@UserName,@Acao,@Ant,@Novo,@Just,false)", new { TenantId, Id = id, Setor = p.SetorAtualId, UserId, UserName = UserNameSafe, Acao = acao, Ant = p.Status, Novo = status, Just = just }, tx);
+
+        // Integrar eventos de protocolo com temporalidade para documentos GED vinculados cuja regra use este evento
+        var isEncerramento = status is "FINALIZADO" or "DEFERIDO" or "INDEFERIDO";
+        var isArquivamento = status == "ARQUIVADO";
+
+        if (isEncerramento || isArquivamento)
+        {
+            const string findDocsSql = """
+SELECT 
+    d.id as DocumentId,
+    d.closed_at as ClosedAt,
+    d.archived_at as ArchivedAt,
+    COALESCE(pvi.retention_start_event::text, cp.retention_start_event::text) as StartEvent
+FROM ged.protocolo_documento_ged pdg
+JOIN ged.document d ON d.tenant_id = pdg.tenant_id AND d.id = pdg.ged_document_id AND d.reg_status = 'A'
+LEFT JOIN ged.classification_plan cp ON cp.tenant_id = d.tenant_id AND cp.id = d.classification_id
+LEFT JOIN ged.classification_plan_version_item pvi 
+    ON pvi.tenant_id = d.tenant_id 
+   AND pvi.version_id = d.classification_version_id 
+   AND pvi.classification_id = d.classification_id
+WHERE pdg.tenant_id = @TenantId 
+  AND pdg.protocolo_id = @Id 
+  AND pdg.reg_status = 'A'
+FOR UPDATE OF d;
+""";
+            var linkedDocs = (await db.QueryAsync<(Guid DocumentId, DateTime? ClosedAt, DateTime? ArchivedAt, string? StartEvent)>(
+                findDocsSql, new { TenantId, Id = id }, tx)).ToList();
+
+            foreach (var docItem in linkedDocs)
+            {
+                if (isEncerramento && docItem.StartEvent == "ENCERRAMENTO" && !docItem.ClosedAt.HasValue)
+                {
+                    await db.ExecuteAsync("""
+UPDATE ged.document 
+SET closed_at = NOW(), updated_at = NOW(), updated_by = @UserId
+WHERE tenant_id = @TenantId AND id = @DocId;
+
+INSERT INTO ged.ai_retention_recalc_pending (tenant_id, document_id, reason, requested_by, requested_at)
+VALUES (@TenantId, @DocId, 'Disparo de evento de temporalidade por encerramento de protocolo', @UserId, NOW())
+ON CONFLICT (tenant_id, document_id) WHERE resolved_at IS NULL DO NOTHING;
+""", new { TenantId, DocId = docItem.DocumentId, UserId }, tx);
+                }
+                else if (isArquivamento && docItem.StartEvent == "ARQUIVAMENTO" && !docItem.ArchivedAt.HasValue)
+                {
+                    await db.ExecuteAsync("""
+UPDATE ged.document 
+SET archived_at = NOW(), updated_at = NOW(), updated_by = @UserId
+WHERE tenant_id = @TenantId AND id = @DocId;
+
+INSERT INTO ged.ai_retention_recalc_pending (tenant_id, document_id, reason, requested_by, requested_at)
+VALUES (@TenantId, @DocId, 'Disparo de evento de temporalidade por arquivamento de protocolo', @UserId, NOW())
+ON CONFLICT (tenant_id, document_id) WHERE resolved_at IS NULL DO NOTHING;
+""", new { TenantId, DocId = docItem.DocumentId, UserId }, tx);
+                }
+            }
+        }
+
         tx.Commit();
         return RedirectToAction(nameof(Details), new { id });
     }

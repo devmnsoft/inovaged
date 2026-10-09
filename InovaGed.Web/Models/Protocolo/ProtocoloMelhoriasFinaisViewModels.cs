@@ -83,6 +83,9 @@ public sealed class ProtocoloGedVinculoVM
     public string? GedDocumentVersionNumber { get; set; }
     public string? GedClassificationCode { get; set; }
     public string? GedClassificationName { get; set; }
+    public string? GedPlanVersionTitle { get; set; }
+    public int? GedPlanVersionNo { get; set; }
+    public string? GedDocumentStatus { get; set; }
     public string TipoVinculo { get; set; } = "";
     public string? Observacao { get; set; }
     public string? CriadoPorNome { get; set; }

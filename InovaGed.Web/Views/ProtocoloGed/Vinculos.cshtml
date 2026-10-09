@@ -54,14 +54,26 @@
                             {
                                 <span class="badge bg-secondary-subtle text-secondary border">@v.GedDocumentVersionNumber</span>
                             }
+                            else
+                            {
+                                <span class="badge bg-light text-muted border">Sem versão</span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(v.GedDocumentStatus))
+                            {
+                                <span class="badge bg-dark-subtle text-dark border ms-1">@v.GedDocumentStatus</span>
+                            }
                         </td>
                         <td>
                             @if (!string.IsNullOrWhiteSpace(v.GedClassificationName) || !string.IsNullOrWhiteSpace(v.GedClassificationCode))
                             {
-                                <span class="badge bg-primary-subtle text-primary border">
+                                <div class="badge bg-primary-subtle text-primary border text-start text-wrap">
                                     <i class="bi bi-diagram-3 me-1"></i>
                                     @(string.IsNullOrWhiteSpace(v.GedClassificationCode) ? v.GedClassificationName : $"{v.GedClassificationCode} — {v.GedClassificationName}")
-                                </span>
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(v.GedPlanVersionTitle))
+                                {
+                                    <div class="small text-muted mt-1"><i class="bi bi-journal-text me-1"></i>Plano: @v.GedPlanVersionTitle</div>
+                                }
                             }
                             else
                             {

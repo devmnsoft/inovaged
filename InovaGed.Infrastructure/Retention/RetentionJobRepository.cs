@@ -18,10 +18,6 @@ public sealed class RetentionJobRepository : IRetentionJobRepository
 
     public async Task<int> RecalculateAsync(Guid tenantId, int dueSoonDays, CancellationToken ct)
     {
-        // ✅ AJUSTE AQUI se o seu nome de tabela for diferente:
-        // ged.document  + coluna classification_id
-        // e ged.classification_plan com os campos de retenção
-
         const string sql = @"
 with base as (
   select
@@ -31,17 +27,23 @@ with base as (
     d.archived_at,
     d.closed_at,
     d.classification_id,
-    c.retention_start_event::text as start_event,
-    c.retention_active_days,
-    c.retention_active_months,
-    c.retention_active_years,
-    c.retention_archive_days,
-    c.retention_archive_months,
-    c.retention_archive_years
+    d.retention_hold,
+    coalesce(pvi.retention_start_event::text, c.retention_start_event::text) as start_event,
+    coalesce(pvi.final_destination::text, c.final_destination::text) as final_dest,
+    coalesce(pvi.retention_active_days, c.retention_active_days, 0) as retention_active_days,
+    coalesce(pvi.retention_active_months, c.retention_active_months, 0) as retention_active_months,
+    coalesce(pvi.retention_active_years, c.retention_active_years, 0) as retention_active_years,
+    coalesce(pvi.retention_archive_days, c.retention_archive_days, 0) as retention_archive_days,
+    coalesce(pvi.retention_archive_months, c.retention_archive_months, 0) as retention_archive_months,
+    coalesce(pvi.retention_archive_years, c.retention_archive_years, 0) as retention_archive_years
   from ged.document d
   left join ged.classification_plan c
     on c.tenant_id = d.tenant_id
    and c.id = d.classification_id
+  left join ged.classification_plan_version_item pvi
+    on pvi.tenant_id = d.tenant_id
+   and pvi.version_id = d.classification_version_id
+   and pvi.classification_id = d.classification_id
   where d.tenant_id = @tenantId
 ),
 calc as (
@@ -49,20 +51,25 @@ calc as (
     id,
     tenant_id,
     classification_id,
+    retention_hold,
+    final_dest,
     case
       when classification_id is null then null
-      when start_event = 'ARQUIVAMENTO' then coalesce(archived_at, created_at)
-      when start_event = 'ENCERRAMENTO' then coalesce(closed_at, created_at)
+      when start_event = 'ARQUIVAMENTO' then archived_at
+      when start_event = 'ENCERRAMENTO' then closed_at
       when start_event = 'ABERTURA' then created_at
       else created_at
     end as basis_at,
     case
       when classification_id is null then null
+      when final_dest = 'GUARDA_PERMANENTE' then null
+      when start_event = 'ARQUIVAMENTO' and archived_at is null then null
+      when start_event = 'ENCERRAMENTO' and closed_at is null then null
       else
         (
           case
-            when start_event = 'ARQUIVAMENTO' then coalesce(archived_at, created_at)
-            when start_event = 'ENCERRAMENTO' then coalesce(closed_at, created_at)
+            when start_event = 'ARQUIVAMENTO' then archived_at
+            when start_event = 'ENCERRAMENTO' then closed_at
             when start_event = 'ABERTURA' then created_at
             else created_at
           end
@@ -79,6 +86,9 @@ set
   retention_due_at = c.due_at,
   retention_status = case
     when c.classification_id is null then null
+    when coalesce(c.retention_hold, false) = true then 'HOLD'
+    when c.final_dest = 'GUARDA_PERMANENTE' then 'PERMANENT_RECORD'
+    when c.basis_at is null then 'EVENT_PENDING'
     when c.due_at is null then null
     when c.due_at < now() then 'OVERDUE'
     when c.due_at <= (now() + make_interval(days => @dueSoonDays)) then 'DUE_SOON'
@@ -133,7 +143,8 @@ select
 
     public Task<int> RecalculateOneAsync(System.Data.IDbConnection connection, System.Data.IDbTransaction transaction, Guid tenantId, Guid documentId, int dueSoonDays, CancellationToken ct)
         => connection.ExecuteAsync(new CommandDefinition(RecalculateOneSql, new { tenantId, documentId, dueSoonDays }, transaction, cancellationToken: ct));
-        const string RecalculateOneSql = @"
+
+    private const string RecalculateOneSql = @"
 with base as (
   select
     d.id,
@@ -142,17 +153,23 @@ with base as (
     d.archived_at,
     d.closed_at,
     d.classification_id,
-    c.retention_start_event::text as start_event,
-    c.retention_active_days,
-    c.retention_active_months,
-    c.retention_active_years,
-    c.retention_archive_days,
-    c.retention_archive_months,
-    c.retention_archive_years
+    d.retention_hold,
+    coalesce(pvi.retention_start_event::text, c.retention_start_event::text) as start_event,
+    coalesce(pvi.final_destination::text, c.final_destination::text) as final_dest,
+    coalesce(pvi.retention_active_days, c.retention_active_days, 0) as retention_active_days,
+    coalesce(pvi.retention_active_months, c.retention_active_months, 0) as retention_active_months,
+    coalesce(pvi.retention_active_years, c.retention_active_years, 0) as retention_active_years,
+    coalesce(pvi.retention_archive_days, c.retention_archive_days, 0) as retention_archive_days,
+    coalesce(pvi.retention_archive_months, c.retention_archive_months, 0) as retention_archive_months,
+    coalesce(pvi.retention_archive_years, c.retention_archive_years, 0) as retention_archive_years
   from ged.document d
   left join ged.classification_plan c
     on c.tenant_id = d.tenant_id
    and c.id = d.classification_id
+  left join ged.classification_plan_version_item pvi
+    on pvi.tenant_id = d.tenant_id
+   and pvi.version_id = d.classification_version_id
+   and pvi.classification_id = d.classification_id
   where d.tenant_id = @tenantId
     and d.id = @documentId
 ),
@@ -161,20 +178,25 @@ calc as (
     id,
     tenant_id,
     classification_id,
+    retention_hold,
+    final_dest,
     case
       when classification_id is null then null
-      when start_event = 'ARQUIVAMENTO' then coalesce(archived_at, created_at)
-      when start_event = 'ENCERRAMENTO' then coalesce(closed_at, created_at)
+      when start_event = 'ARQUIVAMENTO' then archived_at
+      when start_event = 'ENCERRAMENTO' then closed_at
       when start_event = 'ABERTURA' then created_at
       else created_at
     end as basis_at,
     case
       when classification_id is null then null
+      when final_dest = 'GUARDA_PERMANENTE' then null
+      when start_event = 'ARQUIVAMENTO' and archived_at is null then null
+      when start_event = 'ENCERRAMENTO' and closed_at is null then null
       else
         (
           case
-            when start_event = 'ARQUIVAMENTO' then coalesce(archived_at, created_at)
-            when start_event = 'ENCERRAMENTO' then coalesce(closed_at, created_at)
+            when start_event = 'ARQUIVAMENTO' then archived_at
+            when start_event = 'ENCERRAMENTO' then closed_at
             when start_event = 'ABERTURA' then created_at
             else created_at
           end
@@ -191,6 +213,9 @@ set
   retention_due_at   = c.due_at,
   retention_status   = case
     when c.classification_id is null then null
+    when coalesce(c.retention_hold, false) = true then 'HOLD'
+    when c.final_dest = 'GUARDA_PERMANENTE' then 'PERMANENT_RECORD'
+    when c.basis_at is null then 'EVENT_PENDING'
     when c.due_at is null then null
     when c.due_at < now() then 'OVERDUE'
     when c.due_at <= (now() + make_interval(days => @dueSoonDays)) then 'DUE_SOON'
