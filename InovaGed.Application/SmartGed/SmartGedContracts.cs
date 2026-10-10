@@ -26,8 +26,8 @@ public sealed record DocumentClassificationSuggestionItem(Guid Id, Guid Document
 public sealed record DocumentRetentionSuggestionItem(Guid Id, Guid DocumentId, string? Phase, string? FinalDestination, string? TriggerEvent, DateOnly? RetentionUntil, string? Reason, decimal Confidence, string Status);
 public sealed record DocumentQualityIssueItem(Guid Id, Guid DocumentId, string Type, string Severity, string Title, string? RecommendedAction, string Status);
 public sealed record DocumentIntelligenceDetails(Guid AnalysisId, Guid DocumentId, string Status, string? Summary, string? DocumentType, string? Subject, DateOnly? DetectedDate, IReadOnlyDictionary<string, IReadOnlyList<string>> MaskedIdentifiers, IReadOnlyList<string> SensitiveIndicators, decimal Confidence, DocumentClassificationSuggestionItem? Classification, DocumentRetentionSuggestionItem? Retention, IReadOnlyList<DocumentQualityIssueItem> Issues);
-public sealed record SmartGedSearchQuery(Guid TenantId, Guid? UserId, string Text, int Limit = 50);
-public sealed record SmartGedSearchItem(Guid DocumentId, string Document, string? Summary, string? Classification, string? PhysicalLocation, string QualityStatus, string Excerpt);
+public sealed record SmartGedSearchQuery(Guid TenantId, Guid? UserId, string Text, int Limit = 50, Guid? FolderId = null, Guid? ClassificationId = null, Guid? TypeId = null, DateTime? CreatedAfter = null, DateTime? CreatedBefore = null, string? RetentionStatus = null);
+public sealed record SmartGedSearchItem(Guid DocumentId, string Document, string? Summary, string? Classification, string? PhysicalLocation, string QualityStatus, string Excerpt, int? VersionNumber = null, string? RetentionStatus = null);
 public sealed record SmartGedSearchResult(string Query, IReadOnlyList<SmartGedSearchItem> Items, int ExecutionMs);
 public sealed record SmartGedDashboard(int WithoutOcr, int WithoutClassification, int Sensitive, int LowConfidence, int PendingSuggestions, int OpenIssues);
 public sealed record SmartGedReviewQueue(IReadOnlyList<DocumentClassificationSuggestionItem> Classifications, IReadOnlyList<DocumentRetentionSuggestionItem> Retentions);

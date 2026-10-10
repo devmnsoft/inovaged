@@ -32,4 +32,36 @@
 .ig-fade-in { animation: igFadeIn 260ms ease-out both; } @keyframes igFadeIn { from { opacity: 0; transform: translateY(6px); } }
 .ig-skeleton { overflow: hidden; color: transparent; border-radius: 8px; background: #e8edf4; }.ig-skeleton::after { display: block; width: 45%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,.72), transparent); animation: igShimmer 1.5s infinite; content: ""; } @keyframes igShimmer { to { transform: translateX(230%); } }
 
+.ig-btn { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; padding: .5rem 1rem; font-weight: 600; border-radius: var(--ig-radius-button, 10px); border: 1px solid transparent; cursor: pointer; transition: background-color var(--ig-motion-normal, 180ms) ease, border-color var(--ig-motion-normal, 180ms) ease, color var(--ig-motion-normal, 180ms) ease; text-decoration: none; font-size: 0.875rem; }
+.ig-btn-primary { background-color: var(--ig-primary-600, #2563eb); color: #fff; }
+.ig-btn-primary:hover { background-color: var(--ig-primary-700, #1d4ed8); color: #fff; }
+.ig-btn-secondary { background-color: var(--ig-surface, #fff); border-color: var(--ig-border, #e2e8f0); color: var(--ig-text, #0f172a); }
+.ig-btn-secondary:hover { background-color: var(--ig-surface-soft, #f8fafc); color: var(--ig-text, #0f172a); }
+
+/* Accessible form contrast standards */
+.form-control, .form-select { color: var(--ig-text, #0f172a); background-color: var(--ig-surface, #ffffff); border: 1px solid var(--ig-border-strong, #8494a7); font-size: 0.875rem; }
+.form-control::placeholder, textarea::placeholder { color: #475569; opacity: 1; }
+.form-control:focus, .form-select:focus { color: var(--ig-text, #0f172a); background-color: var(--ig-surface, #ffffff); border-color: var(--ig-primary-600, #2563eb); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2); outline: none; }
+.form-control[readonly], textarea[readonly] { color: #1e293b; background-color: #f8fafc; border-color: #cbd5e1; cursor: default; }
+.form-control:disabled, .form-select:disabled, textarea:disabled { color: #475569; background-color: #f1f5f9; border-color: #cbd5e1; opacity: 0.95; cursor: not-allowed; }
+.form-control:-webkit-autofill, .form-control:-webkit-autofill:hover, .form-control:-webkit-autofill:focus,
+.form-select:-webkit-autofill, .form-select:-webkit-autofill:hover, .form-select:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--ig-text, #0f172a) !important; caret-color: var(--ig-text, #0f172a); box-shadow: inset 0 0 0 1000px #ffffff !important; transition: background-color 5000s ease-in-out 0s;
+}
+
+/* Standardized 'Como usar' Help Guide */
+.ig-help-guide, details.ig-help-block { margin-bottom: 1rem; padding: 0.75rem 1rem; background-color: #eff6ff; border: 1px solid #bfdbfe; border-radius: var(--ig-radius-md, 12px); color: #1e3a8a; font-size: 0.84rem; line-height: 1.5; }
+details.ig-help-block summary { font-weight: 700; cursor: pointer; color: #1d4ed8; display: flex; align-items: center; gap: 0.4rem; user-select: none; }
+details.ig-help-block summary::before { content: "ⓘ"; font-size: 0.95rem; font-weight: 800; }
+details.ig-help-block[open] summary { margin-bottom: 0.5rem; }
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
 @media (max-width: 767.98px) { .ig-page-hero { align-items: stretch; flex-direction: column; }.ig-page-hero .ig-button { align-self: flex-start; }.ig-alert { align-items: flex-start; flex-wrap: wrap; }.ig-alert .ig-button { width: 100%; margin-left: 0; }.ig-table-shell__toolbar { align-items: stretch; flex-direction: column; } }

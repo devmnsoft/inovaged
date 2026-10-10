@@ -15,12 +15,14 @@ public sealed class ProtocoloCentralService : IProtocoloCentralService
     private const string ClosedSql = "('FINALIZADO','ARQUIVADO','CANCELADO','DEFERIDO','INDEFERIDO')";
     private readonly IDbConnectionFactory _db;
     private readonly IAbacAuthorizationService _abac;
+    private readonly InovaGed.Application.Retention.IRetentionJobRepository? _retentionJobs;
     private readonly ILogger<ProtocoloCentralService> _logger;
 
-    public ProtocoloCentralService(IDbConnectionFactory db, ILogger<ProtocoloCentralService> logger, IAbacAuthorizationService abac)
+    public ProtocoloCentralService(IDbConnectionFactory db, ILogger<ProtocoloCentralService> logger, IAbacAuthorizationService abac, InovaGed.Application.Retention.IRetentionJobRepository? retentionJobs = null)
     {
         _db = db;
         _abac = abac;
+        _retentionJobs = retentionJobs;
         _logger = logger;
     }
 
@@ -292,6 +294,147 @@ values (@TenantId, @Id, @Setor, @Setor, @UserId, @UserName, 'REABERTURA', @Anter
 """, new { actor.TenantId, Id = protocoloId, Setor = protocol.SetorAtualId, actor.UserId, UserName = actor.UserName, Anterior = protocol.Status, Justificativa = justificativa.Trim(), actor.Ip, Ua = actor.UserAgent }, tx, cancellationToken: ct));
             return ProtocoloCommandResult.Ok("Processo reaberto. A temporalidade e os documentos não foram alterados.");
         }, ct);
+
+    public Task<ProtocoloCommandResult> CloseAsync(ProtocoloActor actor, Guid protocoloId, string justificativa, string? decisao, CancellationToken ct)
+        => MutateAsync(actor, async (conn, tx) =>
+        {
+            if (string.IsNullOrWhiteSpace(justificativa)) return ProtocoloCommandResult.Fail("Informe a justificativa do encerramento.");
+            var protocol = await LockProtocolAsync(conn, tx, actor.TenantId, protocoloId, ct);
+            if (protocol is null) return ProtocoloCommandResult.Fail("Protocolo não encontrado.");
+            if (ProtocolCustodyRules.IsClosed(protocol.Status)) return ProtocoloCommandResult.Ok("O processo já está encerrado.", idempotent: true);
+
+            var pending = await conn.ExecuteScalarAsync<int>(new CommandDefinition(
+                "select count(*) from ged.protocolo_tramitacao where tenant_id=@TenantId and protocolo_id=@Id and reg_status='A' and ativa=true and situacao_movimentacao in ('AGUARDANDO_RECEBIMENTO','DEVOLUCAO_PENDENTE')",
+                new { actor.TenantId, Id = protocoloId }, tx, cancellationToken: ct));
+            if (pending > 0) return ProtocoloCommandResult.Fail("Há movimentação pendente. Receba, confirme o retorno ou estorne antes de encerrar.");
+
+            var newStatus = string.IsNullOrWhiteSpace(decisao) ? "FINALIZADO" : decisao.Trim().ToUpperInvariant();
+            if (newStatus is not ("FINALIZADO" or "DEFERIDO" or "INDEFERIDO")) newStatus = "FINALIZADO";
+
+            await conn.ExecuteAsync(new CommandDefinition("""
+update ged.protocolo
+set status=@NewStatus, situacao_custodia='ENCERRADO', data_encerramento=now(),
+    justificativa_encerramento=@Justificativa, updated_at=now(), updated_by=@UserId
+where tenant_id=@TenantId and id=@Id;
+""", new { actor.TenantId, Id = protocoloId, NewStatus = newStatus, Justificativa = justificativa.Trim(), actor.UserId }, tx, cancellationToken: ct));
+
+            await conn.ExecuteAsync(new CommandDefinition("""
+insert into ged.protocolo_tramitacao(
+    tenant_id, protocolo_id, setor_origem_id, setor_destino_id, usuario_id, usuario_nome, acao,
+    status_anterior, status_novo, justificativa, despacho, situacao_movimentacao, ativa, ip, user_agent)
+values (@TenantId, @Id, @Setor, @Setor, @UserId, @UserName, 'ENCERRAMENTO', @Anterior, @NewStatus, @Justificativa, @Despacho, null, false, @Ip, @Ua);
+""", new { actor.TenantId, Id = protocoloId, Setor = protocol.SetorAtualId, actor.UserId, UserName = actor.UserName, Anterior = protocol.Status, NewStatus = newStatus, Justificativa = justificativa.Trim(), Despacho = decisao, actor.Ip, Ua = actor.UserAgent }, tx, cancellationToken: ct));
+
+            await ApplyArchivalEffectAsync(conn, tx, actor.TenantId, protocoloId, protocol.SetorAtualId, actor.UserId, actor.UserName, isEncerramento: true, isArquivamento: false, ct);
+            return ProtocoloCommandResult.Ok("Processo encerrado com sucesso.");
+        }, ct);
+
+    public Task<ProtocoloCommandResult> ArchiveAsync(ProtocoloActor actor, Guid protocoloId, string justificativa, string? localizacaoFisica, CancellationToken ct)
+        => MutateAsync(actor, async (conn, tx) =>
+        {
+            if (string.IsNullOrWhiteSpace(justificativa)) return ProtocoloCommandResult.Fail("Informe a justificativa do arquivamento.");
+            var protocol = await LockProtocolAsync(conn, tx, actor.TenantId, protocoloId, ct);
+            if (protocol is null) return ProtocoloCommandResult.Fail("Protocolo não encontrado.");
+            if (string.Equals(protocol.Status, "ARQUIVADO", StringComparison.OrdinalIgnoreCase)) return ProtocoloCommandResult.Ok("O processo já está arquivado.", idempotent: true);
+
+            var pending = await conn.ExecuteScalarAsync<int>(new CommandDefinition(
+                "select count(*) from ged.protocolo_tramitacao where tenant_id=@TenantId and protocolo_id=@Id and reg_status='A' and ativa=true and situacao_movimentacao in ('AGUARDANDO_RECEBIMENTO','DEVOLUCAO_PENDENTE')",
+                new { actor.TenantId, Id = protocoloId }, tx, cancellationToken: ct));
+            if (pending > 0) return ProtocoloCommandResult.Fail("Há movimentação pendente. Receba, confirme o retorno ou estorne antes de arquivar.");
+
+            await conn.ExecuteAsync(new CommandDefinition("""
+update ged.protocolo
+set status='ARQUIVADO', situacao_custodia='ARQUIVADO', data_encerramento=coalesce(data_encerramento, now()),
+    justificativa_encerramento=@Justificativa, updated_at=now(), updated_by=@UserId
+where tenant_id=@TenantId and id=@Id;
+""", new { actor.TenantId, Id = protocoloId, Justificativa = justificativa.Trim(), actor.UserId }, tx, cancellationToken: ct));
+
+            await conn.ExecuteAsync(new CommandDefinition("""
+insert into ged.protocolo_tramitacao(
+    tenant_id, protocolo_id, setor_origem_id, setor_destino_id, usuario_id, usuario_nome, acao,
+    status_anterior, status_novo, justificativa, observacao, situacao_movimentacao, ativa, ip, user_agent)
+values (@TenantId, @Id, @Setor, @Setor, @UserId, @UserName, 'ARQUIVAMENTO', @Anterior, 'ARQUIVADO', @Justificativa, @Obs, null, false, @Ip, @Ua);
+""", new { actor.TenantId, Id = protocoloId, Setor = protocol.SetorAtualId, actor.UserId, UserName = actor.UserName, Anterior = protocol.Status, Justificativa = justificativa.Trim(), Obs = localizacaoFisica, actor.Ip, Ua = actor.UserAgent }, tx, cancellationToken: ct));
+
+            await ApplyArchivalEffectAsync(conn, tx, actor.TenantId, protocoloId, protocol.SetorAtualId, actor.UserId, actor.UserName, isEncerramento: false, isArquivamento: true, ct);
+            return ProtocoloCommandResult.Ok("Processo arquivado com sucesso.");
+        }, ct);
+
+    private async Task ApplyArchivalEffectAsync(IDbConnection conn, IDbTransaction tx, Guid tenantId, Guid protocoloId, Guid? setorId, Guid userId, string userName, bool isEncerramento, bool isArquivamento, CancellationToken ct)
+    {
+        const string findDocsSql = """
+SELECT 
+    d.id as DocumentId,
+    d.closed_at as ClosedAt,
+    d.archived_at as ArchivedAt,
+    COALESCE(pvi.retention_start_event::text, cp.retention_start_event::text) as StartEvent
+FROM ged.protocolo_documento_ged pdg
+JOIN ged.document d ON d.tenant_id = pdg.tenant_id AND d.id = pdg.ged_document_id AND d.reg_status = 'A'
+LEFT JOIN ged.classification_plan cp ON cp.tenant_id = d.tenant_id AND cp.id = d.classification_id
+LEFT JOIN ged.classification_plan_version_item pvi 
+    ON pvi.tenant_id = d.tenant_id 
+   AND pvi.version_id = d.classification_version_id 
+   AND pvi.classification_id = d.classification_id
+WHERE pdg.tenant_id = @TenantId 
+  AND pdg.protocolo_id = @ProtocoloId 
+  AND pdg.reg_status = 'A'
+FOR UPDATE OF d;
+""";
+        var linkedDocs = (await conn.QueryAsync<(Guid DocumentId, DateTime? ClosedAt, DateTime? ArchivedAt, string? StartEvent)>(
+            new CommandDefinition(findDocsSql, new { TenantId = tenantId, ProtocoloId = protocoloId }, tx, cancellationToken: ct))).ToList();
+
+        foreach (var docItem in linkedDocs)
+        {
+            var otherActiveCount = await conn.ExecuteScalarAsync<int>(new CommandDefinition("""
+SELECT COUNT(1)
+FROM ged.protocolo_documento_ged pdg
+JOIN ged.protocolo p ON p.tenant_id = pdg.tenant_id AND p.id = pdg.protocolo_id AND p.reg_status = 'A'
+WHERE pdg.tenant_id = @TenantId
+  AND pdg.ged_document_id = @DocId
+  AND pdg.protocolo_id <> @ProtocoloId
+  AND pdg.reg_status = 'A'
+  AND UPPER(p.status) NOT IN ('FINALIZADO', 'ENCERRADO', 'ARQUIVADO', 'CANCELADO');
+""", new { TenantId = tenantId, DocId = docItem.DocumentId, ProtocoloId = protocoloId }, tx, cancellationToken: ct));
+
+            if (otherActiveCount > 0)
+            {
+                await conn.ExecuteAsync(new CommandDefinition("""
+INSERT INTO ged.protocolo_tramitacao(
+    tenant_id, protocolo_id, setor_origem_id, setor_destino_id, usuario_id, usuario_nome,
+    acao, status_anterior, status_novo, justificativa, observacao, ativa)
+VALUES (@TenantId, @ProtocoloId, @Setor, @Setor, @UserId, @UserName, 'EFEITO_ARQUIVISTICO', 'ENCERRADO', 'ENCERRADO',
+    'Efeito arquivístico mantido pendente: documento possui outros protocolos ativos vinculados.',
+    @DocInfo, false);
+""", new { TenantId = tenantId, ProtocoloId = protocoloId, Setor = setorId, UserId = userId, UserName = userName, DocInfo = $"Documento {docItem.DocumentId} vinculado a {otherActiveCount} outro(s) protocolo(s) ativo(s)." }, tx, cancellationToken: ct));
+                continue;
+            }
+
+            if (isEncerramento && docItem.StartEvent == "ENCERRAMENTO" && !docItem.ClosedAt.HasValue)
+            {
+                await conn.ExecuteAsync(new CommandDefinition("""
+UPDATE ged.document 
+SET closed_at = NOW(), updated_at = NOW(), updated_by = @UserId
+WHERE tenant_id = @TenantId AND id = @DocId;
+""", new { TenantId = tenantId, DocId = docItem.DocumentId, UserId = userId }, tx, cancellationToken: ct));
+                if (_retentionJobs != null)
+                {
+                    await _retentionJobs.EnqueueRecalculateAsync(conn, tx, tenantId, docItem.DocumentId, "PROTOCOL_CLOSED_EVENT", ct);
+                }
+            }
+            else if (isArquivamento && docItem.StartEvent == "ARQUIVAMENTO" && !docItem.ArchivedAt.HasValue)
+            {
+                await conn.ExecuteAsync(new CommandDefinition("""
+UPDATE ged.document 
+SET archived_at = NOW(), updated_at = NOW(), updated_by = @UserId
+WHERE tenant_id = @TenantId AND id = @DocId;
+""", new { TenantId = tenantId, DocId = docItem.DocumentId, UserId = userId }, tx, cancellationToken: ct));
+                if (_retentionJobs != null)
+                {
+                    await _retentionJobs.EnqueueRecalculateAsync(conn, tx, tenantId, docItem.DocumentId, "PROTOCOL_ARCHIVED_EVENT", ct);
+                }
+            }
+        }
+    }
 
     public async Task<ProtocoloBatchPreview> PreviewBatchAsync(ProtocoloActor actor, ProtocoloLoteCommand command, CancellationToken ct)
     {

@@ -43,6 +43,18 @@ public sealed class UploadChunkService : IUploadChunkService
     {
         if (!request.FolderId.HasValue || request.FolderId.Value == Guid.Empty) return Result<UploadChunkSessionDto>.Fail("VALIDATION", "Selecione uma pasta para enviar documentos.");
         if (request.TotalSizeBytes <= 0) return Result<UploadChunkSessionDto>.Fail("VALIDATION", "Tamanho de arquivo inválido.");
+        try
+        {
+            var drive = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(_root)) ?? "C:\\");
+            if (drive.IsReady && drive.AvailableFreeSpace < request.TotalSizeBytes)
+            {
+                return Result<UploadChunkSessionDto>.Fail("DISK_SPACE", "Espaço em disco insuficiente no servidor para concluir o envio.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Não foi possível validar espaço livre em disco.");
+        }
         if (DocumentUploadSizePolicy.Exceeds(_options, request.TotalSizeBytes, out var maxFileSize)) return Result<UploadChunkSessionDto>.Fail("LIMIT", $"O arquivo excede o limite configurado de {maxFileSize.DisplayText}.");
         var safeName = Path.GetFileName(string.IsNullOrWhiteSpace(request.UploadName) ? request.OriginalFileName : request.UploadName);
         var ext = Path.GetExtension(safeName ?? string.Empty);
@@ -469,6 +481,39 @@ select exists(
 """;
         await using var conn = await _db.OpenAsync(ct);
         return await conn.ExecuteScalarAsync<bool>(new CommandDefinition(sql, new { tenantId, classificationId }, cancellationToken: ct));
+    }
+
+    public async Task<int> CleanupAbandonedSessionsAsync(TimeSpan olderThan, CancellationToken ct)
+    {
+        var threshold = DateTimeOffset.UtcNow - (olderThan > TimeSpan.Zero ? olderThan : TimeSpan.FromHours(24));
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            var abandonedSessions = (await conn.QueryAsync<(Guid Id, Guid TenantId, string? TempPath)>(
+                new CommandDefinition(@"SELECT id AS Id, tenant_id AS TenantId, temp_path AS TempPath
+                  FROM ged.upload_session
+                  WHERE status IN ('OPEN', 'RECEIVING') AND updated_at < @threshold",
+                new { threshold }, cancellationToken: ct))).ToList();
+
+            foreach (var session in abandonedSessions)
+            {
+                TryDeleteTempPath(session.TempPath);
+            }
+
+            var affected = await conn.ExecuteAsync(
+                new CommandDefinition(@"UPDATE ged.upload_session
+                  SET status = 'ABANDONED', updated_at = now()
+                  WHERE status IN ('OPEN', 'RECEIVING') AND updated_at < @threshold",
+                new { threshold }, cancellationToken: ct));
+
+            _logger.LogInformation("Limpeza de sessões de upload abandonadas concluída. Total={Count}", affected);
+            return affected;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Falha na limpeza de sessões de upload abandonadas.");
+            return 0;
+        }
     }
 
     private sealed class SessionRow

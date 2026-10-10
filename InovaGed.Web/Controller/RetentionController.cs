@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using InovaGed.Application.Common.Context;
 using InovaGed.Application.Retention;
 using InovaGed.Infrastructure.Retention;
@@ -89,6 +89,19 @@ public sealed class RetentionController : Controller
         }
 
         return RedirectToAction(nameof(Index));
+    }
+
+    // GET /Retention/Simulate?documentId=...
+    [HttpGet("Simulate")]
+    public async Task<IActionResult> Simulate([FromQuery] Guid documentId, CancellationToken ct)
+    {
+        var tenantId = TenantIdOrThrow();
+        if (documentId == Guid.Empty) return BadRequest(new { error = "DocumentId inválido." });
+
+        var memory = await _repo.SimulateCalculationAsync(tenantId, documentId, 30, ct);
+        if (memory is null) return NotFound(new { error = "Documento não encontrado neste tenant." });
+
+        return Json(memory);
     }
 
     // ✅ Central Operacional

@@ -43,8 +43,17 @@
 
     function stillCurrent(request) {
         const panel = getPanel();
-        const gate = window.GedPanelResponseGate;
-        if (!gate || typeof gate.applies !== 'function') return false;
+        const gate = window.GedPanelResponseGate || {
+            applies: function (response, current) {
+                if (!current || current.open !== true) return false;
+                if (!response || response.generation !== current.generation) return false;
+                if (String(response.documentId ?? '') !== String(current.documentId ?? '')) return false;
+                const rV = String(response.versionId ?? '');
+                const cV = String(current.versionId ?? '');
+                if (!rV || !cV) return true;
+                return rV === cV;
+            }
+        };
         return gate.applies(
             { generation: request.generation, documentId: request.documentId, versionId: request.versionId },
             {

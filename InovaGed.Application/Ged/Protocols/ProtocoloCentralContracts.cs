@@ -211,6 +211,8 @@ public interface IProtocoloCentralService
     Task<ProtocoloCommandResult> ConfirmReturnAsync(ProtocoloActor actor, Guid? movimentoId, Guid? protocoloId, CancellationToken ct);
     Task<ProtocoloCommandResult> ReverseAsync(ProtocoloActor actor, Guid protocoloId, string justificativa, CancellationToken ct);
     Task<ProtocoloCommandResult> ReopenAsync(ProtocoloActor actor, Guid protocoloId, string justificativa, CancellationToken ct);
+    Task<ProtocoloCommandResult> CloseAsync(ProtocoloActor actor, Guid protocoloId, string justificativa, string? decisao, CancellationToken ct);
+    Task<ProtocoloCommandResult> ArchiveAsync(ProtocoloActor actor, Guid protocoloId, string justificativa, string? localizacaoFisica, CancellationToken ct);
     Task<ProtocoloBatchPreview> PreviewBatchAsync(ProtocoloActor actor, ProtocoloLoteCommand command, CancellationToken ct);
     Task<IReadOnlyList<ProtocoloBatchItemResult>> ExecuteBatchAsync(ProtocoloActor actor, ProtocoloLoteCommand command, CancellationToken ct);
 }

@@ -567,6 +567,17 @@ where s.tenant_id=@tid and s.user_id=@userId and s.token_hash=@hash and s.subjec
             else if (!string.IsNullOrWhiteSpace(input.PrintMode) && !string.Equals(template.Mode, input.PrintMode, StringComparison.OrdinalIgnoreCase))
                 ModelState.AddModelError(nameof(input.TemplateCode), "O modelo selecionado não pertence ao modo de impressão escolhido.");
         }
+        if (isRealPrint && input.SubjectId.HasValue && LabelSubjectType.RequiresPersistedSubject(input.SubjectType))
+        {
+            var preflightResult = await _preflight.CheckAsync(new(TenantId, UserId ?? Guid.Empty, input.TemplateCode, input.SubjectType, input.SubjectId.Value, input.PrintBrandingProfileId, input.PrintProfileId, null, null, input.Copies), ct);
+            if (!preflightResult.CanPrint)
+            {
+                foreach (var err in preflightResult.Errors)
+                {
+                    ModelState.AddModelError(string.Empty, $"[Erro Impeditivo] {err.Title}: {err.Message}");
+                }
+            }
+        }
         if (!ModelState.IsValid || template is null)
         {
             await PopulatePrintWizardLookupsAsync(input, ct);
@@ -907,9 +918,24 @@ where b.tenant_id=@tid and b.id=@boxId and b.reg_status='A'
 
     private async Task<dynamic?> LoadDocumentLabelAsync(System.Data.IDbConnection db, Guid docId)
         => await db.QueryFirstOrDefaultAsync("""
-select d.id, d.code, d.title, d.status, bx.box_no, bx.label_code as box_label_code
-from ged.document d left join ged.batch_item bi on bi.tenant_id=d.tenant_id and bi.document_id=d.id and bi.reg_status='A'
+select d.id, d.code, d.title, d.status, coalesce(nullif(d.code,''),left(d.id::text,8)) as control_number,
+       d.title as subject,
+       concat_ws(' - ', coalesce(pvi.code, cp.code), coalesce(pvi.name, cp.title, cp.description)) as classification,
+       coalesce(pvi.code, cp.code) as classification_code,
+       coalesce(pvi.name, cp.title, cp.description) as classification_name,
+       coalesce(pvi.final_destination, cp.final_destination, '') as current_phase,
+       coalesce(pvi.final_destination, cp.final_destination, '') as final_destination,
+       to_char(d.created_at,'YYYY') as document_period,
+       coalesce(pl.location_code, concat_ws('.', pl.building, pl.room, pl.aisle, pl.rack, pl.shelf, pl.pallet), '') as location,
+       bx.id as box_id, bx.box_no, bx.label_code as box_label_code,
+       d.retention_status, d.retention_due_at, d.disposition_status
+from ged.document d
+left join ged.batch_item bi on bi.tenant_id=d.tenant_id and bi.document_id=d.id and bi.reg_status='A'
 left join ged.box bx on bx.tenant_id=d.tenant_id and bx.id=bi.box_id and bx.reg_status='A'
+left join ged.physical_location pl on pl.tenant_id=bx.tenant_id and pl.id=bx.location_id and pl.reg_status='A'
+left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id=d.classification_id
+left join ged.classification_plan_version pv on pv.tenant_id=d.tenant_id and pv.id=d.classification_version_id
+left join ged.classification_plan_version_item pvi on pvi.tenant_id=d.tenant_id and pvi.version_id=d.classification_version_id and pvi.classification_id=d.classification_id
 where d.tenant_id=@tid and d.id=@docId
 """, new { tid = TenantId, docId });
 
@@ -1052,14 +1078,15 @@ group by b.id,b.label_code,b.box_no,b.notes,pl.location_code,pl.building,pl.room
         var activityExpr = schema.HasActivityType ? "coalesce(cp.activity_type,'FIM')" : "'FIM'";
         var sql = $"""
 select 'FOLDER' as LabelKind,d.id as DocumentId,b.id as BoxId,coalesce(nullif(d.code,''),left(d.id::text,8)) as ControlNumber,
-coalesce(d.title,'') as Subject,concat_ws(' - ',{classificationCodeExpr},{classificationTitleExpr}) as Classification,
+coalesce(d.title,'') as Subject,concat_ws(' - ',coalesce(pvi.code, {classificationCodeExpr}),coalesce(pvi.name, {classificationTitleExpr})) as Classification,
 coalesce(pl.location_code,concat_ws('.',pl.building,pl.room,pl.aisle,pl.rack,pl.shelf,pl.pallet),'') as Location,
-to_char(d.created_at,'YYYY') as DocumentPeriod,{activityExpr} as Activity,{finalDestinationExpr} as CurrentPhase
+to_char(d.created_at,'YYYY') as DocumentPeriod,{activityExpr} as Activity,coalesce(pvi.final_destination, {finalDestinationExpr}) as CurrentPhase
 from ged.document d left join ged.batch_item bi on bi.tenant_id=d.tenant_id and bi.document_id=d.id and bi.reg_status='A'
 left join ged.box b on b.tenant_id=d.tenant_id and b.id=bi.box_id and b.reg_status='A'
 left join ged.physical_location pl on pl.tenant_id=b.tenant_id and pl.id=b.location_id and pl.reg_status='A'
 left join ged.document_classification dc on dc.tenant_id=d.tenant_id and dc.document_id=d.id and dc.reg_status='A'
 left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id={documentClassificationJoinExpr}
+left join ged.classification_plan_version_item pvi on pvi.tenant_id=d.tenant_id and pvi.version_id=d.classification_version_id and pvi.classification_id=d.classification_id
 where d.tenant_id=@tid and d.id=@docId limit 1
 """;
         var model = await db.QueryFirstOrDefaultAsync<LocDeskLabelInputModel>(new CommandDefinition(sql, new { tid=TenantId, docId }, cancellationToken:ct));

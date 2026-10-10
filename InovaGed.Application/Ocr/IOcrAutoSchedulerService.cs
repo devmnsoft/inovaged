@@ -17,4 +17,5 @@ public interface IOcrAutoScheduleRepository
     Task<IReadOnlyList<OcrAutoScheduleRunSummaryDto>> GetRunHistoryAsync(Guid tenantId, int take, CancellationToken ct);
     Task<OcrAutoScheduleRunSummaryDto?> GetLastRunAsync(Guid tenantId, CancellationToken ct);
     Task<IReadOnlyList<OcrOperationalReasonDto>> GetRunReasonsAsync(Guid tenantId, Guid runId, CancellationToken ct);
+    Task<OcrOperationalReasonsQueryResult> GetRunReasonsPagedAsync(Guid tenantId, Guid runId, OcrRunReasonsFilter filter, CancellationToken ct);
 }

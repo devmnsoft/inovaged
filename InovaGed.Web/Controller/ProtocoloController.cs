@@ -26,14 +26,16 @@ public sealed class ProtocoloController : GedControllerBase
     private readonly InovaGed.Application.Protocolo.IProtocolAiAssistService _aiAssist;
     private readonly IRetentionJobRepository _retentionJobs;
     private readonly IAbacAuthorizationService _documentAuthorization;
+    private readonly ILogger<ProtocoloController>? _logger;
 
-    public ProtocoloController(IDbConnectionFactory dbFactory, InovaGed.Application.Ged.Loans.IProtocolAccessService protocolAccess, IProtocoloCentralService central, InovaGed.Application.Protocolo.IProtocolAiAssistService aiAssist, IRetentionJobRepository retentionJobs, IAbacAuthorizationService documentAuthorization) : base(dbFactory)
+    public ProtocoloController(IDbConnectionFactory dbFactory, InovaGed.Application.Ged.Loans.IProtocolAccessService protocolAccess, IProtocoloCentralService central, InovaGed.Application.Protocolo.IProtocolAiAssistService aiAssist, IRetentionJobRepository retentionJobs, IAbacAuthorizationService documentAuthorization, ILogger<ProtocoloController>? logger = null) : base(dbFactory)
     {
         _protocolAccess = protocolAccess;
         _central = central;
         _aiAssist = aiAssist;
         _retentionJobs = retentionJobs;
         _documentAuthorization = documentAuthorization;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -65,7 +67,7 @@ public sealed class ProtocoloController : GedControllerBase
     public async Task<IActionResult> Novo(Guid? gedDocumentId)
     {
         using var db = await OpenAsync();
-        var vm = new ProtocoloNovoVM();
+        var vm = new ProtocoloNovoVM { Id = Guid.NewGuid() };
         await PopularCombosAsync(db, vm);
         if (ProtocolOriginLinkRules.RequestsLink(gedDocumentId))
         {
@@ -98,11 +100,57 @@ public sealed class ProtocoloController : GedControllerBase
                 return View(vm);
             }
         }
+        var id = vm.Id.HasValue && vm.Id.Value != Guid.Empty ? vm.Id.Value : Guid.NewGuid();
+        vm.Id = id;
+
+        // Verificar se este protocolo já foi gravado em tentativa anterior (timeout/resubmissão)
+        var existente = await db.QuerySingleOrDefaultAsync<ProtocoloResumoExistente>(
+            @"select id as Id, numero as Numero, status as Status, setor_atual_id as SetorAtualId, 
+                     setor_origem_id as SetorOrigemId, setor_destino_inicial_id as SetorDestinoInicialId 
+              from ged.protocolo 
+              where tenant_id = @TenantId and id = @Id and reg_status = 'A'",
+            new { TenantId, Id = id });
+
+        if (existente is not null)
+        {
+            _logger?.LogInformation("Protocolo {Numero} ({Id}) já persistido; retomando sem duplicar.", existente.Numero, id);
+            var vinculoJaExiste = origemSolicitada ? " e vinculado ao documento de origem" : "";
+            if (!vm.SalvarComoRascunho && existente.SetorOrigemId != vm.SetorDestinoId && UserId is not null)
+            {
+                if (existente.SetorAtualId == existente.SetorOrigemId)
+                {
+                    try
+                    {
+                        var fwd = await _central.ForwardAsync(Actor(), id, null, vm.SetorDestinoId, "Abertura do protocolo (retomada)", null, $"novo:{id:N}", null, null, null, HttpContext.RequestAborted);
+                        TempData[fwd.Success ? "ok" : "erro"] = fwd.Success
+                            ? $"Protocolo {existente.Numero} já havia sido criado{vinculoJaExiste} e foi encaminhado com sucesso. {fwd.Message}"
+                            : $"Protocolo {existente.Numero} já está criado{vinculoJaExiste} no setor de origem, mas o encaminhamento permanece pendente: {fwd.Message}";
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogError(ex, "Erro ao encaminhar protocolo {Numero} ({Id}) na retomada.", existente.Numero, id);
+                        TempData["erro"] = $"Protocolo {existente.Numero} já está criado{vinculoJaExiste} no setor de origem, mas o encaminhamento permanece pendente devido a uma instabilidade temporária.";
+                    }
+                }
+                else
+                {
+                    TempData["ok"] = $"Protocolo {existente.Numero} já havia sido criado{vinculoJaExiste} e encaminhado anteriormente.";
+                }
+            }
+            else
+            {
+                TempData["ok"] = $"Protocolo {existente.Numero} já havia sido criado{vinculoJaExiste} com sucesso.";
+            }
+            return RedirectToAction(nameof(Details), new { id });
+        }
+
+        NumeroGerado num;
+        var committed = false;
         using var tx = db.BeginTransaction();
         try
         {
-            var num = await db.QuerySingleAsync<NumeroGerado>("select sequencial,numero from ged.protocolo_gerar_numero(@TenantId)", new { TenantId }, tx);
-            var id = Guid.NewGuid(); var now = DateTime.Now; var status = vm.SalvarComoRascunho ? "RASCUNHO" : "ABERTO";
+            num = await db.QuerySingleAsync<NumeroGerado>("select sequencial,numero from ged.protocolo_gerar_numero(@TenantId)", new { TenantId }, tx);
+            var now = DateTime.Now; var status = vm.SalvarComoRascunho ? "RASCUNHO" : "ABERTO";
             var prioridade = await GetNomeCadastroAsync(db, "ged.protocolo_prioridade", vm.PrioridadeId) ?? "NORMAL";
             await db.ExecuteAsync(@"insert into ged.protocolo(id,tenant_id,numero,ano,sequencial,especie,tipo_solicitacao,procedencia,origem_pedido,assunto,descricao,informacoes_complementares,interessado,cpf_cnpj,email,telefone,solicitante_nome,solicitante_matricula,solicitante_cargo,prioridade,status,tipo_protocolo_id,assunto_id,prioridade_id,canal_entrada_id,setor_origem_id,setor_atual_id,setor_destino_inicial_id,criado_por,criado_por_nome,data_abertura,created_at,reg_status) values(@Id,@TenantId,@Numero,extract(year from now())::int,@Sequencial,@Especie,@TipoSolicitacao,@Procedencia,@OrigemPedido,@Assunto,@Descricao,@InformacoesComplementares,@Interessado,@CpfCnpj,@Email,@Telefone,@SolicitanteNome,@SolicitanteMatricula,@SolicitanteCargo,@Prioridade,@Status,@TipoProtocoloId,@AssuntoId,@PrioridadeId,@CanalEntradaId,@SetorOrigemId,@SetorAtualId,@SetorDestinoId,@UserId,@UserName,@DataAbertura,@Now,'A')", new { Id = id, TenantId, num.Numero, num.Sequencial, vm.Especie, vm.TipoSolicitacao, vm.Procedencia, vm.OrigemPedido, vm.Assunto, vm.Descricao, vm.InformacoesComplementares, vm.Interessado, vm.CpfCnpj, vm.Email, vm.Telefone, vm.SolicitanteNome, vm.SolicitanteMatricula, vm.SolicitanteCargo, Prioridade = prioridade, Status = status, vm.TipoProtocoloId, vm.AssuntoId, vm.PrioridadeId, vm.CanalEntradaId, vm.SetorOrigemId, SetorAtualId = vm.SetorOrigemId, vm.SetorDestinoId, UserId, UserName = UserNameSafe, DataAbertura = vm.SalvarComoRascunho ? (DateTime?)null : now, Now = now }, tx);
             await UpsertParticipanteAsync(db, tx, id, vm.SetorOrigemId, true, vm.SetorOrigemId == vm.SetorDestinoId);
@@ -150,27 +198,49 @@ values (@TenantId, @ProtocoloId, 'protocolo_documento_ged', @Id, 'GED_VINCULO', 
                 }, tx);
             }
             tx.Commit();
-            if (!vm.SalvarComoRascunho && vm.SetorOrigemId != vm.SetorDestinoId && UserId is not null)
-            {
-                var fwd = await _central.ForwardAsync(Actor(), id, null, vm.SetorDestinoId, "Abertura do protocolo", null, $"novo:{id:N}", null, null, null, HttpContext.RequestAborted);
-                var vinculado = origemSolicitada ? " e vinculado ao documento de origem" : "";
-                TempData[fwd.Success ? "ok" : "erro"] = fwd.Success
-                    ? $"Protocolo {num.Numero} criado{vinculado}. {fwd.Message}"
-                    : $"Protocolo {num.Numero} foi criado{vinculado} no setor de origem, mas o encaminhamento não foi concluído: {fwd.Message}";
-            }
-            else TempData["ok"] = origemSolicitada
-                ? $"Protocolo {num.Numero} criado e vinculado ao documento de origem."
-                : $"Protocolo {num.Numero} criado com sucesso.";
-            return RedirectToAction(nameof(Details), new { id });
+            committed = true;
         }
-        catch
+        catch (Exception ex)
         {
-            tx.Rollback();
-            if (!origemSolicitada) throw;
+            if (!committed)
+            {
+                try { tx.Rollback(); } catch (Exception rbEx) { _logger?.LogWarning(rbEx, "Falha ao executar rollback da transação do protocolo {Id}.", id); }
+            }
+            _logger?.LogError(ex, "Falha na transação de criação do protocolo {Id}. OrigemSolicitada={OrigemSolicitada}", id, origemSolicitada);
+            if (!origemSolicitada)
+            {
+                ModelState.AddModelError(string.Empty, "Não foi possível criar o protocolo devido a uma falha no banco de dados. Tente novamente.");
+                return View(vm);
+            }
             ModelState.AddModelError(string.Empty, ProtocolOriginLinkRules.LinkNotSaved);
             vm.GedLinkNotice = ProtocolOriginLinkRules.Requirement;
             return View(vm);
         }
+
+        // Pós-commit: a criação e o vínculo estão confirmados no banco
+        var vinculadoCriado = origemSolicitada ? " e vinculado ao documento de origem" : "";
+        if (!vm.SalvarComoRascunho && vm.SetorOrigemId != vm.SetorDestinoId && UserId is not null)
+        {
+            try
+            {
+                var fwd = await _central.ForwardAsync(Actor(), id, null, vm.SetorDestinoId, "Abertura do protocolo", null, $"novo:{id:N}", null, null, null, HttpContext.RequestAborted);
+                TempData[fwd.Success ? "ok" : "erro"] = fwd.Success
+                    ? $"Protocolo {num.Numero} criado{vinculadoCriado}. {fwd.Message}"
+                    : $"Protocolo {num.Numero} foi criado{vinculadoCriado} no setor de origem, mas o encaminhamento não foi concluído: {fwd.Message}";
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Protocolo {Numero} ({Id}) criado, mas ocorreu falha durante o encaminhamento para o setor {SetorDestinoId}.", num.Numero, id, vm.SetorDestinoId);
+                TempData["erro"] = $"Protocolo {num.Numero} foi criado{vinculadoCriado} no setor de origem, mas o encaminhamento está pendente devido a uma instabilidade temporária.";
+            }
+        }
+        else
+        {
+            TempData["ok"] = origemSolicitada
+                ? $"Protocolo {num.Numero} criado e vinculado ao documento de origem."
+                : $"Protocolo {num.Numero} criado com sucesso.";
+        }
+        return RedirectToAction(nameof(Details), new { id });
     }
 
     private async Task<string?> GedOriginBlockReasonAsync(System.Data.IDbConnection db, Guid documentId, System.Data.IDbTransaction? tx)
@@ -887,6 +957,30 @@ FOR UPDATE OF d;
 
             foreach (var docItem in linkedDocs)
             {
+                var otherActiveProtocolsCount = await db.ExecuteScalarAsync<int>(new CommandDefinition("""
+SELECT COUNT(1)
+FROM ged.protocolo_documento_ged pdg
+JOIN ged.protocolo p ON p.tenant_id = pdg.tenant_id AND p.id = pdg.protocolo_id AND p.reg_status = 'A'
+WHERE pdg.tenant_id = @TenantId
+  AND pdg.ged_document_id = @DocId
+  AND pdg.protocolo_id <> @ProtocoloId
+  AND pdg.reg_status = 'A'
+  AND UPPER(p.status) NOT IN ('FINALIZADO', 'ENCERRADO', 'ARQUIVADO', 'CANCELADO');
+""", new { TenantId, DocId = docItem.DocumentId, ProtocoloId = id }, tx, cancellationToken: HttpContext.RequestAborted));
+
+                if (otherActiveProtocolsCount > 0)
+                {
+                    await db.ExecuteAsync(new CommandDefinition("""
+INSERT INTO ged.protocolo_tramitacao(
+    tenant_id, protocolo_id, setor_origem_id, setor_destino_id, usuario_id, usuario_nome,
+    acao, status_anterior, status_novo, justificativa, observacao, ativa)
+VALUES (@TenantId, @Id, @Setor, @Setor, @UserId, @UserName, 'EFEITO_ARQUIVISTICO', @Novo, @Novo,
+    'Efeito arquivístico mantido pendente: documento GED possui outros protocolos ativos vinculados.',
+    @DocInfo, false);
+""", new { TenantId, Id = id, Setor = p.SetorAtualId, UserId, UserName = UserNameSafe, Novo = status, DocInfo = $"Documento {docItem.DocumentId} vinculado a {otherActiveProtocolsCount} outro(s) protocolo(s) ativo(s)." }, tx, cancellationToken: HttpContext.RequestAborted));
+                    continue;
+                }
+
                 if (isEncerramento && docItem.StartEvent == "ENCERRAMENTO" && !docItem.ClosedAt.HasValue)
                 {
                     await db.ExecuteAsync("""
@@ -1140,4 +1234,6 @@ insert into ged.protocolo_minuta_historico (
         } catch (UnauthorizedAccessException) { return StatusCode(403, new { success = false, message = "Acesso não autorizado." }); }
         catch (Exception ex) { return StatusCode(500, new { success = false, message = "Erro ao carregar histórico.", error = ex.Message }); }
     }
+
+    private sealed record ProtocoloResumoExistente(Guid Id, string Numero, string Status, Guid SetorAtualId, Guid SetorOrigemId, Guid? SetorDestinoInicialId);
 }

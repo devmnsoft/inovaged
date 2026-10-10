@@ -60,6 +60,12 @@ public sealed class OcrAutoScheduleDashboardDto
     public int EligibleDocumentsCount { get; set; }
     public List<OcrAutoScheduleRunSummaryDto> History { get; set; } = new();
     public List<OcrOperationalReasonDto> LastRunReasons { get; set; } = new();
+    public OcrOperationalReasonsQueryResult OperationalReasons { get; set; } = new();
+    public int WaitingCount => OperationalReasons.WaitingCount;
+    public int ProcessingCount => OperationalReasons.ProcessingCount;
+    public int CompletedCount => OperationalReasons.CompletedCount;
+    public int FailedCount => OperationalReasons.FailedCount;
+    public int NeedsInterventionCount => OperationalReasons.NeedsInterventionCount;
 }
 
 public sealed class OcrAutoScheduleRunSummaryDto

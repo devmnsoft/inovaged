@@ -2,6 +2,7 @@ using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ocr;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace InovaGed.Infrastructure.Ocr;
 
@@ -262,41 +263,229 @@ LIMIT @take;", new { tenantId, take = Math.Clamp(take, 1, 200) }, cancellationTo
 
     public async Task<IReadOnlyList<OcrOperationalReasonDto>> GetRunReasonsAsync(Guid tenantId, Guid runId, CancellationToken ct)
     {
+        var result = await GetRunReasonsPagedAsync(tenantId, runId, new OcrRunReasonsFilter { Page = 1, PageSize = 200 }, ct);
+        return result.Items;
+    }
+
+    public async Task<OcrOperationalReasonsQueryResult> GetRunReasonsPagedAsync(Guid tenantId, Guid runId, OcrRunReasonsFilter filter, CancellationToken ct)
+    {
+        var correlationId = Guid.NewGuid().ToString("N");
+        var page = Math.Max(1, filter.Page);
+        var pageSize = Math.Clamp(filter.PageSize <= 0 ? 20 : filter.PageSize, 1, 100);
+        var offset = (page - 1) * pageSize;
+        var situationNormalized = string.IsNullOrWhiteSpace(filter.Situation) ? null : filter.Situation.Trim().ToLowerInvariant();
+        var searchPattern = string.IsNullOrWhiteSpace(filter.Search) ? null : $"%{filter.Search.Trim()}%";
+
         try
         {
             await using var conn = await _db.OpenAsync(ct);
-            var rows = await conn.QueryAsync<(Guid DocumentId, Guid? VersionId, string? FileName, string? Status, string? Reason, string? JobStatus)>(new CommandDefinition(@"
-SELECT i.document_id, i.version_id, i.file_name, i.status, i.reason, upper(j.status::text)
-FROM ged.ocr_auto_schedule_run_item i
-LEFT JOIN LATERAL (
-    SELECT status
-    FROM ged.ocr_job
-    WHERE tenant_id = i.tenant_id
-      AND document_version_id = i.version_id
-    ORDER BY COALESCE(finished_at, requested_at) DESC NULLS LAST
-    LIMIT 1
-) j ON true
-WHERE i.tenant_id = @tenantId
-  AND i.run_id = @runId
-ORDER BY i.file_name
-LIMIT 200;", new { tenantId, runId }, cancellationToken: ct));
-            return rows.Select(row =>
+            const string sql = @"
+WITH run_items AS (
+    SELECT
+        i.document_id,
+        i.version_id,
+        COALESCE(i.file_name, '') AS file_name,
+        COALESCE(i.status, '') AS run_item_status,
+        i.reason,
+        j.id AS job_id,
+        j.status AS current_job_status,
+        CASE
+            WHEN j.status IN ('FAILED_ENVIRONMENT', 'FAILED_PERMANENT')
+                 OR upper(i.status::text) IN ('SKIPPED_ENVIRONMENT', 'ENVIRONMENT_INVALID') THEN 'requer intervenção'
+            WHEN j.status IN ('PROCESSING', 'RUNNING') THEN 'processando'
+            WHEN j.status IN ('PENDING', 'QUEUED') THEN 'aguardando'
+            WHEN j.status = 'COMPLETED' THEN 'concluído'
+            WHEN j.status IN ('ERROR', 'FAILED', 'FAILURE')
+                 OR upper(i.status::text) = 'FAILED' THEN 'falhou'
+            WHEN upper(i.status::text) = 'QUEUED' THEN 'aguardando'
+            WHEN upper(i.status::text) = 'SKIPPED_ALREADY_HAS_OCR' THEN 'concluído'
+            WHEN upper(i.status::text) = 'SKIPPED_PENDING' THEN 'aguardando'
+            WHEN upper(i.status::text) = 'SKIPPED_PROCESSING' THEN 'processando'
+            ELSE 'não elegível'
+        END AS situation
+    FROM ged.ocr_auto_schedule_run_item i
+    LEFT JOIN LATERAL (
+        SELECT j.id, upper(j.status::text) AS status, j.finished_at, j.requested_at
+        FROM ged.ocr_job j
+        WHERE j.tenant_id = i.tenant_id
+          AND (
+              (i.ocr_job_id IS NOT NULL AND i.ocr_job_id::text ~ '^[0-9]+$' AND j.id = i.ocr_job_id::text::bigint)
+              OR (i.version_id IS NOT NULL AND j.document_version_id = i.version_id)
+          )
+        ORDER BY
+            (i.ocr_job_id IS NOT NULL AND i.ocr_job_id::text ~ '^[0-9]+$' AND j.id = i.ocr_job_id::text::bigint) DESC,
+            COALESCE(j.finished_at, j.requested_at) DESC NULLS LAST,
+            j.id DESC
+        LIMIT 1
+    ) j ON true
+    WHERE i.tenant_id = @tenantId
+      AND i.run_id = @runId
+)
+SELECT
+    COUNT(*) AS TotalCount,
+    COUNT(*) FILTER (WHERE (@situationNormalized IS NULL OR situation = @situationNormalized) AND (@searchPattern IS NULL OR file_name ILIKE @searchPattern)) AS FilteredCount,
+    COUNT(*) FILTER (WHERE situation = 'aguardando') AS WaitingCount,
+    COUNT(*) FILTER (WHERE situation = 'processando') AS ProcessingCount,
+    COUNT(*) FILTER (WHERE situation = 'concluído') AS CompletedCount,
+    COUNT(*) FILTER (WHERE situation = 'falhou') AS FailedCount,
+    COUNT(*) FILTER (WHERE situation = 'requer intervenção') AS NeedsInterventionCount,
+    COUNT(*) FILTER (WHERE situation = 'não elegível') AS NotEligibleCount
+FROM run_items;
+
+WITH run_items AS (
+    SELECT
+        i.document_id,
+        i.version_id,
+        COALESCE(i.file_name, '') AS file_name,
+        COALESCE(i.status, '') AS run_item_status,
+        i.reason,
+        j.id AS job_id,
+        j.status AS current_job_status,
+        CASE
+            WHEN j.status IN ('FAILED_ENVIRONMENT', 'FAILED_PERMANENT')
+                 OR upper(i.status::text) IN ('SKIPPED_ENVIRONMENT', 'ENVIRONMENT_INVALID') THEN 'requer intervenção'
+            WHEN j.status IN ('PROCESSING', 'RUNNING') THEN 'processando'
+            WHEN j.status IN ('PENDING', 'QUEUED') THEN 'aguardando'
+            WHEN j.status = 'COMPLETED' THEN 'concluído'
+            WHEN j.status IN ('ERROR', 'FAILED', 'FAILURE')
+                 OR upper(i.status::text) = 'FAILED' THEN 'falhou'
+            WHEN upper(i.status::text) = 'QUEUED' THEN 'aguardando'
+            WHEN upper(i.status::text) = 'SKIPPED_ALREADY_HAS_OCR' THEN 'concluído'
+            WHEN upper(i.status::text) = 'SKIPPED_PENDING' THEN 'aguardando'
+            WHEN upper(i.status::text) = 'SKIPPED_PROCESSING' THEN 'processando'
+            ELSE 'não elegível'
+        END AS situation
+    FROM ged.ocr_auto_schedule_run_item i
+    LEFT JOIN LATERAL (
+        SELECT j.id, upper(j.status::text) AS status, j.finished_at, j.requested_at
+        FROM ged.ocr_job j
+        WHERE j.tenant_id = i.tenant_id
+          AND (
+              (i.ocr_job_id IS NOT NULL AND i.ocr_job_id::text ~ '^[0-9]+$' AND j.id = i.ocr_job_id::text::bigint)
+              OR (i.version_id IS NOT NULL AND j.document_version_id = i.version_id)
+          )
+        ORDER BY
+            (i.ocr_job_id IS NOT NULL AND i.ocr_job_id::text ~ '^[0-9]+$' AND j.id = i.ocr_job_id::text::bigint) DESC,
+            COALESCE(j.finished_at, j.requested_at) DESC NULLS LAST,
+            j.id DESC
+        LIMIT 1
+    ) j ON true
+    WHERE i.tenant_id = @tenantId
+      AND i.run_id = @runId
+)
+SELECT
+    document_id AS DocumentId,
+    version_id AS VersionId,
+    file_name AS FileName,
+    run_item_status AS RunItemStatus,
+    reason AS Reason,
+    job_id AS JobId,
+    current_job_status AS CurrentJobStatus,
+    situation AS Situation
+FROM run_items
+WHERE (@situationNormalized IS NULL OR situation = @situationNormalized)
+  AND (@searchPattern IS NULL OR file_name ILIKE @searchPattern)
+ORDER BY file_name ASC, document_id ASC
+LIMIT @pageSize OFFSET @offset;";
+
+            using var grid = await conn.QueryMultipleAsync(new CommandDefinition(sql, new
             {
-                var situation = OcrOperationalReason.Present(row.Status, row.JobStatus);
-                return new OcrOperationalReasonDto
-                {
-                    DocumentId = row.DocumentId,
-                    VersionId = row.VersionId,
-                    FileName = row.FileName ?? string.Empty,
-                    Situation = situation,
-                    Detail = OcrOperationalReason.SafeDetail(situation, row.Reason)
-                };
+                tenantId,
+                runId,
+                situationNormalized,
+                searchPattern,
+                pageSize,
+                offset
+            }, cancellationToken: ct));
+
+            var counts = await grid.ReadSingleOrDefaultAsync<(int TotalCount, int FilteredCount, int WaitingCount, int ProcessingCount, int CompletedCount, int FailedCount, int NeedsInterventionCount, int NotEligibleCount)>();
+            var rows = (await grid.ReadAsync<(Guid DocumentId, Guid? VersionId, string FileName, string RunItemStatus, string? Reason, long? JobId, string? CurrentJobStatus, string Situation)>()).ToList();
+
+            var items = rows.Select(r => new OcrOperationalReasonDto
+            {
+                DocumentId = r.DocumentId,
+                VersionId = r.VersionId,
+                FileName = r.FileName,
+                Situation = r.Situation,
+                Detail = OcrOperationalReason.SafeDetail(r.Situation, r.Reason),
+                RunItemStatus = r.RunItemStatus,
+                CurrentJobStatus = r.CurrentJobStatus,
+                JobId = r.JobId
             }).ToList();
+
+            var state = counts.TotalCount == 0
+                ? OcrOperationalState.AvailableEmpty
+                : OcrOperationalState.AvailableWithResults;
+
+            return new OcrOperationalReasonsQueryResult
+            {
+                State = state,
+                Items = items,
+                TotalCount = counts.FilteredCount,
+                Page = page,
+                PageSize = pageSize,
+                SituationFilter = filter.Situation,
+                WaitingCount = counts.WaitingCount,
+                ProcessingCount = counts.ProcessingCount,
+                CompletedCount = counts.CompletedCount,
+                FailedCount = counts.FailedCount,
+                NeedsInterventionCount = counts.NeedsInterventionCount,
+                NotEligibleCount = counts.NotEligibleCount
+            };
+        }
+        catch (PostgresException pgEx) when (pgEx.SqlState == "42501")
+        {
+            _logger.LogWarning("Acesso negado aos motivos do agendamento OCR. Tenant={TenantId} RunId={RunId} SqlState={SqlState} CorrelationId={CorrelationId}", tenantId, runId, pgEx.SqlState, correlationId);
+            return new OcrOperationalReasonsQueryResult
+            {
+                State = OcrOperationalState.AccessDenied,
+                SituationFilter = filter.Situation,
+                Diagnostics = new OcrDiagnosticInfo
+                {
+                    ErrorCode = "ERR_OCR_ACCESS_DENIED",
+                    Stage = "QueryRunReasons",
+                    SqlState = pgEx.SqlState,
+                    CorrelationId = correlationId,
+                    CanRetry = false,
+                    RecoveryAction = "Acesso negado às tabelas de OCR. Verifique as permissões de leitura no PostgreSQL para o schema ged."
+                }
+            };
+        }
+        catch (PostgresException pgEx)
+        {
+            _logger.LogWarning("Banco indisponível ao consultar motivos do OCR. Tenant={TenantId} RunId={RunId} SqlState={SqlState} CorrelationId={CorrelationId}", tenantId, runId, pgEx.SqlState, correlationId);
+            return new OcrOperationalReasonsQueryResult
+            {
+                State = OcrOperationalState.Unavailable,
+                SituationFilter = filter.Situation,
+                Diagnostics = new OcrDiagnosticInfo
+                {
+                    ErrorCode = "ERR_OCR_DB_UNAVAILABLE",
+                    Stage = "QueryRunReasons",
+                    SqlState = pgEx.SqlState,
+                    CorrelationId = correlationId,
+                    CanRetry = true,
+                    RecoveryAction = "Conexão ou tabela indisponível no banco de dados. Tente novamente após restabelecer conexão."
+                }
+            };
         }
         catch (Exception ex)
         {
-            _logger.LogWarning("Motivos do agendamento OCR indisponíveis. Tenant={TenantId} RunId={RunId} Tipo={ExceptionType}", tenantId, runId, ex.GetType().Name);
-            return Array.Empty<OcrOperationalReasonDto>();
+            _logger.LogWarning("Falha ao consultar motivos do OCR. Tenant={TenantId} RunId={RunId} ExceptionType={ExceptionType} CorrelationId={CorrelationId}", tenantId, runId, ex.GetType().Name, correlationId);
+            return new OcrOperationalReasonsQueryResult
+            {
+                State = OcrOperationalState.Unavailable,
+                SituationFilter = filter.Situation,
+                Diagnostics = new OcrDiagnosticInfo
+                {
+                    ErrorCode = "ERR_OCR_QUERY_FAILED",
+                    Stage = "QueryRunReasons",
+                    SqlState = null,
+                    CorrelationId = correlationId,
+                    CanRetry = true,
+                    RecoveryAction = "Ocorreu uma falha inesperada durante a consulta. Tente novamente."
+                }
+            };
         }
     }
 

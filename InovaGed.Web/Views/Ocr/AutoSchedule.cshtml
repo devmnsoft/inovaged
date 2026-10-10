@@ -1,6 +1,11 @@
 @model InovaGed.Application.Ocr.OcrAutoScheduleDashboardDto
+@using InovaGed.Application.Ocr
 @{
     ViewData["Title"] = "Agendamento Automático de OCR";
+    var op = Model.OperationalReasons;
+    var currentFilter = op.SituationFilter;
+    var currentPage = op.Page;
+    var totalPages = op.TotalPages;
 }
 
 <div class="container-fluid py-3">
@@ -24,48 +29,90 @@
         <div class="alert alert-warning">@warning</div>
     }
 
-    <div class="row g-3 mb-4">
-        <div class="col-md-3">
-            <div class="card h-100">
-                <div class="card-body">
-                    <div class="text-muted small">Status</div>
-                    <span class="badge @(Model.Enabled ? "bg-success" : "bg-secondary") fs-6">@(Model.Enabled ? "Habilitado" : "Desabilitado")</span>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card h-100">
-                <div class="card-body">
-                    <div class="text-muted small">Horário configurado</div>
-                    <div class="fs-5 fw-semibold">@Model.RunAt</div>
-                    <div class="small text-muted">@Model.TimeZone</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card h-100">
-                <div class="card-body">
+    <!-- Indicadores Principais de Operação -->
+    <div class="row g-3 mb-3">
+        <div class="col-sm-6 col-md-3">
+            <div class="card h-100 border-start border-4 border-primary">
+                <div class="card-body py-2">
                     <div class="text-muted small">Próxima execução</div>
-                    <div class="fs-6 fw-semibold">@Model.NextRunLocal</div>
-                    <div class="small text-muted">UTC: @Model.NextRunUtc.ToString("dd/MM/yyyy HH:mm")</div>
+                    <div class="fs-6 fw-bold text-dark">@Model.NextRunLocal</div>
+                    <div class="text-muted" style="font-size:0.75rem;">UTC: @Model.NextRunUtc.ToString("dd/MM/yyyy HH:mm")</div>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="card h-100">
-                <div class="card-body">
-                    <div class="text-muted small">Elegíveis agora</div>
-                    <div class="fs-5 fw-semibold">@Model.EligibleDocumentsCount</div>
-                    <div class="small text-muted">Limite por execução: @Model.MaxDocumentsPerRun</div>
+        <div class="col-sm-6 col-md-3">
+            <div class="card h-100 border-start border-4 border-info">
+                <div class="card-body py-2">
+                    <div class="text-muted small">Última execução</div>
+                    <div class="fs-6 fw-bold">@(Model.LastRun is null ? "Nenhuma" : Model.LastRun.Status)</div>
+                    <div class="text-muted" style="font-size:0.75rem;">@(Model.LastRun?.StartedAtUtc.ToString("dd/MM/yyyy HH:mm:ss") ?? "Sem registro")</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-md-3">
+            <div class="card h-100 border-start border-4 border-secondary">
+                <div class="card-body py-2">
+                    <div class="text-muted small">Documentos elegíveis</div>
+                    <div class="fs-5 fw-bold">@Model.EligibleDocumentsCount</div>
+                    <div class="text-muted" style="font-size:0.75rem;">Limite por lote: @Model.MaxDocumentsPerRun</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-md-3">
+            <div class="card h-100 border-start border-4 border-secondary">
+                <div class="card-body py-2">
+                    <div class="text-muted small">Aguardando</div>
+                    <div class="fs-5 fw-bold text-secondary">@Model.WaitingCount</div>
+                    <div class="text-muted" style="font-size:0.75rem;">Na fila para processamento</div>
                 </div>
             </div>
         </div>
     </div>
 
     <div class="row g-3 mb-4">
+        <div class="col-sm-6 col-md-3">
+            <div class="card h-100 border-start border-4 border-primary">
+                <div class="card-body py-2">
+                    <div class="text-muted small">Processando</div>
+                    <div class="fs-5 fw-bold text-primary">@Model.ProcessingCount</div>
+                    <div class="text-muted" style="font-size:0.75rem;">Em execução neste momento</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-md-3">
+            <div class="card h-100 border-start border-4 border-success">
+                <div class="card-body py-2">
+                    <div class="text-muted small">Concluídos</div>
+                    <div class="fs-5 fw-bold text-success">@Model.CompletedCount</div>
+                    <div class="text-muted" style="font-size:0.75rem;">Texto indexado e pesquisável</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-md-3">
+            <div class="card h-100 border-start border-4 border-danger">
+                <div class="card-body py-2">
+                    <div class="text-muted small">Falhas</div>
+                    <div class="fs-5 fw-bold text-danger">@Model.FailedCount</div>
+                    <div class="text-muted" style="font-size:0.75rem;">Repetíveis automaticamente</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-md-3">
+            <div class="card h-100 border-start border-4 border-warning">
+                <div class="card-body py-2">
+                    <div class="text-muted small">Intervenção necessária</div>
+                    <div class="fs-5 fw-bold text-warning">@Model.NeedsInterventionCount</div>
+                    <div class="text-muted" style="font-size:0.75rem;">Requer correção no ambiente</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Detalhes Operacionais e Configuração -->
+    <div class="row g-3 mb-4">
         <div class="col-lg-6">
             <div class="card h-100">
-                <div class="card-header fw-semibold">Última execução</div>
+                <div class="card-header fw-semibold">Última execução em detalhes</div>
                 <div class="card-body">
                     @if (Model.LastRun is null)
                     {
@@ -75,17 +122,19 @@
                     {
                         <dl class="row mb-0">
                             <dt class="col-sm-4">Status</dt>
-                            <dd class="col-sm-8"><span class="badge bg-info text-dark">@Model.LastRun.Status</span></dd>
+                            <dd class="col-sm-8"><span class="badge @(Model.LastRun.Status == "SUCCESS" ? "bg-success" : Model.LastRun.Status == "FAILED" ? "bg-danger" : "bg-warning text-dark")">@Model.LastRun.Status</span></dd>
                             <dt class="col-sm-4">Início UTC</dt>
                             <dd class="col-sm-8">@Model.LastRun.StartedAtUtc.ToString("dd/MM/yyyy HH:mm:ss")</dd>
                             <dt class="col-sm-4">Fim UTC</dt>
                             <dd class="col-sm-8">@(Model.LastRun.FinishedAtUtc?.ToString("dd/MM/yyyy HH:mm:ss") ?? "Em aberto")</dd>
                             <dt class="col-sm-4">Enfileirados</dt>
                             <dd class="col-sm-8">@Model.LastRun.EnqueuedCount</dd>
+                            <dt class="col-sm-4">Ignorados</dt>
+                            <dd class="col-sm-8">@Model.LastRun.SkippedCount</dd>
                             <dt class="col-sm-4">Falhas</dt>
                             <dd class="col-sm-8">@Model.LastRun.FailedCount</dd>
                             <dt class="col-sm-4">Mensagem</dt>
-                            <dd class="col-sm-8">@Model.LastRun.Message</dd>
+                            <dd class="col-sm-8">@(string.IsNullOrWhiteSpace(Model.LastRun.Message) ? "Sem mensagens registradas" : Model.LastRun.Message)</dd>
                         </dl>
                     }
                 </div>
@@ -96,8 +145,10 @@
                 <div class="card-header fw-semibold">Configuração operacional</div>
                 <div class="card-body">
                     <ul class="mb-0">
+                        <li>Status: <span class="badge @(Model.Enabled ? "bg-success" : "bg-secondary")">@(Model.Enabled ? "Habilitado" : "Desabilitado")</span></li>
+                        <li>Horário agendado: <strong>@Model.RunAt</strong> (@Model.TimeZone)</li>
                         <li>Tenant: <code>@Model.TenantId</code></li>
-                        <li>Tamanho do lote: <strong>@Model.BatchSize</strong></li>
+                        <li>Tamanho do lote: <strong>@Model.BatchSize</strong> | Limite por execução: <strong>@Model.MaxDocumentsPerRun</strong></li>
                         <li>Documentos sem OCR recebem OCR automaticamente no próximo ciclo.</li>
                         <li>Jobs pendentes/processando não são duplicados.</li>
                     </ul>
@@ -106,7 +157,8 @@
         </div>
     </div>
 
-    <div class="card">
+    <!-- Histórico de Execuções -->
+    <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
             <span class="fw-semibold">Histórico de execuções</span>
             <a class="btn btn-sm btn-outline-secondary" href="/SystemHealth/Homologation">Ver homologação</a>
@@ -149,46 +201,151 @@
         </div>
     </div>
 
-    <div class="card mt-4">
-        <div class="card-header">
-            <span class="fw-semibold">Motivo por documento na última execução</span>
+    <!-- Painel Operacional Confiável: Motivo por Documento -->
+    <div class="card">
+        <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+            <div>
+                <span class="fw-semibold">Documentos da execução</span>
+                <span class="badge bg-light text-dark border ms-2">Estado: @op.State</span>
+            </div>
+            <!-- Filtros por Situação -->
+            <div class="d-flex flex-wrap gap-1 align-items-center">
+                <a class="btn btn-sm @(string.IsNullOrEmpty(currentFilter) ? "btn-primary" : "btn-outline-secondary")" href="@Url.Action("AutoSchedule", new { page = 1, situation = (string?)null })">Todos</a>
+                <a class="btn btn-sm @(currentFilter == OcrOperationalReason.Waiting ? "btn-secondary" : "btn-outline-secondary")" href="@Url.Action("AutoSchedule", new { page = 1, situation = OcrOperationalReason.Waiting })">Aguardando (@Model.WaitingCount)</a>
+                <a class="btn btn-sm @(currentFilter == OcrOperationalReason.Processing ? "btn-primary" : "btn-outline-primary")" href="@Url.Action("AutoSchedule", new { page = 1, situation = OcrOperationalReason.Processing })">Processando (@Model.ProcessingCount)</a>
+                <a class="btn btn-sm @(currentFilter == OcrOperationalReason.Completed ? "btn-success" : "btn-outline-success")" href="@Url.Action("AutoSchedule", new { page = 1, situation = OcrOperationalReason.Completed })">Concluídos (@Model.CompletedCount)</a>
+                <a class="btn btn-sm @(currentFilter == OcrOperationalReason.Failed ? "btn-danger" : "btn-outline-danger")" href="@Url.Action("AutoSchedule", new { page = 1, situation = OcrOperationalReason.Failed })">Falhas (@Model.FailedCount)</a>
+                <a class="btn btn-sm @(currentFilter == OcrOperationalReason.NeedsIntervention ? "btn-warning text-dark" : "btn-outline-warning text-dark")" href="@Url.Action("AutoSchedule", new { page = 1, situation = OcrOperationalReason.NeedsIntervention })">Intervenção (@Model.NeedsInterventionCount)</a>
+            </div>
         </div>
-        <div class="table-responsive">
-            <table class="table table-sm table-hover mb-0 align-middle">
-                <thead>
-                    <tr>
-                        <th>Arquivo</th>
-                        <th>Situação</th>
-                        <th>Motivo</th>
-                    </tr>
-                </thead>
-                <tbody>
-                @if (Model.LastRunReasons.Count == 0)
+
+        @if (op.State == OcrOperationalState.Unavailable)
+        {
+            <div class="p-3">
+                <div class="alert alert-danger mb-0" role="alert">
+                    <h5 class="alert-heading h6 mb-1">Painel operacional indisponível no momento</h5>
+                    <p class="small mb-2">Não foi possível carregar a relação de itens desta execução devido a uma falha de banco de dados.</p>
+                    @if (op.Diagnostics is { } diag)
+                    {
+                        <div class="small bg-white p-2 rounded border mb-2 text-dark font-monospace">
+                            <div><strong>Código:</strong> @diag.ErrorCode | <strong>Etapa:</strong> @diag.Stage</div>
+                            @if (!string.IsNullOrWhiteSpace(diag.SqlState))
+                            {
+                                <div><strong>SQLSTATE:</strong> @diag.SqlState</div>
+                            }
+                            <div><strong>Correlação:</strong> @diag.CorrelationId</div>
+                            <div><strong>Ação recomendada:</strong> @diag.RecoveryAction</div>
+                        </div>
+                    }
+                    <a href="@Url.Action("AutoSchedule")" class="btn btn-sm btn-outline-danger">Tentar novamente</a>
+                </div>
+            </div>
+        }
+        else if (op.State == OcrOperationalState.AccessDenied)
+        {
+            <div class="p-3">
+                <div class="alert alert-warning mb-0" role="alert">
+                    <h5 class="alert-heading h6 mb-1">Acesso negado aos detalhes da execução</h5>
+                    <p class="small mb-2">O usuário do banco de dados não possui permissão para consultar os itens operacionais de OCR.</p>
+                    @if (op.Diagnostics is { } diag)
+                    {
+                        <div class="small bg-white p-2 rounded border mb-2 text-dark font-monospace">
+                            <div><strong>Código:</strong> @diag.ErrorCode | <strong>Etapa:</strong> @diag.Stage</div>
+                            <div><strong>SQLSTATE:</strong> @diag.SqlState | <strong>Correlação:</strong> @diag.CorrelationId</div>
+                            <div><strong>Ação recomendada:</strong> @diag.RecoveryAction</div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        else if (op.State == OcrOperationalState.AvailableEmpty)
+        {
+            <div class="p-4 text-center text-muted">
+                @if (!string.IsNullOrWhiteSpace(currentFilter))
                 {
-                    <tr><td colspan="3" class="text-muted">A última execução não registrou documentos.</td></tr>
+                    <p class="mb-0">Nenhum documento com a situação “<strong>@currentFilter</strong>” nesta execução.</p>
+                    <a class="btn btn-sm btn-outline-primary mt-2" href="@Url.Action("AutoSchedule", new { page = 1, situation = (string?)null })">Ver todas as situações</a>
                 }
                 else
                 {
-                    foreach (var item in Model.LastRunReasons)
+                    <p class="mb-0">A última execução não registrou documentos.</p>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0 align-middle">
+                    <thead>
+                        <tr>
+                            <th>Arquivo</th>
+                            <th>Situação Atual</th>
+                            <th>Lote (Histórico)</th>
+                            <th>Job OCR (Atual)</th>
+                            <th>Motivo / Diagnóstico</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var item in op.Items)
                     {
                         var badge = item.Situation switch
                         {
-                            "concluído" => "bg-success",
-                            "aguardando" => "bg-secondary",
-                            "processando" => "bg-primary",
-                            "falhou" => "bg-danger",
-                            "requer intervenção" => "bg-warning text-dark",
+                            OcrOperationalReason.Completed => "bg-success",
+                            OcrOperationalReason.Waiting => "bg-secondary",
+                            OcrOperationalReason.Processing => "bg-primary",
+                            OcrOperationalReason.Failed => "bg-danger",
+                            OcrOperationalReason.NeedsIntervention => "bg-warning text-dark",
                             _ => "bg-light text-dark"
                         };
                         <tr>
-                            <td>@(string.IsNullOrWhiteSpace(item.FileName) ? "Documento sem nome de arquivo" : item.FileName)</td>
+                            <td class="fw-semibold">@(string.IsNullOrWhiteSpace(item.FileName) ? "Documento sem nome de arquivo" : item.FileName)</td>
                             <td><span class="badge @badge">@item.Situation</span></td>
-                            <td>@item.Detail</td>
+                            <td><span class="badge bg-light text-dark border">@item.RunItemStatus</span></td>
+                            <td>
+                                @if (string.IsNullOrWhiteSpace(item.CurrentJobStatus))
+                                {
+                                    <span class="text-muted small">Sem job vinculado</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-info text-dark">@item.CurrentJobStatus</span>
+                                    @if (item.JobId.HasValue)
+                                    {
+                                        <small class="text-muted ms-1">#@item.JobId</small>
+                                    }
+                                }
+                            </td>
+                            <td class="small text-muted">@item.Detail</td>
                         </tr>
                     }
-                }
-                </tbody>
-            </table>
-        </div>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Paginação -->
+            <div class="card-footer d-flex justify-content-between align-items-center py-2">
+                <div class="small text-muted">
+                    Total: <strong>@op.TotalCount</strong> documentos | Página <strong>@currentPage</strong> de <strong>@totalPages</strong>
+                </div>
+                <div class="btn-group btn-group-sm">
+                    @if (currentPage > 1)
+                    {
+                        <a class="btn btn-outline-secondary" href="@Url.Action("AutoSchedule", new { page = currentPage - 1, situation = currentFilter })">Anterior</a>
+                    }
+                    else
+                    {
+                        <button class="btn btn-outline-secondary" disabled>Anterior</button>
+                    }
+                    @if (currentPage < totalPages)
+                    {
+                        <a class="btn btn-outline-secondary" href="@Url.Action("AutoSchedule", new { page = currentPage + 1, situation = currentFilter })">Próxima</a>
+                    }
+                    else
+                    {
+                        <button class="btn btn-outline-secondary" disabled>Próxima</button>
+                    }
+                </div>
+            </div>
+        }
     </div>
 </div>

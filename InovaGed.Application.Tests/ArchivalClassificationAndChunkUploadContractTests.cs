@@ -69,6 +69,11 @@ public sealed class ArchivalClassificationAndChunkUploadContractTests
         Assert.Contains("TryMarkCompletingAsync", service);
         Assert.Contains("status='COMPLETING'", service);
         Assert.Contains("new FileInfo(assembled).Length != session.TotalSizeBytes", service);
+        Assert.Contains("100_000", service);
+        Assert.Contains("20 * 1024 * 1024", service);
+        Assert.Contains("O envio em partes não é ilimitado", service);
+        Assert.Contains("DriveInfo", service);
+        Assert.Contains("CleanupAbandonedSessionsAsync", service);
     }
 
     [Fact]

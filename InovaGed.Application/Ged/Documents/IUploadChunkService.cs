@@ -70,4 +70,5 @@ public interface IUploadChunkService
     Task<Result<UploadBatchFileResultDto>> CompleteAsync(Guid tenantId, Guid userId, Guid uploadId, CancellationToken ct);
     Task<Result<UploadChunkStatusDto>> GetStatusAsync(Guid tenantId, Guid userId, Guid uploadId, CancellationToken ct);
     Task<Result<UploadChunkStatusDto>> CancelAsync(Guid tenantId, Guid userId, Guid uploadId, CancellationToken ct);
+    Task<int> CleanupAbandonedSessionsAsync(TimeSpan olderThan, CancellationToken ct);
 }

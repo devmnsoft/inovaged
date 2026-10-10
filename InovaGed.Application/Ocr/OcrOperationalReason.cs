@@ -48,6 +48,51 @@ public static class OcrOperationalReason
         => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToUpperInvariant();
 }
 
+public static class OcrOperationalState
+{
+    public const string AvailableWithResults = "disponível com resultados";
+    public const string AvailableEmpty = "disponível sem resultados";
+    public const string Unavailable = "indisponível";
+    public const string AccessDenied = "acesso negado";
+}
+
+public sealed class OcrDiagnosticInfo
+{
+    public string ErrorCode { get; set; } = string.Empty;
+    public string Stage { get; set; } = string.Empty;
+    public string? SqlState { get; set; }
+    public string? CorrelationId { get; set; }
+    public bool CanRetry { get; set; }
+    public string RecoveryAction { get; set; } = string.Empty;
+}
+
+public sealed class OcrRunReasonsFilter
+{
+    public string? Situation { get; set; }
+    public int Page { get; set; } = 1;
+    public int PageSize { get; set; } = 20;
+    public string? Search { get; set; }
+}
+
+public sealed class OcrOperationalReasonsQueryResult
+{
+    public string State { get; set; } = OcrOperationalState.AvailableEmpty;
+    public IReadOnlyList<OcrOperationalReasonDto> Items { get; set; } = Array.Empty<OcrOperationalReasonDto>();
+    public int TotalCount { get; set; }
+    public int Page { get; set; } = 1;
+    public int PageSize { get; set; } = 20;
+    public int TotalPages => PageSize <= 0 ? 1 : Math.Max(1, (int)Math.Ceiling((double)TotalCount / PageSize));
+    public string? SituationFilter { get; set; }
+    public OcrDiagnosticInfo? Diagnostics { get; set; }
+
+    public int WaitingCount { get; set; }
+    public int ProcessingCount { get; set; }
+    public int CompletedCount { get; set; }
+    public int FailedCount { get; set; }
+    public int NeedsInterventionCount { get; set; }
+    public int NotEligibleCount { get; set; }
+}
+
 public sealed class OcrOperationalReasonDto
 {
     public Guid DocumentId { get; set; }
@@ -55,4 +100,7 @@ public sealed class OcrOperationalReasonDto
     public string FileName { get; set; } = string.Empty;
     public string Situation { get; set; } = OcrOperationalReason.NotEligible;
     public string Detail { get; set; } = string.Empty;
+    public string RunItemStatus { get; set; } = string.Empty;
+    public string? CurrentJobStatus { get; set; }
+    public long? JobId { get; set; }
 }

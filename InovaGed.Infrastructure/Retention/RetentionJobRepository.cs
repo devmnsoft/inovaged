@@ -30,12 +30,19 @@ with base as (
     d.retention_hold,
     coalesce(pvi.retention_start_event::text, c.retention_start_event::text) as start_event,
     coalesce(pvi.final_destination::text, c.final_destination::text) as final_dest,
-    coalesce(pvi.retention_active_days, c.retention_active_days, 0) as retention_active_days,
-    coalesce(pvi.retention_active_months, c.retention_active_months, 0) as retention_active_months,
-    coalesce(pvi.retention_active_years, c.retention_active_years, 0) as retention_active_years,
-    coalesce(pvi.retention_archive_days, c.retention_archive_days, 0) as retention_archive_days,
-    coalesce(pvi.retention_archive_months, c.retention_archive_months, 0) as retention_archive_months,
-    coalesce(pvi.retention_archive_years, c.retention_archive_years, 0) as retention_archive_years
+    coalesce(pvi.retention_active_days, c.retention_active_days) as raw_active_days,
+    coalesce(pvi.retention_active_months, c.retention_active_months) as raw_active_months,
+    coalesce(pvi.retention_active_years, c.retention_active_years) as raw_active_years,
+    coalesce(pvi.retention_archive_days, c.retention_archive_days) as raw_archive_days,
+    coalesce(pvi.retention_archive_months, c.retention_archive_months) as raw_archive_months,
+    coalesce(pvi.retention_archive_years, c.retention_archive_years) as raw_archive_years,
+    (coalesce(pvi.final_destination::text, c.final_destination::text) is null
+     and coalesce(pvi.retention_active_days, c.retention_active_days) is null
+     and coalesce(pvi.retention_active_months, c.retention_active_months) is null
+     and coalesce(pvi.retention_active_years, c.retention_active_years) is null
+     and coalesce(pvi.retention_archive_days, c.retention_archive_days) is null
+     and coalesce(pvi.retention_archive_months, c.retention_archive_months) is null
+     and coalesce(pvi.retention_archive_years, c.retention_archive_years) is null) as is_incomplete
   from ged.document d
   left join ged.classification_plan c
     on c.tenant_id = d.tenant_id
@@ -53,6 +60,7 @@ calc as (
     classification_id,
     retention_hold,
     final_dest,
+    is_incomplete,
     case
       when classification_id is null then null
       when start_event = 'ARQUIVAMENTO' then archived_at
@@ -63,6 +71,7 @@ calc as (
     case
       when classification_id is null then null
       when final_dest = 'GUARDA_PERMANENTE' then null
+      when is_incomplete then null
       when start_event = 'ARQUIVAMENTO' and archived_at is null then null
       when start_event = 'ENCERRAMENTO' and closed_at is null then null
       else
@@ -73,9 +82,9 @@ calc as (
             when start_event = 'ABERTURA' then created_at
             else created_at
           end
-          + make_interval(days => (retention_active_days + retention_archive_days))
-          + make_interval(months => (retention_active_months + retention_archive_months))
-          + make_interval(years => (retention_active_years + retention_archive_years))
+          + make_interval(days => (coalesce(raw_active_days, 0) + coalesce(raw_archive_days, 0)))
+          + make_interval(months => (coalesce(raw_active_months, 0) + coalesce(raw_archive_months, 0)))
+          + make_interval(years => (coalesce(raw_active_years, 0) + coalesce(raw_archive_years, 0)))
         )
     end as due_at
   from base
@@ -88,6 +97,7 @@ set
     when c.classification_id is null then null
     when coalesce(c.retention_hold, false) = true then 'HOLD'
     when c.final_dest = 'GUARDA_PERMANENTE' then 'PERMANENT_RECORD'
+    when c.is_incomplete then 'INCOMPLETE_RULE'
     when c.basis_at is null then 'EVENT_PENDING'
     when c.due_at is null then null
     when c.due_at < now() then 'OVERDUE'
@@ -196,12 +206,19 @@ with base as (
     d.retention_hold,
     coalesce(pvi.retention_start_event::text, c.retention_start_event::text) as start_event,
     coalesce(pvi.final_destination::text, c.final_destination::text) as final_dest,
-    coalesce(pvi.retention_active_days, c.retention_active_days, 0) as retention_active_days,
-    coalesce(pvi.retention_active_months, c.retention_active_months, 0) as retention_active_months,
-    coalesce(pvi.retention_active_years, c.retention_active_years, 0) as retention_active_years,
-    coalesce(pvi.retention_archive_days, c.retention_archive_days, 0) as retention_archive_days,
-    coalesce(pvi.retention_archive_months, c.retention_archive_months, 0) as retention_archive_months,
-    coalesce(pvi.retention_archive_years, c.retention_archive_years, 0) as retention_archive_years
+    coalesce(pvi.retention_active_days, c.retention_active_days) as raw_active_days,
+    coalesce(pvi.retention_active_months, c.retention_active_months) as raw_active_months,
+    coalesce(pvi.retention_active_years, c.retention_active_years) as raw_active_years,
+    coalesce(pvi.retention_archive_days, c.retention_archive_days) as raw_archive_days,
+    coalesce(pvi.retention_archive_months, c.retention_archive_months) as raw_archive_months,
+    coalesce(pvi.retention_archive_years, c.retention_archive_years) as raw_archive_years,
+    (coalesce(pvi.final_destination::text, c.final_destination::text) is null
+     and coalesce(pvi.retention_active_days, c.retention_active_days) is null
+     and coalesce(pvi.retention_active_months, c.retention_active_months) is null
+     and coalesce(pvi.retention_active_years, c.retention_active_years) is null
+     and coalesce(pvi.retention_archive_days, c.retention_archive_days) is null
+     and coalesce(pvi.retention_archive_months, c.retention_archive_months) is null
+     and coalesce(pvi.retention_archive_years, c.retention_archive_years) is null) as is_incomplete
   from ged.document d
   left join ged.classification_plan c
     on c.tenant_id = d.tenant_id
@@ -220,6 +237,7 @@ calc as (
     classification_id,
     retention_hold,
     final_dest,
+    is_incomplete,
     case
       when classification_id is null then null
       when start_event = 'ARQUIVAMENTO' then archived_at
@@ -230,6 +248,7 @@ calc as (
     case
       when classification_id is null then null
       when final_dest = 'GUARDA_PERMANENTE' then null
+      when is_incomplete then null
       when start_event = 'ARQUIVAMENTO' and archived_at is null then null
       when start_event = 'ENCERRAMENTO' and closed_at is null then null
       else
@@ -240,9 +259,9 @@ calc as (
             when start_event = 'ABERTURA' then created_at
             else created_at
           end
-          + make_interval(days => (retention_active_days + retention_archive_days))
-          + make_interval(months => (retention_active_months + retention_archive_months))
-          + make_interval(years => (retention_active_years + retention_archive_years))
+          + make_interval(days => (coalesce(raw_active_days, 0) + coalesce(raw_archive_days, 0)))
+          + make_interval(months => (coalesce(raw_active_months, 0) + coalesce(raw_archive_months, 0)))
+          + make_interval(years => (coalesce(raw_active_years, 0) + coalesce(raw_archive_years, 0)))
         )
     end as due_at
   from base
@@ -255,6 +274,7 @@ set
     when c.classification_id is null then null
     when coalesce(c.retention_hold, false) = true then 'HOLD'
     when c.final_dest = 'GUARDA_PERMANENTE' then 'PERMANENT_RECORD'
+    when c.is_incomplete then 'INCOMPLETE_RULE'
     when c.basis_at is null then 'EVENT_PENDING'
     when c.due_at is null then null
     when c.due_at < now() then 'OVERDUE'
@@ -265,4 +285,163 @@ from calc c
 where d.tenant_id = c.tenant_id
   and d.id = c.id;
 ";
+
+    public async Task<RetentionCalculationMemory?> SimulateCalculationAsync(Guid tenantId, Guid documentId, int dueSoonDays, CancellationToken ct)
+    {
+        const string sql = @"
+with base as (
+  select
+    d.id as DocumentId,
+    d.created_at as CreatedAt,
+    d.archived_at as ArchivedAt,
+    d.closed_at as ClosedAt,
+    d.classification_id as ClassificationId,
+    d.retention_hold as RetentionHold,
+    coalesce(pvi.code, c.code) as ClassificationCode,
+    coalesce(pvi.name, c.name) as ClassificationName,
+    pv.version_no as PlanVersionNo,
+    pv.title as PlanVersionTitle,
+    coalesce(pvi.retention_start_event::text, c.retention_start_event::text) as StartEvent,
+    coalesce(pvi.final_destination::text, c.final_destination::text) as FinalDestination,
+    coalesce(pvi.retention_active_days, c.retention_active_days) as RawActiveDays,
+    coalesce(pvi.retention_active_months, c.retention_active_months) as RawActiveMonths,
+    coalesce(pvi.retention_active_years, c.retention_active_years) as RawActiveYears,
+    coalesce(pvi.retention_archive_days, c.retention_archive_days) as RawArchiveDays,
+    coalesce(pvi.retention_archive_months, c.retention_archive_months) as RawArchiveMonths,
+    coalesce(pvi.retention_archive_years, c.retention_archive_years) as RawArchiveYears
+  from ged.document d
+  left join ged.classification_plan c
+    on c.tenant_id = d.tenant_id
+   and c.id = d.classification_id
+  left join ged.classification_plan_version pv
+    on pv.tenant_id = d.tenant_id
+   and pv.id = d.classification_version_id
+  left join ged.classification_plan_version_item pvi
+    on pvi.tenant_id = d.tenant_id
+   and pvi.version_id = d.classification_version_id
+   and pvi.classification_id = d.classification_id
+  where d.tenant_id = @tenantId
+    and d.id = @documentId
+)
+select * from base;
+";
+        await using var conn = await _db.OpenAsync(ct);
+        var row = await conn.QueryFirstOrDefaultAsync<dynamic>(new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct));
+        if (row == null) return null;
+
+        Guid? classId = row.classificationid;
+        if (!classId.HasValue)
+        {
+            return new RetentionCalculationMemory
+            {
+                DocumentId = documentId,
+                CalculatedStatus = "SEM_CLASSIFICACAO",
+                FormulaText = "Documento sem classificação arquivística associada."
+            };
+        }
+
+        string? startEvent = row.startevent;
+        string? finalDest = row.finaldestination;
+        DateTime? createdAt = row.createdat;
+        DateTime? archivedAt = row.archivedat;
+        DateTime? closedAt = row.closedat;
+        bool hold = row.retentionhold ?? false;
+
+        int? actDays = row.rawactivedays;
+        int? actMonths = row.rawactivemonths;
+        int? actYears = row.rawactiveyears;
+        int? arcDays = row.rawarchivedays;
+        int? arcMonths = row.rawarchivemonths;
+        int? arcYears = row.rawarchiveyears;
+
+        bool hasAnyPeriod = actDays.HasValue || actMonths.HasValue || actYears.HasValue || arcDays.HasValue || arcMonths.HasValue || arcYears.HasValue;
+        bool isRuleIncomplete = string.IsNullOrWhiteSpace(finalDest) && !hasAnyPeriod;
+        bool explicitZero = hasAnyPeriod && (actDays ?? 0) == 0 && (actMonths ?? 0) == 0 && (actYears ?? 0) == 0 && (arcDays ?? 0) == 0 && (arcMonths ?? 0) == 0 && (arcYears ?? 0) == 0;
+
+        DateTime? basisDate = startEvent switch
+        {
+            "ARQUIVAMENTO" => archivedAt,
+            "ENCERRAMENTO" => closedAt,
+            "ABERTURA" => createdAt,
+            _ => createdAt
+        };
+
+        bool eventPending = (startEvent == "ARQUIVAMENTO" && archivedAt == null) || (startEvent == "ENCERRAMENTO" && closedAt == null);
+        bool isPermanent = string.Equals(finalDest, "GUARDA_PERMANENTE", StringComparison.OrdinalIgnoreCase);
+
+        DateTime? dueAt = null;
+        string status;
+        string formula;
+
+        if (hold)
+        {
+            status = "HOLD";
+            formula = "Retenção suspensa por impedimento legal ou administrativo (HOLD ativo).";
+        }
+        else if (isPermanent)
+        {
+            status = "PERMANENT_RECORD";
+            formula = "Destinação final: Guarda Permanente. Documento preservado definitivamente sem expiração.";
+        }
+        else if (isRuleIncomplete)
+        {
+            status = "INCOMPLETE_RULE";
+            formula = "Regra de temporalidade incompleta: prazos e destinação final não definidos no plano vigente.";
+        }
+        else if (eventPending)
+        {
+            status = "EVENT_PENDING";
+            formula = $"Evento gatilho pendente: {startEvent}. A contagem iniciará quando o evento for registrado no GED/Protocolo.";
+        }
+        else if (basisDate.HasValue)
+        {
+            var totalDays = (actDays ?? 0) + (arcDays ?? 0);
+            var totalMonths = (actMonths ?? 0) + (arcMonths ?? 0);
+            var totalYears = (actYears ?? 0) + (arcYears ?? 0);
+
+            dueAt = basisDate.Value.AddDays(totalDays).AddMonths(totalMonths).AddYears(totalYears);
+            var now = DateTime.UtcNow;
+
+            if (dueAt < now)
+                status = "OVERDUE";
+            else if (dueAt <= now.AddDays(dueSoonDays))
+                status = "DUE_SOON";
+            else
+                status = "OK";
+
+            formula = $"Data Base ({startEvent}: {basisDate:yyyy-MM-dd}) + Corrente ({(actYears ?? 0)}a {(actMonths ?? 0)}m {(actDays ?? 0)}d) + Intermediária ({(arcYears ?? 0)}a {(arcMonths ?? 0)}m {(arcDays ?? 0)}d) = Vencimento em {dueAt:yyyy-MM-dd} ({status}).";
+        }
+        else
+        {
+            status = "SEM_CLASSIFICACAO";
+            formula = "Sem dados suficientes para cálculo de temporalidade.";
+        }
+
+        return new RetentionCalculationMemory
+        {
+            DocumentId = documentId,
+            ClassificationId = classId,
+            ClassificationCode = row.classificationcode,
+            ClassificationName = row.classificationname,
+            PlanVersionNo = row.planversionno,
+            PlanVersionTitle = row.planversiontitle,
+            StartEvent = startEvent,
+            BasisDate = basisDate,
+            IsBasisEventPending = eventPending,
+            RetentionActiveDays = actDays,
+            RetentionActiveMonths = actMonths,
+            RetentionActiveYears = actYears,
+            RetentionArchiveDays = arcDays,
+            RetentionArchiveMonths = arcMonths,
+            RetentionArchiveYears = arcYears,
+            HasExplicitZeroPeriod = explicitZero,
+            IsRuleIncomplete = isRuleIncomplete,
+            FinalDestination = finalDest,
+            IsPermanentRecord = isPermanent,
+            IsHoldActive = hold,
+            CalculatedDueAt = dueAt,
+            CalculatedStatus = status,
+            FormulaText = formula
+        };
+    }
 }

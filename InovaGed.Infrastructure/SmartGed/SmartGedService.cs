@@ -3,6 +3,7 @@ using System.Text.Json;
 using Dapper;
 using InovaGed.Application.Audit;
 using InovaGed.Application.Common.Database;
+using InovaGed.Application.Retention;
 using InovaGed.Application.SmartGed;
 
 namespace InovaGed.Infrastructure.SmartGed;
@@ -12,7 +13,15 @@ public sealed class SmartGedService : IDocumentIntelligenceService, IDocumentCla
     private readonly IDbConnectionFactory _db;
     private readonly IDocumentMetadataExtractor _extractor;
     private readonly IAuditWriter _audit;
-    public SmartGedService(IDbConnectionFactory db, IDocumentMetadataExtractor extractor, IAuditWriter audit) { _db = db; _extractor = extractor; _audit = audit; }
+    private readonly IRetentionJobRepository _retentionJobs;
+
+    public SmartGedService(IDbConnectionFactory db, IDocumentMetadataExtractor extractor, IAuditWriter audit, IRetentionJobRepository retentionJobs)
+    {
+        _db = db;
+        _extractor = extractor;
+        _audit = audit;
+        _retentionJobs = retentionJobs;
+    }
 
     public async Task<Guid> AnalyzeDocumentAsync(Guid tenantId, Guid documentId, Guid? userId, CancellationToken ct)
     {
@@ -43,7 +52,33 @@ values(@id,@tenantId,@documentId,'COMPLETED','LOCAL_RULES',@text,@Summary,@Docum
         var planReady = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select to_regclass('ged.classification_plan') is not null", cancellationToken: ct));
         if (planReady)
         {
-            var plans = await c.QueryAsync<PlanRow>(new CommandDefinition("select id as Id,code as Code,title as Title,description as Description,final_destination as FinalDestination from ged.classification_plan where tenant_id=@tenantId and coalesce(reg_status,'A')='A' limit 500", new { tenantId }, cancellationToken: ct));
+            List<PlanRow> plans;
+            try
+            {
+                plans = (await c.QueryAsync<PlanRow>(new CommandDefinition("""
+select coalesce(i.classification_id, cp.id) as Id,
+       coalesce(i.code, cp.code) as Code,
+       coalesce(i.name, cp.title) as Title,
+       coalesce(cp.description, '') as Description,
+       coalesce(i.final_destination, cp.final_destination) as FinalDestination
+from ged.classification_plan_version_item i
+join ged.classification_plan_version v on v.tenant_id=i.tenant_id and v.id=i.version_id
+left join ged.classification_plan cp on cp.tenant_id=i.tenant_id and cp.id=i.classification_id
+where i.tenant_id=@tenantId and coalesce(i.is_active,true) and coalesce(v.reg_status,'A')='A'
+  and v.version_no=(select max(version_no) from ged.classification_plan_version where tenant_id=@tenantId and coalesce(reg_status,'A')='A')
+order by i.code limit 500
+""", new { tenantId }, cancellationToken: ct))).ToList();
+            }
+            catch
+            {
+                plans = [];
+            }
+
+            if (plans.Count == 0)
+            {
+                plans = (await c.QueryAsync<PlanRow>(new CommandDefinition("select id as Id,code as Code,title as Title,description as Description,final_destination as FinalDestination from ged.classification_plan where tenant_id=@tenantId and coalesce(reg_status,'A')='A' limit 500", new { tenantId }, cancellationToken: ct))).ToList();
+            }
+
             var best = plans.Select(p => new { Plan = p, Score = extraction.Keywords.Count(k => ($"{p.Code} {p.Title} {p.Description}").Contains(k, StringComparison.OrdinalIgnoreCase)) }).OrderByDescending(x => x.Score).FirstOrDefault();
             if (best is { Score: > 0 })
             {
@@ -79,6 +114,7 @@ values(@id,@tenantId,@documentId,'COMPLETED','LOCAL_RULES',@text,@Summary,@Docum
     public Task RejectAsync(Guid tenantId, Guid suggestionId, Guid userId, string reason, CancellationToken ct) => ReviewClassification(tenantId, suggestionId, userId, "REJECTED", reason, ct);
     Task IDocumentRetentionSuggestionService.AcceptAsync(Guid tenantId, Guid suggestionId, Guid userId, string? notes, CancellationToken ct) => ReviewRetention(tenantId, suggestionId, userId, "ACCEPTED", notes, ct);
     Task IDocumentRetentionSuggestionService.RejectAsync(Guid tenantId, Guid suggestionId, Guid userId, string reason, CancellationToken ct) => ReviewRetention(tenantId, suggestionId, userId, "REJECTED", reason, ct);
+
     private async Task ReviewClassification(Guid tenantId, Guid id, Guid userId, string status, string? notes, CancellationToken ct)
     {
         await using var c = await _db.OpenAsync(ct);
@@ -87,31 +123,125 @@ values(@id,@tenantId,@documentId,'COMPLETED','LOCAL_RULES',@text,@Summary,@Docum
         if (suggestion is null) throw new InvalidOperationException("Sugestão não encontrada ou já revisada.");
         if (status == "ACCEPTED" && suggestion.ClassificationId.HasValue)
         {
-            await c.ExecuteAsync(new CommandDefinition("insert into ged.document_classification(tenant_id,document_id,classification_id,confidence,suggestion_factors,reclassification_reason,source,classified_by) values(@tenantId,@DocumentId,@ClassificationId,@confidence,cast(@factors as jsonb),@notes,'SMART_GED_CONFIRMED',@userId)", new { tenantId, suggestion.DocumentId, suggestion.ClassificationId, confidence = suggestion.Confidence / 100m, factors = JsonSerializer.Serialize(new { suggestionId = id, humanConfirmed = true }), notes, userId }, tx, cancellationToken: ct));
-            await c.ExecuteAsync(new CommandDefinition("update ged.document set classification_id=@ClassificationId where tenant_id=@tenantId and id=@DocumentId", new { tenantId, suggestion.DocumentId, suggestion.ClassificationId }, tx, cancellationToken: ct));
+            await c.ExecuteAsync(new CommandDefinition("""
+insert into ged.document_classification(tenant_id,document_id,classification_id,confidence,suggestion_factors,reclassification_reason,source,classified_by)
+values(@tenantId,@DocumentId,@ClassificationId,@confidence,cast(@factors as jsonb),@notes,'SMART_GED_CONFIRMED',@userId)
+""", new { tenantId, suggestion.DocumentId, suggestion.ClassificationId, confidence = suggestion.Confidence / 100m, factors = JsonSerializer.Serialize(new { suggestionId = id, humanConfirmed = true }), notes, userId }, tx, cancellationToken: ct));
+
+            await c.ExecuteAsync(new CommandDefinition("""
+update ged.document d
+set classification_id=@ClassificationId,
+    classification_version_id=coalesce((
+        select v.id from ged.classification_plan_version v
+        join ged.classification_plan_version_item i on i.tenant_id=v.tenant_id and i.version_id=v.id
+        where v.tenant_id=@tenantId and i.classification_id=@ClassificationId and coalesce(i.is_active,true) and coalesce(v.reg_status,'A')='A'
+        order by v.version_no desc limit 1
+    ), d.classification_version_id),
+    updated_at=now(),
+    updated_by=@userId
+where d.tenant_id=@tenantId and d.id=@DocumentId
+""", new { tenantId, suggestion.DocumentId, suggestion.ClassificationId, userId }, tx, cancellationToken: ct));
         }
         await tx.CommitAsync(ct);
-        await Audit(tenantId,userId,$"CLASSIFICATION_SUGGESTION_{status}",suggestion.DocumentId,new{id,notes},ct);
+
+        if (status == "ACCEPTED" && suggestion.ClassificationId.HasValue)
+        {
+            try
+            {
+                await _retentionJobs.EnqueueRecalculateAsync(tenantId, suggestion.DocumentId, "SMART_GED_CONFIRMED", ct);
+            }
+            catch
+            {
+                // Non-blocking if retention queue table is unavailable
+            }
+        }
+
+        await Audit(tenantId, userId, $"CLASSIFICATION_SUGGESTION_{status}", suggestion.DocumentId, new { id, notes }, ct);
     }
+
     private async Task ReviewRetention(Guid tenantId, Guid id, Guid userId, string status, string? notes, CancellationToken ct) { await using var c = await _db.OpenAsync(ct); var doc = await c.ExecuteScalarAsync<Guid?>(new CommandDefinition("update ged.document_retention_suggestion set status=@status,reviewed_by=@userId,reviewed_at=now(),review_notes=@notes where tenant_id=@tenantId and id=@id and status='PENDING' returning document_id", new { tenantId, id, userId, status, notes }, cancellationToken: ct)); if (!doc.HasValue) throw new InvalidOperationException("Sugestão não encontrada ou já revisada."); await Audit(tenantId,userId,$"RETENTION_SUGGESTION_{status}",doc,new{id,notes},ct); }
 
     public async Task<SmartGedSearchResult> SearchAsync(SmartGedSearchQuery query, CancellationToken ct)
     {
-        var clock = Stopwatch.StartNew(); await using var c = await _db.OpenAsync(ct); var term = query.Text.Trim();
-        if (term.Length < 2) return new(term, [], 0);
-        var rows = await c.QueryAsync<SearchRow>(new CommandDefinition("""
-select a.document_id as DocumentId,coalesce(d.title,'Documento') as Document,a.extracted_summary as Summary,
-coalesce(cs.suggested_classification_code||' - '||cs.suggested_classification_title,'Não classificado') as Classification,
+        var clock = Stopwatch.StartNew();
+        await using var c = await _db.OpenAsync(ct);
+        var term = (query.Text ?? string.Empty).Trim();
+        if (term.Length < 2 && query.FolderId is null && query.ClassificationId is null && query.TypeId is null)
+            return new(term, [], 0);
+
+        var sql = new System.Text.StringBuilder("""
+select a.document_id as DocumentId, coalesce(d.title, 'Documento') as Document, a.extracted_summary as Summary,
+coalesce(pvi.code || ' - ' || pvi.name, cp.code || ' - ' || cp.title, cs.suggested_classification_code || ' - ' || cs.suggested_classification_title, 'Não classificado') as Classification,
 case when exists(select 1 from ged.document_quality_issue qi where qi.tenant_id=a.tenant_id and qi.document_id=a.document_id and qi.status='OPEN') then 'ATENÇÃO' else 'OK' end as QualityStatus,
-left(regexp_replace(coalesce(a.extracted_text,a.extracted_summary,''),'\s+',' ','g'),240) as Excerpt
-from ged.document_ai_analysis a join ged.document d on d.id=a.document_id and d.tenant_id=a.tenant_id
-left join lateral(select suggested_classification_code,suggested_classification_title from ged.document_classification_suggestion x where x.tenant_id=a.tenant_id and x.document_id=a.document_id order by created_at desc limit 1) cs on true
-where a.tenant_id=@TenantId and a.reg_status='A' and (coalesce(d.title,'') ilike @pattern or coalesce(a.extracted_text,'') ilike @pattern or coalesce(a.extracted_summary,'') ilike @pattern or coalesce(cs.suggested_classification_code,'') ilike @pattern or coalesce(cs.suggested_classification_title,'') ilike @pattern)
-order by a.created_at desc limit @limit
-""", new { query.TenantId, pattern = $"%{term}%", limit = Math.Clamp(query.Limit, 1, 100) }, cancellationToken: ct));
-        var items = rows.Select(x => new SmartGedSearchItem(x.DocumentId,x.Document,x.Summary,x.Classification,null,x.QualityStatus,x.Excerpt)).ToArray(); clock.Stop();
-        await c.ExecuteAsync(new CommandDefinition("insert into ged.smart_search_query_log(tenant_id,user_id,query_text,normalized_query,result_count,execution_ms,payload_json) values(@TenantId,@UserId,@Text,@normalized,@count,@ms,cast(@payload as jsonb))", new { query.TenantId, query.UserId, query.Text, normalized=term.ToLowerInvariant(), count=items.Length, ms=(int)clock.ElapsedMilliseconds, payload=JsonSerializer.Serialize(new{limit=query.Limit}) }, cancellationToken:ct));
-        await Audit(query.TenantId,query.UserId,"SMART_SEARCH_EXECUTED",null,new{query=term,resultCount=items.Length},ct); return new(term,items,(int)clock.ElapsedMilliseconds);
+left(regexp_replace(coalesce(a.extracted_text, a.extracted_summary, ''), '\s+', ' ', 'g'), 240) as Excerpt,
+v.version_number as VersionNumber,
+d.retention_status as RetentionStatus
+from ged.document_ai_analysis a
+join ged.document d on d.id = a.document_id and d.tenant_id = a.tenant_id
+left join ged.document_version v on v.id = d.current_version_id
+left join ged.classification_plan cp on cp.id = d.classification_id and cp.tenant_id = d.tenant_id
+left join ged.classification_plan_version_item pvi on pvi.tenant_id = d.tenant_id and pvi.version_id = d.classification_version_id and pvi.classification_id = d.classification_id
+left join lateral (
+    select suggested_classification_code, suggested_classification_title
+    from ged.document_classification_suggestion x
+    where x.tenant_id = a.tenant_id and x.document_id = a.document_id
+    order by created_at desc limit 1
+) cs on true
+where a.tenant_id = @TenantId
+  and a.reg_status = 'A'
+  and coalesce(d.reg_status, 'A') = 'A'
+  and coalesce(d.status, '') <> 'DELETED'
+""");
+
+        var dp = new DynamicParameters();
+        dp.Add("TenantId", query.TenantId);
+        dp.Add("limit", Math.Clamp(query.Limit, 1, 100));
+
+        if (!string.IsNullOrWhiteSpace(term))
+        {
+            sql.Append(" and (coalesce(d.title, '') ilike @pattern or coalesce(a.extracted_text, '') ilike @pattern or coalesce(a.extracted_summary, '') ilike @pattern or coalesce(pvi.code, cp.code, cs.suggested_classification_code, '') ilike @pattern or coalesce(pvi.name, cp.title, cs.suggested_classification_title, '') ilike @pattern)");
+            dp.Add("pattern", $"%{term}%");
+        }
+        if (query.FolderId.HasValue)
+        {
+            sql.Append(" and d.folder_id = @FolderId");
+            dp.Add("FolderId", query.FolderId.Value);
+        }
+        if (query.ClassificationId.HasValue)
+        {
+            sql.Append(" and d.classification_id = @ClassificationId");
+            dp.Add("ClassificationId", query.ClassificationId.Value);
+        }
+        if (query.TypeId.HasValue)
+        {
+            sql.Append(" and d.type_id = @TypeId");
+            dp.Add("TypeId", query.TypeId.Value);
+        }
+        if (query.CreatedAfter.HasValue)
+        {
+            sql.Append(" and d.created_at >= @CreatedAfter");
+            dp.Add("CreatedAfter", query.CreatedAfter.Value);
+        }
+        if (query.CreatedBefore.HasValue)
+        {
+            sql.Append(" and d.created_at <= @CreatedBefore");
+            dp.Add("CreatedBefore", query.CreatedBefore.Value);
+        }
+        if (!string.IsNullOrWhiteSpace(query.RetentionStatus))
+        {
+            sql.Append(" and d.retention_status = @RetentionStatus");
+            dp.Add("RetentionStatus", query.RetentionStatus);
+        }
+
+        sql.Append(" order by a.created_at desc limit @limit");
+
+        var rows = await c.QueryAsync<SearchRow>(new CommandDefinition(sql.ToString(), dp, cancellationToken: ct));
+        var items = rows.Select(x => new SmartGedSearchItem(x.DocumentId, x.Document, x.Summary, x.Classification, null, x.QualityStatus, x.Excerpt, x.VersionNumber, x.RetentionStatus)).ToArray();
+        clock.Stop();
+
+        await c.ExecuteAsync(new CommandDefinition("insert into ged.smart_search_query_log(tenant_id,user_id,query_text,normalized_query,result_count,execution_ms,payload_json) values(@TenantId,@UserId,@Text,@normalized,@count,@ms,cast(@payload as jsonb))", new { query.TenantId, query.UserId, query.Text, normalized = term.ToLowerInvariant(), count = items.Length, ms = (int)clock.ElapsedMilliseconds, payload = JsonSerializer.Serialize(new { limit = query.Limit, query.FolderId, query.ClassificationId, query.TypeId }) }, cancellationToken: ct));
+        await Audit(query.TenantId, query.UserId, "SMART_SEARCH_EXECUTED", null, new { query = term, resultCount = items.Length }, ct);
+        return new(term, items, (int)clock.ElapsedMilliseconds);
     }
 
     private static async Task<IReadOnlyList<DocumentClassificationSuggestionItem>> ListClassifications(Npgsql.NpgsqlConnection c, Guid tenantId, string filter, object args, CancellationToken ct) => (await c.QueryAsync<ClassificationRow>(new CommandDefinition($"select id as Id,document_id as DocumentId,suggested_classification_code as Code,suggested_classification_title as Title,suggested_reason as Reason,confidence as Confidence,status as Status from ged.document_classification_suggestion where tenant_id=@tenantId and reg_status='A' {filter} order by confidence desc", args, cancellationToken:ct))).Select(x=>new DocumentClassificationSuggestionItem(x.Id,x.DocumentId,x.Code,x.Title,x.Reason,x.Confidence,x.Status)).ToArray();
@@ -127,5 +257,5 @@ order by a.created_at desc limit @limit
     private sealed class ClassificationRow { public Guid Id {get;set;} public Guid DocumentId {get;set;} public string? Code {get;set;} public string? Title {get;set;} public string? Reason {get;set;} public decimal Confidence {get;set;} public string Status {get;set;}=""; }
     private sealed class RetentionRow { public Guid Id {get;set;} public Guid DocumentId {get;set;} public string? Phase {get;set;} public string? FinalDestination {get;set;} public string? TriggerEvent {get;set;} public DateTime? RetentionUntil {get;set;} public string? Reason {get;set;} public decimal Confidence {get;set;} public string Status {get;set;}=""; }
     private sealed class IssueRow { public Guid Id {get;set;} public Guid DocumentId {get;set;} public string Type {get;set;}=""; public string Severity {get;set;}=""; public string Title {get;set;}=""; public string? RecommendedAction {get;set;} public string Status {get;set;}=""; }
-    private sealed class SearchRow { public Guid DocumentId {get;set;} public string Document {get;set;}=""; public string? Summary {get;set;} public string? Classification {get;set;} public string QualityStatus {get;set;}=""; public string Excerpt {get;set;}=""; }
+    private sealed class SearchRow { public Guid DocumentId {get;set;} public string Document {get;set;}=""; public string? Summary {get;set;} public string? Classification {get;set;} public string QualityStatus {get;set;}=""; public string Excerpt {get;set;}=""; public int? VersionNumber {get;set;} public string? RetentionStatus {get;set;} }
 }

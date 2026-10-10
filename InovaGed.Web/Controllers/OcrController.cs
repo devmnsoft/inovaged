@@ -78,9 +78,9 @@ public sealed class OcrController : Controller
 
     [HttpGet("AutoSchedule")]
     [Authorize(Policy = AppPolicies.SystemAdmin)]
-    public async Task<IActionResult> AutoSchedule(CancellationToken ct)
+    public async Task<IActionResult> AutoSchedule([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? situation = null, [FromQuery] string? q = null, CancellationToken ct = default)
     {
-        await AuditAsync("OCR_AUTO_SCHEDULE_VIEW", null, null, null, new { }, ct);
+        await AuditAsync("OCR_AUTO_SCHEDULE_VIEW", null, null, null, new { page, pageSize, situation, q }, ct);
         var options = _options.CurrentValue;
         IReadOnlyList<OcrAutoScheduleRunSummaryDto> history = Array.Empty<OcrAutoScheduleRunSummaryDto>();
         var eligibleCount = 0;
@@ -98,6 +98,27 @@ public sealed class OcrController : Controller
             _logger.LogWarning("Não foi possível carregar histórico/configuração do OCR automático. Tipo={ExceptionType}", ex.GetType().Name);
         }
 
+        var filter = new OcrRunReasonsFilter
+        {
+            Page = page,
+            PageSize = pageSize,
+            Situation = situation,
+            Search = q
+        };
+
+        var reasonsResult = history.FirstOrDefault() is { Id: var runId } && runId != Guid.Empty
+            ? await _repository.GetRunReasonsPagedAsync(options.TenantId == Guid.Empty ? _currentUser.TenantId : options.TenantId, runId, filter, ct)
+            : new OcrOperationalReasonsQueryResult();
+
+        if (WantsJson() && HttpContext.Request.Query.ContainsKey("ajax"))
+        {
+            return Json(new
+            {
+                success = reasonsResult.State is OcrOperationalState.AvailableWithResults or OcrOperationalState.AvailableEmpty,
+                reasons = reasonsResult
+            });
+        }
+
         var nextRunUtc = SafeNextRun(options);
         var vm = new OcrAutoScheduleDashboardDto
         {
@@ -112,9 +133,8 @@ public sealed class OcrController : Controller
             LastRun = history.FirstOrDefault(),
             EligibleDocumentsCount = eligibleCount,
             History = history.ToList(),
-            LastRunReasons = history.FirstOrDefault() is { Id: var runId } && runId != Guid.Empty
-                ? (await _repository.GetRunReasonsAsync(options.TenantId == Guid.Empty ? _currentUser.TenantId : options.TenantId, runId, ct)).ToList()
-                : new List<OcrOperationalReasonDto>()
+            OperationalReasons = reasonsResult,
+            LastRunReasons = reasonsResult.Items.ToList()
         };
         if (!string.IsNullOrWhiteSpace(warning)) TempData["WarningMessage"] = warning;
 
