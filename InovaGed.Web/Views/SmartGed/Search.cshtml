@@ -1,4 +1,215 @@
-@model InovaGed.Application.SmartGed.SmartGedSearchResult
-@{ViewData["Title"]="Busca inteligente";ViewData["Subtitle"]="Consulta unificada e isolada por tenant em texto extraído, resumo e classificação.";ViewData["Icon"]="search";}
-<partial name="Atlas/_AtlasPageHero"/><form method="post" class="input-group mb-4">@Html.AntiForgeryToken()<input class="form-control" name="query" value="@Model.Query" minlength="2" required placeholder="Título, CPF mascarado, processo, assunto ou classificação"/><button class="btn btn-primary">Buscar</button></form>
-@if(!string.IsNullOrWhiteSpace(Model.Query)){<p class="text-muted">@Model.Items.Count resultado(s) em @Model.ExecutionMs ms.</p><div class="card atlas-card"><div class="table-responsive"><table class="table atlas-table"><thead><tr><th>Documento</th><th>Resumo/trecho</th><th>Classificação</th><th>Qualidade</th><th>Ação</th></tr></thead><tbody>@foreach(var x in Model.Items){<tr><td>@x.Document</td><td>@x.Excerpt</td><td>@x.Classification</td><td>@x.QualityStatus</td><td><a class="btn btn-sm btn-outline-primary" asp-action="Document" asp-route-documentId="@x.DocumentId">Inteligência</a></td></tr>}@if(Model.Items.Count==0){<tr><td colspan="5" class="text-muted">Nenhum documento autorizado encontrado.</td></tr>}</tbody></table></div></div>}
+@model InovaGed.Web.Models.SmartGed.SmartGedSearchPageVM
+@{
+    ViewData["Title"] = "Busca Inteligente";
+    ViewData["Subtitle"] = "Consulta textual, classificação efetiva, temporalidade e filtros contextuais por tenant.";
+    ViewData["Icon"] = "search";
+}
+
+<partial name="Atlas/_AtlasPageHero" />
+
+<div class="card atlas-card mb-4">
+    <div class="card-body">
+        <form method="get" asp-action="Search" class="row g-3">
+            <div class="col-12 col-md-6">
+                <label class="form-label fw-bold" for="searchQuery">Termo de pesquisa</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" class="form-control" id="searchQuery" name="query" value="@Model.Query" placeholder="Título, resumo, texto OCR, palavras-chave..." />
+                </div>
+            </div>
+
+            <div class="col-12 col-md-3">
+                <label class="form-label fw-bold" for="filterFolder">Pasta</label>
+                <select class="form-select" id="filterFolder" name="folderId">
+                    <option value="">Todas as pastas</option>
+                    @foreach (var f in Model.Folders)
+                    {
+                        <option value="@f.Value" selected="@(f.Selected ? "selected" : null)">@f.Text</option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-12 col-md-3">
+                <label class="form-label fw-bold" for="filterType">Tipo Documental</label>
+                <select class="form-select" id="filterType" name="typeId">
+                    <option value="">Todos os tipos</option>
+                    @foreach (var t in Model.DocumentTypes)
+                    {
+                        <option value="@t.Value" selected="@(t.Selected ? "selected" : null)">@t.Text</option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-12 col-md-4">
+                <label class="form-label fw-bold" for="filterClass">Classificação (Vigente)</label>
+                <select class="form-select" id="filterClass" name="classificationId">
+                    <option value="">Todas as classes</option>
+                    @foreach (var c in Model.Classifications)
+                    {
+                        <option value="@c.Value" selected="@(c.Selected ? "selected" : null)">@c.Text</option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-12 col-md-3">
+                <label class="form-label fw-bold" for="filterRetention">Situação da Temporalidade</label>
+                <select class="form-select" id="filterRetention" name="retentionStatus">
+                    <option value="">Todas as situações</option>
+                    <option value="OK" selected="@(Model.RetentionStatus == "OK" ? "selected" : null)">Em dia (OK)</option>
+                    <option value="DUE_SOON" selected="@(Model.RetentionStatus == "DUE_SOON" ? "selected" : null)">Vence em breve (DUE_SOON)</option>
+                    <option value="OVERDUE" selected="@(Model.RetentionStatus == "OVERDUE" ? "selected" : null)">Vencido (OVERDUE)</option>
+                    <option value="HOLD" selected="@(Model.RetentionStatus == "HOLD" ? "selected" : null)">Suspenso (HOLD)</option>
+                    <option value="PERMANENT_RECORD" selected="@(Model.RetentionStatus == "PERMANENT_RECORD" ? "selected" : null)">Guarda Permanente</option>
+                    <option value="EVENT_PENDING" selected="@(Model.RetentionStatus == "EVENT_PENDING" ? "selected" : null)">Evento Gatilho Pendente</option>
+                    <option value="INCOMPLETE_RULE" selected="@(Model.RetentionStatus == "INCOMPLETE_RULE" ? "selected" : null)">Regra Incompleta</option>
+                </select>
+            </div>
+
+            <div class="col-6 col-md-2">
+                <label class="form-label fw-bold" for="filterAfter">Criado a partir de</label>
+                <input type="date" class="form-control" id="filterAfter" name="createdAfter" value="@(Model.CreatedAfter?.ToString("yyyy-MM-dd"))" />
+            </div>
+
+            <div class="col-6 col-md-2">
+                <label class="form-label fw-bold" for="filterBefore">Criado até</label>
+                <input type="date" class="form-control" id="filterBefore" name="createdBefore" value="@(Model.CreatedBefore?.ToString("yyyy-MM-dd"))" />
+            </div>
+
+            <div class="col-12 col-md-1 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100" id="btnBuscar">
+                    <i class="bi bi-search"></i>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@if (Model.Result.Items.Count > 0 || !string.IsNullOrWhiteSpace(Model.Query) || Model.FolderId.HasValue || Model.ClassificationId.HasValue || Model.TypeId.HasValue || Model.CreatedAfter.HasValue || Model.CreatedBefore.HasValue || !string.IsNullOrWhiteSpace(Model.RetentionStatus))
+{
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <span class="text-muted small">
+            <strong>@Model.Result.Items.Count</strong> documento(s) autorizado(s) encontrado(s) em @Model.Result.ExecutionMs ms.
+        </span>
+        @if (Model.Result.Items.Count > 0)
+        {
+            <span class="badge bg-secondary-subtle text-secondary border">Ordenação por mais recentes</span>
+        }
+    </div>
+
+    <div class="card atlas-card">
+        <div class="table-responsive">
+            <table class="table atlas-table align-middle">
+                <thead>
+                    <tr>
+                        <th style="min-width: 220px;">Documento</th>
+                        <th>Classificação Efetiva</th>
+                        <th>Temporalidade</th>
+                        <th>Qualidade</th>
+                        <th style="min-width: 300px;">Evidência / Trecho</th>
+                        <th class="text-end" style="min-width: 110px;">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in Model.Result.Items)
+                    {
+                        <tr>
+                            <td>
+                                <div class="fw-bold">@item.Document</div>
+                                <div class="text-muted small">
+                                    ID: <code>@item.DocumentId.ToString()[..8]…</code>
+                                    @if (item.VersionNumber.HasValue)
+                                    {
+                                        <span class="badge bg-light text-dark border ms-1">v@(item.VersionNumber.Value)</span>
+                                    }
+                                </div>
+                            </td>
+                            <td>
+                                @if (string.Equals(item.Classification, "Não classificado", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <span class="text-muted fst-italic">Não classificado</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-info-subtle text-info border">@item.Classification</span>
+                                }
+                            </td>
+                            <td>
+                                @switch (item.RetentionStatus)
+                                {
+                                    case "OK":
+                                        <span class="badge bg-success-subtle text-success border">Em dia</span>
+                                        break;
+                                    case "DUE_SOON":
+                                        <span class="badge bg-warning-subtle text-warning border">Vence em breve</span>
+                                        break;
+                                    case "OVERDUE":
+                                        <span class="badge bg-danger-subtle text-danger border">Vencido</span>
+                                        break;
+                                    case "HOLD":
+                                        <span class="badge bg-secondary-subtle text-secondary border">Suspenso (HOLD)</span>
+                                        break;
+                                    case "PERMANENT_RECORD":
+                                        <span class="badge bg-primary-subtle text-primary border">Permanente</span>
+                                        break;
+                                    case "EVENT_PENDING":
+                                        <span class="badge bg-info-subtle text-info border">Evento pendente</span>
+                                        break;
+                                    case "INCOMPLETE_RULE":
+                                        <span class="badge bg-danger-subtle text-danger border">Regra incompleta</span>
+                                        break;
+                                    default:
+                                        <span class="text-muted small">—</span>
+                                        break;
+                                }
+                            </td>
+                            <td>
+                                @if (item.QualityStatus == "ATENÇÃO")
+                                {
+                                    <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> Atenção</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-success text-white"><i class="bi bi-check-circle"></i> OK</span>
+                                }
+                                @if (item.IsAnalysisOutdated)
+                                {
+                                    <span class="badge bg-secondary text-white ms-1" title="Análise anterior à última alteração do documento">Desatualizada</span>
+                                }
+                            </td>
+                            <td>
+                                <div class="small text-secondary">
+                                    @if (!string.IsNullOrWhiteSpace(item.Excerpt))
+                                    {
+                                        <span>@item.Excerpt</span>
+                                    }
+                                    else if (!string.IsNullOrWhiteSpace(item.Summary))
+                                    {
+                                        <span class="fst-italic">@item.Summary</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">Sem texto extraído disponível.</span>
+                                    }
+                                </div>
+                            </td>
+                            <td class="text-end">
+                                <a class="btn btn-sm btn-outline-primary" asp-action="Document" asp-route-documentId="@item.DocumentId" title="Abrir painel de inteligência">
+                                    <i class="bi bi-cpu"></i> Painel IA
+                                </a>
+                            </td>
+                        </tr>
+                    }
+                    @if (Model.Result.Items.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="6" class="text-center py-4 text-muted">
+                                <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                                Nenhum documento autorizado encontrado para os critérios informados.
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}

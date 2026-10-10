@@ -63,29 +63,31 @@ order by sort_order, code;
     public async Task<IReadOnlyList<ClassificationPlanItemSelectorRow>> ListEligibleActiveItemsAsync(Guid tenantId, CancellationToken ct)
     {
         await using var conn = await _db.OpenAsync(ct);
-        const string sql = @"
+        var maxVersion = await conn.ExecuteScalarAsync<int?>(new CommandDefinition(
+            "select max(version_no) from ged.classification_plan_version where tenant_id = @tenant_id and coalesce(reg_status, 'A') = 'A'",
+            new { tenant_id = tenantId }, cancellationToken: ct));
+
+        if (maxVersion.HasValue)
+        {
+            const string versionSql = @"
 select
   i.classification_id as Id,
   i.code as Code,
-  i.name as Name
+  coalesce(i.name, i.title) as Name
 from ged.classification_plan_version_item i
 join ged.classification_plan_version v on v.tenant_id = i.tenant_id and v.id = i.version_id
 where i.tenant_id = @tenant_id
   and coalesce(i.is_active, true)
   and coalesce(v.reg_status, 'A') = 'A'
-  and v.version_no = (
-    select max(version_no)
-    from ged.classification_plan_version
-    where tenant_id = @tenant_id and coalesce(reg_status, 'A') = 'A'
-  )
+  and v.version_no = @maxVersion
 order by i.code;
 ";
-        var rows = await conn.QueryAsync<ClassificationPlanItemSelectorRow>(
-            new CommandDefinition(sql, new { tenant_id = tenantId }, cancellationToken: ct));
-        var list = rows.AsList();
-        if (list.Count > 0)
-            return list;
+            var versionRows = await conn.QueryAsync<ClassificationPlanItemSelectorRow>(
+                new CommandDefinition(versionSql, new { tenant_id = tenantId, maxVersion = maxVersion.Value }, cancellationToken: ct));
+            return versionRows.AsList();
+        }
 
+        // Reconhecida instalação legada sem versões publicadas
         const string fallbackSql = @"
 select
   id as Id,

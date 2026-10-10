@@ -44,6 +44,10 @@ public sealed class RetentionCalculationMemory
     public DateTime? CalculatedDueAt { get; init; }
     public string CalculatedStatus { get; init; } = "";
     public string FormulaText { get; init; } = "";
+    public DateTime? PersistedDueAt { get; init; }
+    public string? PersistedStatus { get; init; }
+    public DateTime? PersistedBasisAt { get; init; }
+    public string? RuleSource { get; init; }
 }
 
 public sealed class RetentionDashboardVM

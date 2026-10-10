@@ -1,6 +1,7 @@
 using System.Text;
 using InovaGed.Application.Common.Context;
 using InovaGed.Application.Retention;
+using InovaGed.Application.Security;
 using InovaGed.Infrastructure.Retention;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
@@ -20,6 +21,7 @@ public sealed class RetentionController : Controller
     private readonly IRetentionAuditWriter _audit;
     private readonly ILogger<RetentionController> _logger;
     private readonly ICurrentContext _ctx;
+    private readonly IAbacAuthorizationService _authorization;
 
     public RetentionController(
         IRetentionJobRepository repo,
@@ -27,7 +29,8 @@ public sealed class RetentionController : Controller
         IRetentionQueueQueries queue,
         IRetentionAuditWriter audit,
         ILogger<RetentionController> logger,
-        ICurrentContext ctx)
+        ICurrentContext ctx,
+        IAbacAuthorizationService authorization)
     {
         _repo = repo;
         _svc = svc;
@@ -35,6 +38,7 @@ public sealed class RetentionController : Controller
         _audit = audit;
         _logger = logger;
         _ctx = ctx;
+        _authorization = authorization;
     }
 
     private Guid TenantIdOrThrow()
@@ -97,6 +101,12 @@ public sealed class RetentionController : Controller
     {
         var tenantId = TenantIdOrThrow();
         if (documentId == Guid.Empty) return BadRequest(new { error = "DocumentId inválido." });
+
+        if (_ctx.UserId != Guid.Empty)
+        {
+            var auth = await _authorization.CanAccessDocumentAsync(tenantId, _ctx.UserId, documentId, "VIEW", new Dictionary<string, string>(), ct);
+            if (!auth) return Forbid();
+        }
 
         var memory = await _repo.SimulateCalculationAsync(tenantId, documentId, 30, ct);
         if (memory is null) return NotFound(new { error = "Documento não encontrado neste tenant." });

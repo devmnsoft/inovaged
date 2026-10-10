@@ -12,17 +12,17 @@ namespace InovaGed.Infrastructure.Ged.Protocols;
 
 public sealed class ProtocoloCentralService : IProtocoloCentralService
 {
-    private const string ClosedSql = "('FINALIZADO','ARQUIVADO','CANCELADO','DEFERIDO','INDEFERIDO')";
+    private const string ClosedSql = "('FINALIZADO','ENCERRADO','ARQUIVADO','CANCELADO','DEFERIDO','INDEFERIDO')";
     private readonly IDbConnectionFactory _db;
     private readonly IAbacAuthorizationService _abac;
-    private readonly InovaGed.Application.Retention.IRetentionJobRepository? _retentionJobs;
+    private readonly InovaGed.Application.Retention.IRetentionJobRepository _retentionJobs;
     private readonly ILogger<ProtocoloCentralService> _logger;
 
     public ProtocoloCentralService(IDbConnectionFactory db, ILogger<ProtocoloCentralService> logger, IAbacAuthorizationService abac, InovaGed.Application.Retention.IRetentionJobRepository? retentionJobs = null)
     {
         _db = db;
         _abac = abac;
-        _retentionJobs = retentionJobs;
+        _retentionJobs = retentionJobs ?? new InovaGed.Infrastructure.Retention.RetentionJobRepository(db, Microsoft.Extensions.Logging.Abstractions.NullLogger<InovaGed.Infrastructure.Retention.RetentionJobRepository>.Instance);
         _logger = logger;
     }
 
@@ -303,6 +303,20 @@ values (@TenantId, @Id, @Setor, @Setor, @UserId, @UserName, 'REABERTURA', @Anter
             if (protocol is null) return ProtocoloCommandResult.Fail("Protocolo não encontrado.");
             if (ProtocolCustodyRules.IsClosed(protocol.Status)) return ProtocoloCommandResult.Ok("O processo já está encerrado.", idempotent: true);
 
+            var grants = await LoadGrantsAsync(conn, tx, actor.TenantId, actor.UserId, ct);
+            if (!ProtocolCustodyRules.CanAct(actor.CanSeeAll || actor.IsFullAdmin, grants.Any(g => g.SetorId == protocol.SetorAtualId && (g.PodeDecidir || g.PodeTramitar)), true))
+                return ProtocoloCommandResult.Fail("Seu usuário não possui permissão para encerrar este processo.");
+
+            var linkedDocIds = (await conn.QueryAsync<Guid>(new CommandDefinition(
+                "select distinct ged_document_id from ged.protocolo_documento_ged where tenant_id=@TenantId and protocolo_id=@Id and reg_status='A'",
+                new { actor.TenantId, Id = protocoloId }, tx, cancellationToken: ct))).ToList();
+            if (linkedDocIds.Count > 0 && !actor.CanSeeAll && !actor.IsFullAdmin)
+            {
+                var allowedDocs = await _abac.FilterDocumentsAsync(actor.TenantId, actor.UserId, linkedDocIds, "VIEW", ct);
+                if (allowedDocs.Count < linkedDocIds.Count)
+                    return ProtocoloCommandResult.Fail("Usuário não possui autorização documental sobre todos os documentos vinculados ao processo.");
+            }
+
             var pending = await conn.ExecuteScalarAsync<int>(new CommandDefinition(
                 "select count(*) from ged.protocolo_tramitacao where tenant_id=@TenantId and protocolo_id=@Id and reg_status='A' and ativa=true and situacao_movimentacao in ('AGUARDANDO_RECEBIMENTO','DEVOLUCAO_PENDENTE')",
                 new { actor.TenantId, Id = protocoloId }, tx, cancellationToken: ct));
@@ -337,6 +351,20 @@ values (@TenantId, @Id, @Setor, @Setor, @UserId, @UserName, 'ENCERRAMENTO', @Ant
             if (protocol is null) return ProtocoloCommandResult.Fail("Protocolo não encontrado.");
             if (string.Equals(protocol.Status, "ARQUIVADO", StringComparison.OrdinalIgnoreCase)) return ProtocoloCommandResult.Ok("O processo já está arquivado.", idempotent: true);
 
+            var grants = await LoadGrantsAsync(conn, tx, actor.TenantId, actor.UserId, ct);
+            if (!ProtocolCustodyRules.CanAct(actor.CanSeeAll || actor.IsFullAdmin, grants.Any(g => g.SetorId == protocol.SetorAtualId && (g.PodeDecidir || g.PodeTramitar)), true))
+                return ProtocoloCommandResult.Fail("Seu usuário não possui permissão para arquivar este processo.");
+
+            var linkedDocIds = (await conn.QueryAsync<Guid>(new CommandDefinition(
+                "select distinct ged_document_id from ged.protocolo_documento_ged where tenant_id=@TenantId and protocolo_id=@Id and reg_status='A'",
+                new { actor.TenantId, Id = protocoloId }, tx, cancellationToken: ct))).ToList();
+            if (linkedDocIds.Count > 0 && !actor.CanSeeAll && !actor.IsFullAdmin)
+            {
+                var allowedDocs = await _abac.FilterDocumentsAsync(actor.TenantId, actor.UserId, linkedDocIds, "VIEW", ct);
+                if (allowedDocs.Count < linkedDocIds.Count)
+                    return ProtocoloCommandResult.Fail("Usuário não possui autorização documental sobre todos os documentos vinculados ao processo.");
+            }
+
             var pending = await conn.ExecuteScalarAsync<int>(new CommandDefinition(
                 "select count(*) from ged.protocolo_tramitacao where tenant_id=@TenantId and protocolo_id=@Id and reg_status='A' and ativa=true and situacao_movimentacao in ('AGUARDANDO_RECEBIMENTO','DEVOLUCAO_PENDENTE')",
                 new { actor.TenantId, Id = protocoloId }, tx, cancellationToken: ct));
@@ -367,7 +395,10 @@ SELECT
     d.id as DocumentId,
     d.closed_at as ClosedAt,
     d.archived_at as ArchivedAt,
-    COALESCE(pvi.retention_start_event::text, cp.retention_start_event::text) as StartEvent
+    case
+        when d.classification_version_id is not null then pvi.retention_start_event::text
+        else cp.retention_start_event::text
+    end as StartEvent
 FROM ged.protocolo_documento_ged pdg
 JOIN ged.document d ON d.tenant_id = pdg.tenant_id AND d.id = pdg.ged_document_id AND d.reg_status = 'A'
 LEFT JOIN ged.classification_plan cp ON cp.tenant_id = d.tenant_id AND cp.id = d.classification_id
@@ -393,7 +424,7 @@ WHERE pdg.tenant_id = @TenantId
   AND pdg.ged_document_id = @DocId
   AND pdg.protocolo_id <> @ProtocoloId
   AND pdg.reg_status = 'A'
-  AND UPPER(p.status) NOT IN ('FINALIZADO', 'ENCERRADO', 'ARQUIVADO', 'CANCELADO');
+  AND UPPER(p.status) NOT IN ('FINALIZADO', 'ENCERRADO', 'ARQUIVADO', 'CANCELADO', 'DEFERIDO', 'INDEFERIDO');
 """, new { TenantId = tenantId, DocId = docItem.DocumentId, ProtocoloId = protocoloId }, tx, cancellationToken: ct));
 
             if (otherActiveCount > 0)
@@ -416,10 +447,7 @@ UPDATE ged.document
 SET closed_at = NOW(), updated_at = NOW(), updated_by = @UserId
 WHERE tenant_id = @TenantId AND id = @DocId;
 """, new { TenantId = tenantId, DocId = docItem.DocumentId, UserId = userId }, tx, cancellationToken: ct));
-                if (_retentionJobs != null)
-                {
-                    await _retentionJobs.EnqueueRecalculateAsync(conn, tx, tenantId, docItem.DocumentId, "PROTOCOL_CLOSED_EVENT", ct);
-                }
+                await _retentionJobs.EnqueueRecalculateAsync(conn, tx, tenantId, docItem.DocumentId, "PROTOCOL_CLOSED_EVENT", ct);
             }
             else if (isArquivamento && docItem.StartEvent == "ARQUIVAMENTO" && !docItem.ArchivedAt.HasValue)
             {
@@ -428,10 +456,7 @@ UPDATE ged.document
 SET archived_at = NOW(), updated_at = NOW(), updated_by = @UserId
 WHERE tenant_id = @TenantId AND id = @DocId;
 """, new { TenantId = tenantId, DocId = docItem.DocumentId, UserId = userId }, tx, cancellationToken: ct));
-                if (_retentionJobs != null)
-                {
-                    await _retentionJobs.EnqueueRecalculateAsync(conn, tx, tenantId, docItem.DocumentId, "PROTOCOL_ARCHIVED_EVENT", ct);
-                }
+                await _retentionJobs.EnqueueRecalculateAsync(conn, tx, tenantId, docItem.DocumentId, "PROTOCOL_ARCHIVED_EVENT", ct);
             }
         }
     }

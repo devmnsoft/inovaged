@@ -14,7 +14,7 @@ public static class ProtocolCustodyRules
     public const string ClosedCustody = "ENCERRADO";
 
     public static readonly string[] ClosedProcessStatuses =
-        ["FINALIZADO", "ARQUIVADO", "CANCELADO", "DEFERIDO", "INDEFERIDO"];
+        ["FINALIZADO", "ENCERRADO", "ARQUIVADO", "CANCELADO", "DEFERIDO", "INDEFERIDO"];
 
     public static bool IsClosed(string? status) =>
         ClosedProcessStatuses.Contains((status ?? string.Empty).Trim(), StringComparer.OrdinalIgnoreCase);

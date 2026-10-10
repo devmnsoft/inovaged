@@ -1,4 +1,277 @@
 @model InovaGed.Application.SmartGed.SmartGedReviewQueue
-@{ViewData["Title"]="Fila de revisão inteligente";ViewData["Subtitle"]="Confirme ou rejeite cada sugestão antes de qualquer decisão oficial.";ViewData["Icon"]="sparkles";}
-<partial name="Atlas/_AtlasPageHero"/><div class="card atlas-card mb-4"><div class="card-header"><strong>Classificação sugerida (@Model.Classifications.Count)</strong></div><div class="table-responsive"><table class="table atlas-table"><thead><tr><th>Documento</th><th>Sugestão</th><th>Motivo</th><th>Confiança</th><th>Ações</th></tr></thead><tbody>@foreach(var x in Model.Classifications){<tr><td><a asp-action="Document" asp-route-documentId="@x.DocumentId">@x.DocumentId</a></td><td>@x.Code — @x.Title</td><td>@x.Reason</td><td>@x.Confidence%</td><td><form class="d-inline" method="post" asp-action="AcceptClassification" asp-route-id="@x.Id">@Html.AntiForgeryToken()<button class="btn btn-sm btn-success">Aceitar</button></form> <form class="d-inline" method="post" asp-action="RejectClassification" asp-route-id="@x.Id">@Html.AntiForgeryToken()<input type="hidden" name="reason" value="Rejeitada na fila"/><button class="btn btn-sm btn-outline-danger">Rejeitar</button></form></td></tr>}@if(Model.Classifications.Count==0){<tr><td colspan="5" class="text-muted">Nenhuma classificação pendente.</td></tr>}</tbody></table></div></div>
-<div class="card atlas-card"><div class="card-header"><strong>Temporalidade sugerida (@Model.Retentions.Count)</strong></div><div class="table-responsive"><table class="table atlas-table"><thead><tr><th>Documento</th><th>Fase</th><th>Destino</th><th>Motivo</th><th>Ações</th></tr></thead><tbody>@foreach(var x in Model.Retentions){<tr><td><a asp-action="Document" asp-route-documentId="@x.DocumentId">@x.DocumentId</a></td><td>@x.Phase</td><td>@x.FinalDestination</td><td>@x.Reason</td><td><form class="d-inline" method="post" asp-action="AcceptRetention" asp-route-id="@x.Id">@Html.AntiForgeryToken()<button class="btn btn-sm btn-success">Aceitar</button></form> <form class="d-inline" method="post" asp-action="RejectRetention" asp-route-id="@x.Id">@Html.AntiForgeryToken()<input type="hidden" name="reason" value="Rejeitada na fila"/><button class="btn btn-sm btn-outline-danger">Rejeitar</button></form></td></tr>}@if(Model.Retentions.Count==0){<tr><td colspan="5" class="text-muted">Nenhuma temporalidade pendente.</td></tr>}</tbody></table></div></div>
+@{
+    ViewData["Title"] = "Fila de revisão inteligente";
+    ViewData["Subtitle"] = "Confirme ou rejeite cada sugestão arquivística antes de qualquer decisão oficial.";
+    ViewData["Icon"] = "sparkles";
+    var currentStatus = Model.CurrentStatus ?? "PENDING";
+}
+
+<partial name="Atlas/_AtlasPageHero" />
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+    <div class="btn-group" role="group" aria-label="Filtro por situação da sugestão">
+        <a asp-action="ReviewQueue" asp-route-status="PENDING" class="btn @(currentStatus == "PENDING" ? "btn-primary" : "btn-outline-secondary")">
+            Pendentes (@(currentStatus == "PENDING" ? (Model.Classifications.Count + Model.Retentions.Count).ToString() : "•"))
+        </a>
+        <a asp-action="ReviewQueue" asp-route-status="ACCEPTED" class="btn @(currentStatus == "ACCEPTED" ? "btn-primary" : "btn-outline-secondary")">
+            Aceitas
+        </a>
+        <a asp-action="ReviewQueue" asp-route-status="REJECTED" class="btn @(currentStatus == "REJECTED" ? "btn-primary" : "btn-outline-secondary")">
+            Rejeitadas
+        </a>
+        <a asp-action="ReviewQueue" asp-route-status="ALL" class="btn @(currentStatus == "ALL" ? "btn-primary" : "btn-outline-secondary")">
+            Todas
+        </a>
+    </div>
+
+    <div class="small text-muted">
+        <i class="bi bi-info-circle me-1"></i>
+        A aceitação de classificação aciona o recálculo canônico de temporalidade na mesma transação.
+    </div>
+</div>
+
+<div class="card atlas-card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Sugestões de Classificação (@Model.Classifications.Count)</strong>
+        <span class="badge bg-light text-dark border">Plano Vigente</span>
+    </div>
+    <div class="table-responsive">
+        <table class="table atlas-table align-middle mb-0">
+            <thead>
+                <tr>
+                    <th style="min-width: 220px;">Documento</th>
+                    <th style="min-width: 240px;">Comparação Antes / Depois</th>
+                    <th>Motivo / Evidência</th>
+                    <th style="width: 100px;">Confiança</th>
+                    <th style="width: 110px;">Situação</th>
+                    <th style="min-width: 180px;">Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var x in Model.Classifications)
+                {
+                    <tr class="@(x.IsObsolete ? "table-warning bg-opacity-10" : "")">
+                        <td>
+                            <div class="fw-semibold">
+                                <a asp-action="Document" asp-route-documentId="@x.DocumentId" class="text-decoration-none">
+                                    @(string.IsNullOrWhiteSpace(x.DocumentTitle) ? "Documento " + x.DocumentId.ToString()[..8] : x.DocumentTitle)
+                                </a>
+                            </div>
+                            <div class="small text-muted d-flex align-items-center gap-2 mt-1">
+                                <span>Versão: v@(x.VersionNumber ?? 1)</span>
+                                @if (x.CreatedAt.HasValue)
+                                {
+                                    <span>· @x.CreatedAt.Value.ToString("dd/MM/yyyy HH:mm")</span>
+                                }
+                            </div>
+                            @if (x.IsObsolete)
+                            {
+                                <span class="badge bg-warning text-dark mt-1" title="O documento sofreu alterações após a geração desta sugestão. Revalide antes de aplicar.">
+                                    <i class="bi bi-exclamation-triangle me-1"></i> Sugestão Obsoleta
+                                </span>
+                            }
+                        </td>
+                        <td>
+                            <div class="small text-muted">Atual:</div>
+                            <div class="small fw-semibold text-secondary mb-1">
+                                @(string.IsNullOrWhiteSpace(x.CurrentClassification) ? "Não classificado" : x.CurrentClassification)
+                            </div>
+                            <div class="small text-muted">Sugerida:</div>
+                            <div class="fw-bold text-primary">
+                                @x.Code — @x.Title
+                            </div>
+                        </td>
+                        <td>
+                            <div class="small text-break">@x.Reason</div>
+                            @if (!string.IsNullOrWhiteSpace(x.ReviewNotes))
+                            {
+                                <div class="small text-muted mt-1 fst-italic">
+                                    <i class="bi bi-chat-left-text me-1"></i> Nota: @x.ReviewNotes
+                                </div>
+                            }
+                        </td>
+                        <td>
+                            <div class="fw-bold @(x.Confidence >= 75 ? "text-success" : (x.Confidence >= 50 ? "text-warning" : "text-danger"))">
+                                @x.Confidence%
+                            </div>
+                        </td>
+                        <td>
+                            @if (x.Status == "ACCEPTED")
+                            {
+                                <span class="badge bg-success">Aceita</span>
+                            }
+                            else if (x.Status == "REJECTED")
+                            {
+                                <span class="badge bg-danger">Rejeitada</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-primary">Pendente</span>
+                            }
+                        </td>
+                        <td>
+                            @if (x.Status == "PENDING")
+                            {
+                                <div class="d-flex flex-wrap gap-2">
+                                    <form class="d-inline" method="post" asp-action="AcceptClassification" asp-route-id="@x.Id">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="notes" value="Aceita via fila de revisão assistida" />
+                                        <button class="btn btn-sm btn-success" type="submit" title="Aceitar e aplicar esta classificação">
+                                            <i class="bi bi-check-lg"></i> Aceitar
+                                        </button>
+                                    </form>
+                                    <form class="d-inline" method="post" asp-action="RejectClassification" asp-route-id="@x.Id">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="reason" value="Rejeitada na fila de revisão assistida" />
+                                        <button class="btn btn-sm btn-outline-danger" type="submit" title="Rejeitar esta sugestão">
+                                            <i class="bi bi-x-lg"></i> Rejeitar
+                                        </button>
+                                    </form>
+                                </div>
+                            }
+                            else
+                            {
+                                <a asp-action="Document" asp-route-documentId="@x.DocumentId" class="btn btn-sm btn-outline-secondary">
+                                    Ver Detalhes
+                                </a>
+                            }
+                        </td>
+                    </tr>
+                }
+                @if (Model.Classifications.Count == 0)
+                {
+                    <tr>
+                        <td colspan="6" class="text-muted text-center py-4">
+                            Nenhuma sugestão de classificação encontrada para a situação selecionada.
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card atlas-card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Sugestões de Temporalidade (@Model.Retentions.Count)</strong>
+        <span class="badge bg-light text-dark border">Tabela de Temporalidade</span>
+    </div>
+    <div class="table-responsive">
+        <table class="table atlas-table align-middle mb-0">
+            <thead>
+                <tr>
+                    <th style="min-width: 220px;">Documento</th>
+                    <th style="min-width: 240px;">Comparação Antes / Depois</th>
+                    <th>Motivo / Regra</th>
+                    <th style="width: 100px;">Confiança</th>
+                    <th style="width: 110px;">Situação</th>
+                    <th style="min-width: 180px;">Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var x in Model.Retentions)
+                {
+                    <tr class="@(x.IsObsolete ? "table-warning bg-opacity-10" : "")">
+                        <td>
+                            <div class="fw-semibold">
+                                <a asp-action="Document" asp-route-documentId="@x.DocumentId" class="text-decoration-none">
+                                    @(string.IsNullOrWhiteSpace(x.DocumentTitle) ? "Documento " + x.DocumentId.ToString()[..8] : x.DocumentTitle)
+                                </a>
+                            </div>
+                            <div class="small text-muted d-flex align-items-center gap-2 mt-1">
+                                <span>Versão: v@(x.VersionNumber ?? 1)</span>
+                                @if (x.CreatedAt.HasValue)
+                                {
+                                    <span>· @x.CreatedAt.Value.ToString("dd/MM/yyyy HH:mm")</span>
+                                }
+                            </div>
+                            @if (x.IsObsolete)
+                            {
+                                <span class="badge bg-warning text-dark mt-1" title="O documento sofreu alterações após a geração desta sugestão. Revalide antes de aplicar.">
+                                    <i class="bi bi-exclamation-triangle me-1"></i> Sugestão Obsoleta
+                                </span>
+                            }
+                        </td>
+                        <td>
+                            <div class="small text-muted">Atual:</div>
+                            <div class="small fw-semibold text-secondary mb-1">
+                                @(string.IsNullOrWhiteSpace(x.CurrentRetention) ? "Não calculada" : x.CurrentRetention)
+                            </div>
+                            <div class="small text-muted">Sugerida:</div>
+                            <div class="fw-bold text-primary">
+                                Fase: @(x.Phase ?? "Corrente") · Destino: @(x.FinalDestination ?? "Guarda Permanente")
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(x.TriggerEvent))
+                            {
+                                <div class="small text-muted">Evento: @x.TriggerEvent</div>
+                            }
+                        </td>
+                        <td>
+                            <div class="small text-break">@x.Reason</div>
+                            @if (!string.IsNullOrWhiteSpace(x.ReviewNotes))
+                            {
+                                <div class="small text-muted mt-1 fst-italic">
+                                    <i class="bi bi-chat-left-text me-1"></i> Nota: @x.ReviewNotes
+                                </div>
+                            }
+                        </td>
+                        <td>
+                            <div class="fw-bold @(x.Confidence >= 75 ? "text-success" : (x.Confidence >= 50 ? "text-warning" : "text-danger"))">
+                                @x.Confidence%
+                            </div>
+                        </td>
+                        <td>
+                            @if (x.Status == "ACCEPTED")
+                            {
+                                <span class="badge bg-success">Aceita</span>
+                            }
+                            else if (x.Status == "REJECTED")
+                            {
+                                <span class="badge bg-danger">Rejeitada</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-primary">Pendente</span>
+                            }
+                        </td>
+                        <td>
+                            @if (x.Status == "PENDING")
+                            {
+                                <div class="d-flex flex-wrap gap-2">
+                                    <form class="d-inline" method="post" asp-action="AcceptRetention" asp-route-id="@x.Id">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="notes" value="Aceita via fila de revisão assistida" />
+                                        <button class="btn btn-sm btn-success" type="submit" title="Aceitar e aplicar esta temporalidade">
+                                            <i class="bi bi-check-lg"></i> Aceitar
+                                        </button>
+                                    </form>
+                                    <form class="d-inline" method="post" asp-action="RejectRetention" asp-route-id="@x.Id">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="reason" value="Rejeitada na fila de revisão assistida" />
+                                        <button class="btn btn-sm btn-outline-danger" type="submit" title="Rejeitar esta sugestão">
+                                            <i class="bi bi-x-lg"></i> Rejeitar
+                                        </button>
+                                    </form>
+                                </div>
+                            }
+                            else
+                            {
+                                <a asp-action="Document" asp-route-documentId="@x.DocumentId" class="btn btn-sm btn-outline-secondary">
+                                    Ver Detalhes
+                                </a>
+                            }
+                        </td>
+                    </tr>
+                }
+                @if (Model.Retentions.Count == 0)
+                {
+                    <tr>
+                        <td colspan="6" class="text-muted text-center py-4">
+                            Nenhuma sugestão de temporalidade encontrada para a situação selecionada.
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

@@ -1,3 +1,4 @@
+@import "inovaged-components.css";
 /* InovaGED Canonical Component Styles */
 .ig-card {
     background: var(--ig-surface, #ffffff);

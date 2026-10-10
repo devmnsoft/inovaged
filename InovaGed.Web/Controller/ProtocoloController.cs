@@ -77,6 +77,20 @@ public sealed class ProtocoloController : GedControllerBase
             if (UserId is Guid uid && await _documentAuthorization.CanAccessDocumentAsync(TenantId, uid, docId, "VIEW", new Dictionary<string, string>(), HttpContext.RequestAborted))
             {
                 vm.GedDocumentTitle = await db.ExecuteScalarAsync<string?>("select coalesce(nullif(btrim(title),''), code) from ged.document where tenant_id=@TenantId and id=@Id and reg_status='A'", new { TenantId, Id = docId });
+                if (string.IsNullOrWhiteSpace(vm.Assunto) && !string.IsNullOrWhiteSpace(vm.GedDocumentTitle))
+                {
+                    vm.Assunto = $"Processo ref. {vm.GedDocumentTitle}";
+                }
+                if (string.IsNullOrWhiteSpace(vm.Descricao))
+                {
+                    vm.Descricao = await db.ExecuteScalarAsync<string?>("""
+select coalesce(a.extracted_summary, d.description)
+from ged.document d
+left join ged.document_ai_analysis a on a.tenant_id = d.tenant_id and a.document_id = d.id and a.reg_status = 'A'
+where d.tenant_id = @TenantId and d.id = @Id and d.reg_status = 'A'
+order by a.created_at desc limit 1
+""", new { TenantId, Id = docId });
+                }
             }
         }
         return View(vm);
@@ -106,40 +120,78 @@ public sealed class ProtocoloController : GedControllerBase
         // Verificar se este protocolo já foi gravado em tentativa anterior (timeout/resubmissão)
         var existente = await db.QuerySingleOrDefaultAsync<ProtocoloResumoExistente>(
             @"select id as Id, numero as Numero, status as Status, setor_atual_id as SetorAtualId, 
-                     setor_origem_id as SetorOrigemId, setor_destino_inicial_id as SetorDestinoInicialId 
+                     setor_origem_id as SetorOrigemId, setor_destino_inicial_id as SetorDestinoInicialId,
+                     criado_por as CriadoPor, assunto as Assunto
               from ged.protocolo 
               where tenant_id = @TenantId and id = @Id and reg_status = 'A'",
             new { TenantId, Id = id });
 
         if (existente is not null)
         {
-            _logger?.LogInformation("Protocolo {Numero} ({Id}) já persistido; retomando sem duplicar.", existente.Numero, id);
-            var vinculoJaExiste = origemSolicitada ? " e vinculado ao documento de origem" : "";
-            if (!vm.SalvarComoRascunho && existente.SetorOrigemId != vm.SetorDestinoId && UserId is not null)
+            // 1. Validar acesso ao protocolo existente
+            var userSectors = await GetSetoresUsuarioAsync(db);
+            var temAcesso = IsAdminOrGestor() 
+                || (UserId.HasValue && existente.CriadoPor == UserId.Value)
+                || userSectors.Any(x => x.SetorId == existente.SetorOrigemId || x.SetorId == existente.SetorAtualId);
+
+            if (!temAcesso)
             {
-                if (existente.SetorAtualId == existente.SetorOrigemId)
+                ModelState.AddModelError(string.Empty, "Identificador informado pertence a um protocolo existente sem permissão de acesso.");
+                return View(vm);
+            }
+
+            // 2. Rejeitar reutilização da mesma chave com dados incompatíveis
+            if (existente.SetorOrigemId != vm.SetorOrigemId)
+            {
+                ModelState.AddModelError(string.Empty, "Identificador de protocolo já utilizado para outro setor de origem.");
+                return View(vm);
+            }
+            if (!string.IsNullOrWhiteSpace(existente.Assunto) && !string.IsNullOrWhiteSpace(vm.Assunto)
+                && !string.Equals(existente.Assunto.Trim(), vm.Assunto.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                ModelState.AddModelError(string.Empty, "Identificador de protocolo já utilizado com dados incompatíveis.");
+                return View(vm);
+            }
+
+            // 3. Conferir vínculo realmente persistido
+            var vinculoRealmentePersistido = vm.GedDocumentId.HasValue && await db.ExecuteScalarAsync<bool>(
+                "select exists(select 1 from ged.protocolo_documento_ged where tenant_id=@TenantId and protocolo_id=@Id and ged_document_id=@GedDocId and reg_status='A')",
+                new { TenantId, Id = id, GedDocId = vm.GedDocumentId.Value });
+
+            var vinculoTexto = vinculoRealmentePersistido
+                ? " e vinculado ao documento de origem"
+                : (origemSolicitada ? " (vínculo ao documento de origem pendente de confirmação)" : "");
+
+            // 4. Utilizar destino e estado persistidos
+            var destinoEfetivo = existente.SetorDestinoInicialId ?? vm.SetorDestinoId;
+
+            _logger?.LogInformation("Protocolo {Numero} ({Id}) já persistido; retomando com destino e estado persistidos.", existente.Numero, id);
+
+            if (!vm.SalvarComoRascunho && existente.SetorOrigemId != destinoEfetivo && UserId is not null)
+            {
+                if (existente.SetorAtualId == existente.SetorOrigemId && !ProtocolCustodyRules.IsClosed(existente.Status))
                 {
                     try
                     {
-                        var fwd = await _central.ForwardAsync(Actor(), id, null, vm.SetorDestinoId, "Abertura do protocolo (retomada)", null, $"novo:{id:N}", null, null, null, HttpContext.RequestAborted);
+                        var fwd = await _central.ForwardAsync(Actor(), id, null, destinoEfetivo, "Abertura do protocolo (retomada)", null, $"novo:{id:N}", null, null, null, HttpContext.RequestAborted);
                         TempData[fwd.Success ? "ok" : "erro"] = fwd.Success
-                            ? $"Protocolo {existente.Numero} já havia sido criado{vinculoJaExiste} e foi encaminhado com sucesso. {fwd.Message}"
-                            : $"Protocolo {existente.Numero} já está criado{vinculoJaExiste} no setor de origem, mas o encaminhamento permanece pendente: {fwd.Message}";
+                            ? $"Protocolo {existente.Numero} já havia sido criado{vinculoTexto} e foi encaminhado com sucesso. {fwd.Message}"
+                            : $"Protocolo {existente.Numero} já está criado{vinculoTexto} no setor de origem, mas o encaminhamento permanece pendente: {fwd.Message}";
                     }
                     catch (Exception ex)
                     {
                         _logger?.LogError(ex, "Erro ao encaminhar protocolo {Numero} ({Id}) na retomada.", existente.Numero, id);
-                        TempData["erro"] = $"Protocolo {existente.Numero} já está criado{vinculoJaExiste} no setor de origem, mas o encaminhamento permanece pendente devido a uma instabilidade temporária.";
+                        TempData["erro"] = $"Protocolo {existente.Numero} já está criado{vinculoTexto} no setor de origem, mas o encaminhamento permanece pendente devido a uma instabilidade temporária.";
                     }
                 }
                 else
                 {
-                    TempData["ok"] = $"Protocolo {existente.Numero} já havia sido criado{vinculoJaExiste} e encaminhado anteriormente.";
+                    TempData["ok"] = $"Protocolo {existente.Numero} já havia sido criado{vinculoTexto} com situação {existente.Status}.";
                 }
             }
             else
             {
-                TempData["ok"] = $"Protocolo {existente.Numero} já havia sido criado{vinculoJaExiste} com sucesso.";
+                TempData["ok"] = $"Protocolo {existente.Numero} já havia sido criado{vinculoTexto} com sucesso.";
             }
             return RedirectToAction(nameof(Details), new { id });
         }
@@ -199,6 +251,16 @@ values (@TenantId, @ProtocoloId, 'protocolo_documento_ged', @Id, 'GED_VINCULO', 
             }
             tx.Commit();
             committed = true;
+        }
+        catch (Npgsql.PostgresException pgEx) when (pgEx.SqlState == "23505")
+        {
+            if (!committed)
+            {
+                try { tx.Rollback(); } catch (Exception rbEx) { _logger?.LogWarning(rbEx, "Falha ao executar rollback da transação do protocolo {Id}.", id); }
+            }
+            _logger?.LogInformation("Submissão simultânea detectada para o protocolo {Id}; redirecionando para detalhes.", id);
+            TempData["ok"] = "Protocolo processado com sucesso.";
+            return RedirectToAction(nameof(Details), new { id });
         }
         catch (Exception ex)
         {
@@ -1235,5 +1297,5 @@ insert into ged.protocolo_minuta_historico (
         catch (Exception ex) { return StatusCode(500, new { success = false, message = "Erro ao carregar histórico.", error = ex.Message }); }
     }
 
-    private sealed record ProtocoloResumoExistente(Guid Id, string Numero, string Status, Guid SetorAtualId, Guid SetorOrigemId, Guid? SetorDestinoInicialId);
+    private sealed record ProtocoloResumoExistente(Guid Id, string Numero, string Status, Guid SetorAtualId, Guid SetorOrigemId, Guid? SetorDestinoInicialId, Guid? CriadoPor, string? Assunto);
 }

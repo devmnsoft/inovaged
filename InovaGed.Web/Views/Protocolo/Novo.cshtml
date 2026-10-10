@@ -1,22 +1,139 @@
 @model InovaGed.Web.Models.Protocolo.ProtocoloNovoVM
 @{ ViewData["Title"] = "Novo Protocolo"; }
-<div class="d-flex justify-content-between mb-3"><h4>Novo Protocolo</h4><a asp-action="Index" class="btn btn-outline-secondary">Voltar</a></div>
-<form asp-action="Novo" method="post" enctype="multipart/form-data">@Html.AntiForgeryToken()<div asp-validation-summary="All" class="text-danger"></div>
-<input type="hidden" asp-for="Id" />
-@if (Model.GedDocumentId is Guid)
-{
-    <input type="hidden" asp-for="GedDocumentId" />
-    <div class="alert alert-info">
-        @(string.IsNullOrWhiteSpace(Model.GedLinkNotice) ? "Este protocolo só será criado junto com o vínculo do documento de origem." : Model.GedLinkNotice)
-        @if (!string.IsNullOrWhiteSpace(Model.GedDocumentTitle))
-        {
-            <div class="mt-1">Documento: <strong>@Model.GedDocumentTitle</strong></div>
-        }
+<div class="d-flex justify-content-between mb-3">
+    <h4>Novo Protocolo</h4>
+    <a asp-action="Index" class="btn btn-outline-secondary">Voltar</a>
+</div>
+
+<form asp-action="Novo" method="post" enctype="multipart/form-data">
+    @Html.AntiForgeryToken()
+    <div asp-validation-summary="All" class="text-danger"></div>
+    <input type="hidden" asp-for="Id" />
+
+    @if (Model.GedDocumentId is Guid)
+    {
+        <input type="hidden" asp-for="GedDocumentId" />
+        <div class="alert alert-info border-0 shadow-sm mb-3">
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <i class="bi bi-paperclip fs-5 text-primary"></i>
+                <strong>Vínculo Obrigatório de Origem:</strong>
+                <span>@(string.IsNullOrWhiteSpace(Model.GedLinkNotice) ? "Este protocolo só será criado junto com o vínculo do documento de origem." : Model.GedLinkNotice)</span>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(Model.GedDocumentTitle))
+            {
+                <div class="mt-1 ps-4">
+                    Documento de referência: <strong>@Model.GedDocumentTitle</strong>
+                </div>
+            }
+        </div>
+
+        <div class="card border-0 shadow-sm mb-3 bg-light">
+            <div class="card-body p-3">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                    <span class="fw-semibold text-primary">
+                        <i class="bi bi-stars me-1"></i> Preenchimento Assistido por Inteligência Documental
+                    </span>
+                    <span class="badge bg-white text-secondary border">Apoio Operacional</span>
+                </div>
+                <p class="small text-muted mb-2">
+                    O assunto e a descrição foram derivados dos metadados e da análise textual do documento selecionado. Você pode editá-los livremente antes de gerar o protocolo.
+                </p>
+                <div class="alert alert-warning py-2 mb-0 small">
+                    <i class="bi bi-person-exclamation me-1"></i>
+                    <strong>Informações ausentes / conferência humana:</strong> A IA não inventa dados de solicitante, interessado, CPF/CNPJ, decisões ou despachos. Preencha ou confirme os dados do requerente abaixo.
+                </div>
+            </div>
+        </div>
+    }
+
+    <details class="ig-help-block mb-3">
+        <summary>Como usar</summary>
+        <p class="mb-0">Preencha a tramitação e o assunto. Se esta tela foi aberta a partir de um documento, o protocolo só é gravado quando o vínculo com esse documento também é gravado. Consultar o documento não basta: também é preciso poder editá-lo. Rascunho e protocolo efetivado seguem a mesma regra.</p>
+    </details>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white fw-semibold">Tramitação inicial</div>
+        <div class="card-body row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Setor de origem</label>
+                <select asp-for="SetorOrigemId" asp-items="Model.Setores" class="form-select">
+                    <option value="">Selecione</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Setor de destino</label>
+                <select asp-for="SetorDestinoId" asp-items="Model.Setores" class="form-select">
+                    <option value="">Selecione</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label>Tipo</label>
+                <select asp-for="TipoProtocoloId" asp-items="Model.Tipos" class="form-select">
+                    <option value="">Selecione</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label>Assunto cadastrado</label>
+                <select asp-for="AssuntoId" asp-items="Model.Assuntos" class="form-select">
+                    <option value="">Selecione</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label>Prioridade</label>
+                <select asp-for="PrioridadeId" asp-items="Model.Prioridades" class="form-select">
+                    <option value="">Normal</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label>Canal</label>
+                <select asp-for="CanalEntradaId" asp-items="Model.CanaisEntrada" class="form-select">
+                    <option value="">Selecione</option>
+                </select>
+            </div>
+        </div>
     </div>
-}
-<details class="ig-help-block mb-3"><summary>Como usar</summary><p class="mb-0">Preencha a tramitação e o assunto. Se esta tela foi aberta a partir de um documento, o protocolo só é gravado quando o vínculo com esse documento também é gravado. Consultar o documento não basta: também é preciso poder editá-lo. Rascunho e protocolo efetivado seguem a mesma regra.</p></details>
-<div class="card border-0 shadow-sm mb-3"><div class="card-header bg-white fw-semibold">Tramitação inicial</div><div class="card-body row g-3"><div class="col-md-6"><label class="form-label">Setor de origem</label><select asp-for="SetorOrigemId" asp-items="Model.Setores" class="form-select"><option value="">Selecione</option></select></div><div class="col-md-6"><label class="form-label">Setor de destino</label><select asp-for="SetorDestinoId" asp-items="Model.Setores" class="form-select"><option value="">Selecione</option></select></div><div class="col-md-3"><label>Tipo</label><select asp-for="TipoProtocoloId" asp-items="Model.Tipos" class="form-select"><option value="">Selecione</option></select></div><div class="col-md-3"><label>Assunto cadastrado</label><select asp-for="AssuntoId" asp-items="Model.Assuntos" class="form-select"><option value="">Selecione</option></select></div><div class="col-md-3"><label>Prioridade</label><select asp-for="PrioridadeId" asp-items="Model.Prioridades" class="form-select"><option value="">Normal</option></select></div><div class="col-md-3"><label>Canal</label><select asp-for="CanalEntradaId" asp-items="Model.CanaisEntrada" class="form-select"><option value="">Selecione</option></select></div></div></div>
-<div class="card border-0 shadow-sm mb-3"><div class="card-header bg-white fw-semibold">Dados do processo</div><div class="card-body row g-3"><div class="col-md-3"><label>Espécie</label><input asp-for="Especie" class="form-control" /></div><div class="col-md-3"><label>Tipo da solicitação</label><input asp-for="TipoSolicitacao" class="form-control" /></div><div class="col-md-3"><label>Procedência</label><input asp-for="Procedencia" class="form-control" /></div><div class="col-md-3"><label>Origem</label><input asp-for="OrigemPedido" class="form-control" /></div><div class="col-md-12"><label>Assunto</label><input asp-for="Assunto" class="form-control" /></div><div class="col-md-12"><label>Descrição</label><textarea asp-for="Descricao" rows="3" class="form-control"></textarea></div><div class="col-md-12"><label>Informações complementares</label><textarea asp-for="InformacoesComplementares" rows="3" class="form-control"></textarea></div></div></div>
-<div class="card border-0 shadow-sm mb-3"><div class="card-header bg-white fw-semibold">Solicitante / Interessado</div><div class="card-body row g-3"><div class="col-md-4"><label>Solicitante</label><input asp-for="SolicitanteNome" class="form-control" /></div><div class="col-md-4"><label>Matrícula</label><input asp-for="SolicitanteMatricula" class="form-control" /></div><div class="col-md-4"><label>Cargo</label><input asp-for="SolicitanteCargo" class="form-control" /></div><div class="col-md-4"><label>Interessado</label><input asp-for="Interessado" class="form-control" /></div><div class="col-md-2"><label>CPF/CNPJ</label><input asp-for="CpfCnpj" class="form-control" /></div><div class="col-md-3"><label>Email</label><input asp-for="Email" class="form-control" /></div><div class="col-md-3"><label>Telefone</label><input asp-for="Telefone" class="form-control" /></div></div></div>
-<div class="card border-0 shadow-sm mb-3"><div class="card-header bg-white fw-semibold">Anexos iniciais</div><div class="card-body"><input type="file" name="arquivos" multiple class="form-control" /><small class="text-muted">Permite vários arquivos.</small></div></div>
-<div class="d-flex justify-content-between"><div class="form-check"><input asp-for="SalvarComoRascunho" class="form-check-input" /><label class="form-check-label">Salvar como rascunho</label></div><button class="btn btn-primary">Gerar Protocolo</button></div></form>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white fw-semibold">Dados do processo</div>
+        <div class="card-body row g-3">
+            <div class="col-md-3"><label>Espécie</label><input asp-for="Especie" class="form-control" /></div>
+            <div class="col-md-3"><label>Tipo da solicitação</label><input asp-for="TipoSolicitacao" class="form-control" /></div>
+            <div class="col-md-3"><label>Procedência</label><input asp-for="Procedencia" class="form-control" /></div>
+            <div class="col-md-3"><label>Origem</label><input asp-for="OrigemPedido" class="form-control" /></div>
+            <div class="col-md-12"><label class="form-label fw-semibold">Assunto</label><input asp-for="Assunto" class="form-control" /></div>
+            <div class="col-md-12"><label class="form-label">Descrição</label><textarea asp-for="Descricao" rows="3" class="form-control"></textarea></div>
+            <div class="col-md-12"><label class="form-label">Informações complementares</label><textarea asp-for="InformacoesComplementares" rows="3" class="form-control"></textarea></div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white fw-semibold">Solicitante / Interessado</div>
+        <div class="card-body row g-3">
+            <div class="col-md-4"><label>Solicitante</label><input asp-for="SolicitanteNome" class="form-control" /></div>
+            <div class="col-md-4"><label>Matrícula</label><input asp-for="SolicitanteMatricula" class="form-control" /></div>
+            <div class="col-md-4"><label>Cargo</label><input asp-for="SolicitanteCargo" class="form-control" /></div>
+            <div class="col-md-4"><label>Interessado</label><input asp-for="Interessado" class="form-control" /></div>
+            <div class="col-md-2"><label>CPF/CNPJ</label><input asp-for="CpfCnpj" class="form-control" /></div>
+            <div class="col-md-3"><label>Email</label><input asp-for="Email" class="form-control" /></div>
+            <div class="col-md-3"><label>Telefone</label><input asp-for="Telefone" class="form-control" /></div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white fw-semibold">Anexos iniciais</div>
+        <div class="card-body">
+            <input type="file" name="arquivos" multiple class="form-control" />
+            <small class="text-muted">Permite vários arquivos.</small>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center">
+        <div class="form-check">
+            <input asp-for="SalvarComoRascunho" class="form-check-input" />
+            <label class="form-check-label">Salvar como rascunho</label>
+        </div>
+        <button class="btn btn-primary" type="submit">
+            <i class="bi bi-check2-circle me-1"></i> Gerar Protocolo
+        </button>
+    </div>
+</form>
