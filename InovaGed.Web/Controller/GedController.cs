@@ -451,6 +451,7 @@ LIMIT 30;
         var tenantId = _currentUser.TenantId;
         var doc = await _docs.GetAsync(tenantId, id, ct);
         if (doc is null) return NotFound("Documento excluído ou indisponível.");
+        if (await DenyDocumentAsync(id, "VIEW", ct) is { } deniedPanel) return deniedPanel;
 
         var versions = await _docs.ListVersionsAsync(tenantId, id, ct);
         var latest = versions.FirstOrDefault(v => v.Id == doc.CurrentVersionId) ?? versions.FirstOrDefault();
@@ -465,11 +466,13 @@ LIMIT 30;
         var classificationInfo = await ResolveDocumentClassificationInfoAsync(tenantId, doc.ClassificationId, doc.ClassificationVersionId, ct);
         var retentionInfo = await ResolveDocumentRetentionInfoAsync(tenantId, doc, classificationInfo, ct);
         var createdByName = await ResolveUserNameAsync(tenantId, current.CreatedBy ?? doc.CreatedBy, ct);
-        var canMove = await _accessPolicy.CanMoveDocumentAsync(tenantId, _currentUser.UserId, id, User, ct);
-        var canAddPart = CanAddDocumentPart();
+        var canEditDocument = await CanEditDocumentAsync(id, ct);
+        var canMove = isCurrentVersion && canEditDocument && await _accessPolicy.CanMoveDocumentAsync(tenantId, _currentUser.UserId, id, User, ct);
+        var canAddPart = isCurrentVersion && canEditDocument && CanAddDocumentPart();
         var canViewParts = CanViewDocumentParts();
-        var canConsolidate = CanConsolidateDocumentParts() && (current.IsDocumentIncomplete || current.IsPartialDocument || string.Equals(current.PartialStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase));
-        var canCancelPartial = CanCancelDocumentParts() && (current.IsDocumentIncomplete || current.IsPartialDocument || !string.Equals(current.PartialStatus, "NOT_PARTIAL", StringComparison.OrdinalIgnoreCase));
+        var canConsolidate = isCurrentVersion && canEditDocument && CanConsolidateDocumentParts() && (current.IsDocumentIncomplete || current.IsPartialDocument || string.Equals(current.PartialStatus, "COMPLETE", StringComparison.OrdinalIgnoreCase));
+        var canCancelPartial = isCurrentVersion && canEditDocument && CanCancelDocumentParts() && (current.IsDocumentIncomplete || current.IsPartialDocument || !string.Equals(current.PartialStatus, "NOT_PARTIAL", StringComparison.OrdinalIgnoreCase));
+        var canRunOcr = await _accessPolicy.CanManageOcrAsync(tenantId, _currentUser.UserId, User, ct);
         var normalizedOcrStatus = string.IsNullOrWhiteSpace(current.OcrStatus) ? "NONE" : current.OcrStatus.Trim().ToUpperInvariant();
         var ocrText = string.Equals(normalizedOcrStatus, "COMPLETED", StringComparison.OrdinalIgnoreCase)
             ? await TryReadOcrTextAsync(tenantId, id, current.Id, ct)
@@ -485,6 +488,9 @@ LIMIT 30;
             DocumentId = id,
             VersionId = current.Id,
             IsCurrentVersion = isCurrentVersion,
+            ArchivalContextMessage = isCurrentVersion
+                ? null
+                : $"Arquivo da versão {current.VersionNumber}; classificação e temporalidade atuais do documento.",
             Title = doc.Title,
             FileName = current.FileName,
             TypeName = typeName,
@@ -546,16 +552,16 @@ LIMIT 30;
             PartsUrl = $"/Ged/DocumentParts?id={id}",
             HistoryUrl = Url.Action(nameof(DocumentHistory), "Ged", new { id }) ?? string.Empty,
             ProtocolsUrl = $"/Ged/DocumentProtocols?id={id}",
-            LabelPrintUrl = $"/Labels/PrintWizard?subjectType=DOCUMENT&subjectId={id}&mode=FACTORY&templateCode=FACTORY_DOCUMENT_V1",
+            LabelPrintUrl = isCurrentVersion ? $"/Labels/PrintWizard?subjectType=DOCUMENT&subjectId={id}&mode=FACTORY&templateCode=FACTORY_DOCUMENT_V1" : string.Empty,
             CanMove = canMove,
-            CanClassify = true,
+            CanClassify = isCurrentVersion && canEditDocument,
             CanAddPart = canAddPart,
             CanViewParts = canViewParts,
             CanConsolidate = canConsolidate,
-            CanRunOcr = true,
-            CanReprocessOcr = string.Equals(normalizedOcrStatus, "ERROR", StringComparison.OrdinalIgnoreCase) || string.Equals(normalizedOcrStatus, "FAILED", StringComparison.OrdinalIgnoreCase) || string.Equals(normalizedOcrStatus, "COMPLETED", StringComparison.OrdinalIgnoreCase),
+            CanRunOcr = canRunOcr,
+            CanReprocessOcr = canRunOcr && (string.Equals(normalizedOcrStatus, "ERROR", StringComparison.OrdinalIgnoreCase) || string.Equals(normalizedOcrStatus, "FAILED", StringComparison.OrdinalIgnoreCase) || string.Equals(normalizedOcrStatus, "COMPLETED", StringComparison.OrdinalIgnoreCase)),
             CanCancelPartial = canCancelPartial,
-            CanDelete = RolePolicyHelper.IsFullAdmin(User),
+            CanDelete = isCurrentVersion && canEditDocument && RolePolicyHelper.IsFullAdmin(User),
             Parts = parts.Select(p => new DocumentSidePanelPartVm
             {
                 VersionId = p.VersionId,
@@ -589,6 +595,7 @@ LIMIT 30;
         var tenantId = _currentUser.TenantId;
         var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
         if (v is null) return NotFound("Documento excluído ou indisponível.");
+        if (await DenyDocumentAsync(v.DocumentId, "VIEW", ct) is { } deniedOcr) return deniedOcr;
 
         var status = await ResolveOcrStatusAsync(tenantId, versionId, ct);
         var text = await TryReadOcrTextAsync(tenantId, v.DocumentId, versionId, ct);
@@ -613,6 +620,7 @@ LIMIT 30;
         var tenantId = _currentUser.TenantId;
         var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
         if (v is null) return NotFound("Documento excluído ou indisponível.");
+        if (await DenyDocumentAsync(v.DocumentId, "VIEW", ct) is { } deniedPartOcr) return deniedPartOcr;
 
         var status = (await ResolveOcrStatusAsync(tenantId, versionId, ct)).Trim().ToUpperInvariant();
         var text = await TryReadOcrTextAsync(tenantId, v.DocumentId, versionId, ct);
@@ -644,6 +652,7 @@ LIMIT 30;
     public async Task<IActionResult> DocumentHistory(Guid id, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
+        if (await DenyDocumentAsync(id, "VIEW", ct) is { } deniedHistory) return deniedHistory;
 
         var rows = await LoadDocumentHistoryAsync(_currentUser.TenantId, id, 20, ct);
         await WriteGedAuditAsync("DOCUMENT_HISTORY_VIEW", "DOCUMENT_HISTORY", id, "Histórico do documento aberto no painel lateral GED", new { documentId = id, correlationId = HttpContext.TraceIdentifier }, ct);
@@ -749,6 +758,18 @@ order by created_at desc;
     private Task<bool> CanViewDocumentAsync(Guid documentId, CancellationToken ct) =>
         _documentAuthorization.CanAccessDocumentAsync(_currentUser.TenantId, _currentUser.UserId, documentId, "VIEW", new Dictionary<string, string>(), ct);
 
+    private Task<bool> CanEditDocumentAsync(Guid documentId, CancellationToken ct) =>
+        _documentAuthorization.CanAccessDocumentAsync(_currentUser.TenantId, _currentUser.UserId, documentId, "EDIT", new Dictionary<string, string>(), ct);
+
+    private async Task<IActionResult?> DenyDocumentAsync(Guid documentId, string action, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated) return Unauthorized();
+        var allowed = action.Equals("EDIT", StringComparison.OrdinalIgnoreCase)
+            ? await CanEditDocumentAsync(documentId, ct)
+            : await CanViewDocumentAsync(documentId, ct);
+        return allowed ? null : Forbid();
+    }
+
 
     [HttpGet("/Ged/DocumentDetailsJson")]
     public async Task<IActionResult> DocumentDetailsJson(Guid id, CancellationToken ct)
@@ -758,6 +779,7 @@ order by created_at desc;
         var tenantId = _currentUser.TenantId;
         var doc = await _docs.GetAsync(tenantId, id, ct);
         if (doc is null) return NotFound("Documento excluído ou indisponível.");
+        if (await DenyDocumentAsync(id, "VIEW", ct) is { } deniedDetails) return deniedDetails;
 
         var versions = await _docs.ListVersionsAsync(tenantId, id, ct);
         var current = versions.FirstOrDefault(v => v.Id == doc.CurrentVersionId) ?? versions.FirstOrDefault();
@@ -824,6 +846,7 @@ order by created_at desc;
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
         if (!CanViewDocumentParts()) return Forbid();
+        if (await DenyDocumentAsync(id, "VIEW", ct) is { } deniedParts) return deniedParts;
 
         var parts = await _documentPartialService.GetPartsAsync(_currentUser.TenantId, id, ct);
         var partialGroupId = parts.Select(p => (Guid?)p.PartialGroupId).FirstOrDefault(x => x.HasValue);
@@ -894,6 +917,7 @@ order by created_at desc;
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
         if (!CanConsolidateDocumentParts()) return Forbid();
+        if (await DenyDocumentAsync(documentId, "EDIT", ct) is { } deniedConsolidate) return deniedConsolidate;
         var result = await _documentPartialService.ConsolidateAsync(_currentUser.TenantId, _currentUser.UserId, documentId, HttpContext.TraceIdentifier, ct);
         if (!result.Success) return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível consolidar o documento." });
         return Ok(new { success = true, message = "Documento consolidado logicamente. As partes originais foram preservadas para auditoria.", summary = result.Value });
@@ -905,6 +929,7 @@ order by created_at desc;
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
         if (!CanConsolidateDocumentParts()) return Forbid();
+        if (await DenyDocumentAsync(documentId, "EDIT", ct) is { } deniedComplete) return deniedComplete;
         var result = await _documentPartialService.MarkAsCompleteAsync(_currentUser.TenantId, _currentUser.UserId, documentId, HttpContext.TraceIdentifier, ct);
         if (!result.Success) return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível marcar como completo." });
         return Ok(new { success = true, message = "Partes marcadas como completas.", summary = result.Value });
@@ -916,6 +941,7 @@ order by created_at desc;
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
         if (!CanCancelDocumentParts()) return Forbid();
+        if (await DenyDocumentAsync(documentId, "EDIT", ct) is { } deniedCancel) return deniedCancel;
         var result = await _documentPartialService.CancelPartialAsync(_currentUser.TenantId, _currentUser.UserId, documentId, reason, HttpContext.TraceIdentifier, ct);
         if (!result.Success) return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível cancelar o fracionamento." });
         return Ok(new { success = true, message = "Fracionamento cancelado sem apagar arquivos.", summary = result.Value });
@@ -925,6 +951,7 @@ order by created_at desc;
     public async Task<IActionResult> DocumentHistoryJson(Guid id, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated) return Unauthorized();
+        if (await DenyDocumentAsync(id, "VIEW", ct) is { } deniedHistoryJson) return deniedHistoryJson;
         var tenantId = _currentUser.TenantId;
         var versions = await _docs.ListVersionsAsync(tenantId, id, ct);
         await WriteGedAuditAsync("VIEW", "DOCUMENT_HISTORY", id, "Histórico do documento aberto no GED", new { documentId = id }, ct);
@@ -1631,6 +1658,7 @@ LIMIT 20;";
 
             var doc = await _docs.GetAsync(tenantId, id, ct);
             if (doc is null) return NotFound("Documento excluído ou indisponível.");
+            if (await DenyDocumentAsync(id, "VIEW", ct) is { } deniedPage) return deniedPage;
 
             var versions = await _docs.ListVersionsAsync(tenantId, id, ct);
 
@@ -2761,8 +2789,7 @@ SELECT
             var v = await _docs.GetVersionForDownloadAsync(tenantId, id, ct);
             if (v == null) return NotFound("Documento excluído ou indisponível.");
 
-            var allowed = await _accessPolicy.CanAccessGedAsync(tenantId, userId, User, ct);
-            if (!allowed) return Forbid();
+            if (await DenyDocumentAsync(v.DocumentId, "VIEW", ct) is { } deniedVersion) return deniedVersion;
 
             await WriteGedAuditAsync(documentPart ? "DOCUMENT_PART_DOWNLOAD" : "DOCUMENT_DOWNLOAD", documentPart ? "DOCUMENT_PART" : "DOCUMENT_VERSION", id, documentPart ? "Download de parte de documento" : "Download de documento GED", new { versionId = id, v.DocumentId, v.FileName, partialGroupId, partNumber, tenantId = _currentUser.TenantId, userId = _currentUser.UserId, correlationId = HttpContext.TraceIdentifier, timestampUtc = DateTime.UtcNow }, ct);
 
@@ -2797,8 +2824,7 @@ SELECT
             var v = await _docs.GetVersionForDownloadAsync(tenantId, id, ct);
             if (v == null) return NotFound("Documento excluído ou indisponível.");
 
-            var allowed = await _accessPolicy.CanAccessGedAsync(tenantId, userId, User, ct);
-            if (!allowed) return Forbid();
+            if (await DenyDocumentAsync(v.DocumentId, "VIEW", ct) is { } deniedVersion) return deniedVersion;
 
             await WriteGedAuditAsync(documentPart ? "DOCUMENT_PART_PREVIEW" : "FILE_PREVIEW", documentPart ? "DOCUMENT_PART" : "DOCUMENT_PREVIEW", id, documentPart ? "Preview de parte de documento" : "Preview de documento GED", new { versionId = id, v.DocumentId, v.FileName, partialGroupId, partNumber, tenantId = _currentUser.TenantId, userId = _currentUser.UserId, correlationId = HttpContext.TraceIdentifier, timestampUtc = DateTime.UtcNow }, ct);
 
@@ -2832,8 +2858,7 @@ SELECT
             var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
             if (v is null) return NotFound("Documento excluído ou indisponível.");
 
-            var allowed = await _accessPolicy.CanAccessGedAsync(tenantId, userId, User, ct);
-            if (!allowed) return Forbid();
+            if (await DenyDocumentAsync(v.DocumentId, "VIEW", ct) is { } deniedVersion) return deniedVersion;
 
             if (!await _storage.ExistsAsync(v.StoragePath, ct))
                 return NotFound("Arquivo não encontrado no storage.");
@@ -3024,8 +3049,7 @@ SELECT
             var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
             if (v is null) return NotFound("Documento excluído ou indisponível.");
 
-            var allowed = await _accessPolicy.CanAccessGedAsync(tenantId, userId, User, ct);
-            if (!allowed) return Forbid();
+            if (await DenyDocumentAsync(v.DocumentId, "VIEW", ct) is { } deniedVersion) return deniedVersion;
 
             if (IsImage(v.ContentType, v.FileName))
             {
@@ -3090,8 +3114,7 @@ SELECT
             var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
             if (v is null) return NotFound("Documento excluído ou indisponível.");
 
-            var allowed = await _accessPolicy.CanAccessGedAsync(tenantId, userId, User, ct);
-            if (!allowed) return Forbid();
+            if (await DenyDocumentAsync(v.DocumentId, "VIEW", ct) is { } deniedVersion) return deniedVersion;
 
             if (!await _storage.ExistsAsync(v.StoragePath, ct))
                 return NotFound("Arquivo não encontrado no storage.");
@@ -3190,51 +3213,42 @@ SELECT
     let wait = 2500;
     let attempts = 0;
     const maxAttempts = 30;
+    function finish(message, tone) {{
+      document.querySelector('.spinner')?.remove();
+      const title = document.querySelector('.box strong');
+      if (title) title.textContent = tone === 'wait' ? 'Visualização ainda não ficou pronta' : 'Visualização não concluída';
+      const el = document.getElementById('statusInfo');
+      if (!el) return;
+      el.style.background = tone === 'wait' ? '#fffbeb' : '#fef2f2';
+      el.style.color = tone === 'wait' ? '#92400e' : '#991b1b';
+      el.textContent = message;
+    }}
     async function tick() {{
       attempts++;
       if (attempts > maxAttempts) {{
-        const el = document.getElementById('statusInfo');
-        if (el) el.textContent = 'Tempo limite de espera excedido. Tente recarregar a visualização.';
+        finish('O tempo de espera acabou. A transferência do arquivo não depende desta visualização. Use tentar novamente quando quiser consultar de novo.', 'wait');
         return;
       }}
       try {{
         const res = await fetch(statusUrl, {{ headers: {{ Accept: ""application/json"", ""X-Requested-With"": ""XMLHttpRequest"" }} }});
-        if (res.ok) {{
-          const data = await res.json();
-          if (data.status === ""READY"" && data.previewUrl) {{
-            location.href = data.previewUrl;
-            return;
-          }}
-          if (data.status === ""FAILED"" || data.status === ""ERROR"") {{
-            const el = document.getElementById('statusInfo');
-            if (el) {{
-              el.style.background = '#fef2f2';
-              el.style.color = '#991b1b';
-              el.textContent = data.errorMessage || 'Falha ao processar visualização. O documento original continua disponível.';
-            }}
-            return;
-          }}
-          if (data.status === ""CANCELED"") {{
-            const el = document.getElementById('statusInfo');
-            if (el) {{
-              el.style.background = '#fffbeb';
-              el.style.color = '#92400e';
-              el.textContent = 'Geração de visualização cancelada.';
-            }}
-            return;
-          }}
-          if (data.status === ""PROCESSING"") {{
-            const el = document.getElementById('statusInfo');
-            if (el) el.textContent = 'Processando documento e gerando páginas de visualização...';
-          }}
-        }} else if (res.status === 401 || res.status === 403 || res.status === 404) {{
-          const el = document.getElementById('statusInfo');
-          if (el) {{
-            el.style.background = '#fef2f2';
-            el.style.color = '#991b1b';
-            el.textContent = 'Acesso não autorizado ou documento indisponível.';
-          }}
+        let data = null;
+        try {{ data = await res.json(); }} catch {{ data = null; }}
+        const status = String(data?.status || '').toUpperCase();
+        if (res.ok && status === ""READY"" && data.previewUrl) {{
+          location.href = data.previewUrl;
           return;
+        }}
+        if (status === ""FAILED"" || status === ""ERROR"" || status === ""CANCELED"" || status === ""CANCELLED"") {{
+          finish(data.errorMessage || (status.startsWith('CANCEL') ? 'Geração de visualização cancelada.' : 'Não foi possível gerar a visualização. O arquivo original continua disponível.'), status.startsWith('CANCEL') ? 'wait' : 'error');
+          return;
+        }}
+        if (res.status === 401 || res.status === 403 || res.status === 404 || res.status === 409 || res.status >= 500) {{
+          finish(res.status === 401 ? 'Sua sessão expirou. Entre novamente para continuar.' : 'Não foi possível consultar a visualização. Tente novamente mais tarde.', 'error');
+          return;
+        }}
+        if (status === ""PROCESSING"") {{
+          const el = document.getElementById('statusInfo');
+          if (el) el.textContent = 'Preparando a visualização...';
         }}
       }} catch (err) {{
         console.warn('Erro ao verificar status do preview:', err);
@@ -3324,9 +3338,7 @@ SELECT
             if (v is null)
                 return NotFound(new { success = false, versionId, message = "Documento ou versão não localizada para este tenant.", correlationId = HttpContext.TraceIdentifier });
 
-            var allowed = await _accessPolicy.CanAccessGedAsync(tenantId, userId, User, ct);
-            if (!allowed)
-                return StatusCode(StatusCodes.Status403Forbidden, new { success = false, versionId, message = "Você não possui permissão para acessar este documento.", correlationId = HttpContext.TraceIdentifier });
+            if (await DenyDocumentAsync(v.DocumentId, "VIEW", ct) is { } deniedPreviewStatus) return deniedPreviewStatus;
 
             var status = await _previewStatus.GetAsync(tenantId, versionId, ct);
             var previewRelPath = BuildPreviewPath(tenantId, v.DocumentId, versionId, v.FileName);
@@ -3445,6 +3457,7 @@ SELECT
         try
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized();
+            if (await DenyDocumentAsync(request.DocumentId, "EDIT", ct) is { } deniedMove) return deniedMove;
             var isAdmin = RolePolicyHelper.IsFullAdmin(User);
             _logger.LogInformation("Upload/drop destino resolvido. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} UploadFolderId={UploadFolderId} Source={Source} DocumentIds={DocumentIds} FileCount={FileCount}", _currentUser.TenantId, _currentUser.UserId, request.RequestedFolderId ?? request.DestinationFolderId, request.DestinationFolderId, request.Source ?? "SINGLE", request.DocumentId, 0);
             var result = await _documentMoveService.MoveAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentId, request.DestinationFolderId, request.Reason, request.Source ?? "SINGLE", isAdmin, ct);
@@ -3466,6 +3479,11 @@ SELECT
         try
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized();
+            if (request.DocumentIds is null || request.DocumentIds.Count == 0) return BadRequest(new { success = false, message = "Nenhum documento selecionado." });
+            foreach (var documentId in request.DocumentIds.Distinct())
+            {
+                if (await DenyDocumentAsync(documentId, "EDIT", ct) is { } deniedBulk) return deniedBulk;
+            }
             var isAdmin = RolePolicyHelper.IsFullAdmin(User);
             _logger.LogInformation("Upload/drop destino resolvido. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} UploadFolderId={UploadFolderId} Source={Source} DocumentIds={DocumentIds} FileCount={FileCount}", _currentUser.TenantId, _currentUser.UserId, request.RequestedFolderId ?? request.DestinationFolderId, request.DestinationFolderId, request.Source ?? "BULK", string.Join(",", request.DocumentIds), 0);
             var result = await _documentMoveService.MoveBulkAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentIds, request.DestinationFolderId, request.Reason, request.Source ?? "BULK", isAdmin, ct);
@@ -3486,6 +3504,7 @@ SELECT
         try
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized();
+            if (await DenyDocumentAsync(id, "VIEW", ct) is { } deniedMoveHistory) return deniedMoveHistory;
             var rows = await _documentMoveService.GetMoveHistoryAsync(_currentUser.TenantId, id, ct);
             return Ok(rows);
         }
@@ -3514,6 +3533,8 @@ SELECT
             var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
             if (v is null)
                 return NotFound();
+            if (await DenyDocumentAsync(v.DocumentId, "VIEW", ct) is { } deniedRunOcr) return deniedRunOcr;
+            if (!await _accessPolicy.CanManageOcrAsync(tenantId, userId, User, ct)) return Forbid();
 
             var alreadyCompleted = await _ocrJobs.HasCompletedAsync(tenantId, versionId, ct);
             var latestStatus = await _ocrJobs.GetLatestByVersionIdAsync(tenantId, versionId, ct);
@@ -3618,6 +3639,9 @@ SELECT
             if (!_currentUser.IsAuthenticated) return Unauthorized();
 
             var tenantId = _currentUser.TenantId;
+            var version = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
+            if (version is null) return NotFound(new { success = false, message = "Documento excluído ou indisponível." });
+            if (await DenyDocumentAsync(version.DocumentId, "VIEW", ct) is { } deniedOcrStatus) return deniedOcrStatus;
 
             var status = await _ocrJobs.GetLatestByVersionIdAsync(tenantId, versionId, ct);
 
@@ -3734,6 +3758,7 @@ VALUES
 
             var v = await _docs.GetVersionForDownloadAsync(tenantId, versionId, ct);
             if (v is null) return NotFound("Documento excluído ou indisponível.");
+            if (await DenyDocumentAsync(v.DocumentId, "VIEW", ct) is { } deniedOcrFile) return deniedOcrFile;
 
             await WriteGedAuditAsync("VIEW", "DOCUMENT_OCR", v.DocumentId, "OCR aberto no GED", new { versionId, v.DocumentId, v.FileName }, ct);
 
@@ -3909,6 +3934,7 @@ VALUES
 
             var tenantId = _currentUser.TenantId;
             var userId = _currentUser.UserId;
+            if (await DenyDocumentAsync(id, "EDIT", ct) is { } deniedDelete) return deniedDelete;
             var isAdmin = await _accessPolicy.IsAdminAsync(tenantId, userId, User, ct);
 
             var result = await _documentCommands.DeleteAsync(tenantId, id, userId, isAdmin, ct);

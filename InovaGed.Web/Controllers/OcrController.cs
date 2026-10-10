@@ -88,13 +88,14 @@ public sealed class OcrController : Controller
 
         try
         {
-            history = await _repository.GetRunHistoryAsync(options.TenantId == Guid.Empty ? _currentUser.TenantId : options.TenantId, 20, ct);
+            var tenantForRun = options.TenantId == Guid.Empty ? _currentUser.TenantId : options.TenantId;
+            history = await _repository.GetRunHistoryAsync(tenantForRun, 20, ct);
             eligibleCount = await _repository.CountDocumentsWithoutOcrAsync(options, ct);
         }
         catch (Exception ex) when (ex is PostgresException or InvalidOperationException)
         {
             warning = "Agendamento OCR ainda não configurado. Execute as migrations.";
-            _logger.LogWarning(ex, "Não foi possível carregar histórico/configuração do OCR automático.");
+            _logger.LogWarning("Não foi possível carregar histórico/configuração do OCR automático. Tipo={ExceptionType}", ex.GetType().Name);
         }
 
         var nextRunUtc = SafeNextRun(options);
@@ -110,7 +111,10 @@ public sealed class OcrController : Controller
             NextRunLocal = nextRunUtc.HasValue ? OcrAutoScheduleClock.FormatLocal(nextRunUtc.Value, options.TimeZone) : "Indisponível",
             LastRun = history.FirstOrDefault(),
             EligibleDocumentsCount = eligibleCount,
-            History = history.ToList()
+            History = history.ToList(),
+            LastRunReasons = history.FirstOrDefault() is { Id: var runId } && runId != Guid.Empty
+                ? (await _repository.GetRunReasonsAsync(options.TenantId == Guid.Empty ? _currentUser.TenantId : options.TenantId, runId, ct)).ToList()
+                : new List<OcrOperationalReasonDto>()
         };
         if (!string.IsNullOrWhiteSpace(warning)) TempData["WarningMessage"] = warning;
 
@@ -140,7 +144,7 @@ public sealed class OcrController : Controller
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro ao executar OCR automático agora.");
+            _logger.LogError("Erro ao executar OCR automático agora. Tipo={ExceptionType}", ex.GetType().Name);
             if (WantsJson()) return StatusCode(500, new { success = false, message = "Não foi possível executar OCR automático agora.", correlationId = HttpContext.TraceIdentifier });
             TempData["WarningMessage"] = "Não foi possível executar OCR automático agora.";
         }

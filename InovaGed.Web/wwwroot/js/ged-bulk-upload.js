@@ -947,8 +947,9 @@
 
             if (success > 0 && error === 0) {
                 persistCurrentUploadBatch(finished?.status || 'COMPLETED');
-                showBulkUploadMessage(`Upload concluído com sucesso. ${success} documento(s) enviado(s).`, 'success');
-                showAppToast(`${success} documento(s) enviado(s) com sucesso.`, 'success', 'Upload concluído');
+                const transferNotice = window.GedUploadFolderRefresh?.transferSeparateNotice || 'O envio do arquivo terminou. A leitura OCR e a visualização seguem em rotina própria.';
+                showBulkUploadMessage(`Upload concluído com sucesso. ${success} documento(s) enviado(s). ${transferNotice}`, 'success');
+                showAppToast(`${success} documento(s) enviado(s). ${transferNotice}`, 'success', 'Upload concluído');
                 showRefreshAfterUploadButton(true);
                 await onBatchFinished(finished);
                 return;
@@ -956,7 +957,8 @@
             if (success > 0 && error > 0) {
                 try { localStorage.setItem('ged:lastUploadBatchHadFailures', 'true'); } catch (_) { }
                 persistCurrentUploadBatch(finished?.status || 'PARTIAL_ERROR');
-                showBulkUploadMessage(`Upload concluído com falhas: ${success} arquivos enviados com sucesso e ${error} falharam. Verifique a lista, reenvie falhas ou abra o log do lote.`, 'warning');
+                const transferNotice = window.GedUploadFolderRefresh?.transferSeparateNotice || 'O envio do arquivo terminou. A leitura OCR e a visualização seguem em rotina própria.';
+                showBulkUploadMessage(`Upload concluído com falhas: ${success} arquivos enviados com sucesso e ${error} falharam. Verifique a lista, reenvie falhas ou abra o log do lote. ${transferNotice}`, 'warning');
                 showAppToast('Alguns documentos não foram enviados.', 'warning', 'Upload parcial');
                 showRefreshAfterUploadButton(true);
                 await onBatchFinished(finished);
@@ -1465,7 +1467,9 @@
         return {
             folderId: result?.resolvedFolderId || state.resolvedFolderId || state.listingFolderId || state.folderId || getSelectedUploadFolder()?.listingFolderId || getSelectedUploadFolder()?.uploadFolderId,
             folderName: result?.folderName || state.folderName || getSelectedUploadFolder()?.folderName,
-            createdDocuments: result?.createdDocuments || state.createdDocuments || []
+            createdDocuments: window.GedUploadFolderRefresh
+                ? window.GedUploadFolderRefresh.resolveCreatedDocuments(result?.createdDocuments, state.createdDocuments)
+                : (Array.isArray(result?.createdDocuments) && result.createdDocuments.some(x => x && x.documentId) ? result.createdDocuments : (state.createdDocuments || []))
         };
     }
 

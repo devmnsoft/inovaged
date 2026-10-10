@@ -43,11 +43,21 @@
 
     function stillCurrent(request) {
         const panel = getPanel();
-        const open = !!panel && !panel.hidden && panel.classList.contains('is-open');
-        return open
-            && request.generation === panelGeneration
-            && (panel.dataset.documentId || '') === (request.documentId || '')
-            && (panel.dataset.versionId || '') === (request.versionId || '');
+        const gate = window.GedPanelResponseGate;
+        if (!gate || typeof gate.applies !== 'function') return false;
+        return gate.applies(
+            { generation: request.generation, documentId: request.documentId, versionId: request.versionId },
+            {
+                open: !!panel && !panel.hidden && panel.classList.contains('is-open'),
+                generation: panelGeneration,
+                documentId: panel?.dataset.documentId || '',
+                versionId: panel?.dataset.versionId || ''
+            }
+        );
+    }
+
+    function sessionExpiredMessage() {
+        return 'Sua sessão expirou. Entre novamente para continuar.';
     }
 
     function isAbort(err) {
@@ -123,6 +133,10 @@
                 signal: request.signal
             });
             if (!stillCurrent(request)) return;
+            if (res.status === 401) {
+                panel.innerHTML = `<div class="alert alert-warning m-3">${esc(sessionExpiredMessage())} <a href="/Account/Login">Entrar</a></div>`;
+                return;
+            }
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const html = await res.text();
             if (!stillCurrent(request)) return;
@@ -132,9 +146,11 @@
             panel.classList.add('is-open');
             panel.setAttribute('aria-hidden', 'false');
             panel.dataset.documentId = documentId;
-            if (versionId) panel.dataset.versionId = versionId;
+            const resolvedVersion = panel.querySelector('.ged-side-header')?.dataset.versionId || versionId || '';
+            if (resolvedVersion) panel.dataset.versionId = resolvedVersion;
             else delete panel.dataset.versionId;
             activateTab(initialTab || 'summary');
+            panel.querySelector('.js-close-document-panel')?.focus({ preventScroll: true });
         } catch (err) {
             if (isAbort(err) || !stillCurrent(request)) return;
             console.warn('[GED] Erro ao abrir painel lateral', err);
@@ -218,6 +234,7 @@
             const endpoint = url || `/Ged/DocumentOcrText?versionId=${encodeURIComponent(versionId)}`;
             const res = await fetch(endpoint, { headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' }, signal: request.signal });
             if (!stillCurrent(request)) return;
+            if (res.status === 401) { host.innerHTML = `<div class="alert alert-warning mb-0">${esc(sessionExpiredMessage())}</div>`; return; }
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
             if (!stillCurrent(request)) return;
@@ -257,12 +274,13 @@
         try {
             const res = await fetch(url || `/Ged/DocumentHistory?id=${encodeURIComponent(documentId)}`, { headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' }, signal: request.signal });
             if (!stillCurrent(request)) return;
+            if (res.status === 401) { host.innerHTML = `<div class="alert alert-warning mb-0">${esc(sessionExpiredMessage())}</div>`; return; }
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
             if (!stillCurrent(request)) return;
             body.dataset.historyLoaded = 'true';
             const rows = data.items || [];
-            host.innerHTML = rows.length ? `<div class="ged-history-list">${rows.map(x => `<div class="ged-history-item"><div class="fw-semibold">${esc(x.action)}</div><div>${esc(x.description)}</div><div class="small text-muted">${esc(x.occurredAtLocalFormatted)} · ${esc(x.userName || 'Sistema')}</div>${x.correlationId ? `<div class="small text-muted">CorrelationId: ${esc(x.correlationId)}</div>` : ''}</div>`).join('')}</div>${data.hasMore ? '<button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-2" disabled>Ver mais em breve</button>' : ''}` : '<div class="text-muted small">Nenhum evento encontrado.</div>';
+            host.innerHTML = rows.length ? `<div class="ged-history-list">${rows.map(x => `<div class="ged-history-item"><div class="fw-semibold">${esc(x.action)}</div><div>${esc(x.description)}</div><div class="small text-muted">${esc(x.occurredAtLocalFormatted)} · ${esc(x.userName || 'Sistema')}</div></div>`).join('')}</div>${data.hasMore ? '<button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-2" disabled>Ver mais em breve</button>' : ''}` : '<div class="text-muted small">Nenhum evento encontrado.</div>';
         } catch (err) {
             if (isAbort(err) || !stillCurrent(request)) return;
             console.error('[GED History]', err);
@@ -288,8 +306,9 @@
             const items = data?.items || data?.Items || [];
             const failed = !res.ok || !data || data.success === false || data.Success === false || outcome === 'unavailable' || outcome === 'forbidden' || outcome === 'not_found' || outcome === 'unauthorized';
             if (failed) {
-                const message = data?.message || data?.Message || (res.status === 403 ? 'Acesso negado.' : 'Não foi possível carregar os protocolos vinculados.');
-                const retry = data?.canRetry || data?.CanRetry || res.status >= 500 || !data
+                const message = res.status === 401 ? sessionExpiredMessage() : (data?.message || data?.Message || (res.status === 403 ? 'Acesso negado.' : 'Não foi possível carregar os protocolos vinculados.'));
+                const canRetry = res.status !== 401 && (data?.canRetry || data?.CanRetry || res.status >= 500 || !data);
+                const retry = canRetry
                     ? '<button type="button" class="btn btn-sm btn-outline-warning ms-2" data-ged-protocols-retry>Tentar novamente</button>'
                     : '';
                 host.innerHTML = `<div class="alert alert-warning mb-0" role="alert">${esc(message)}${retry}</div>`;
@@ -345,6 +364,7 @@
         try {
             const res = await fetch(url || `/Ged/DocumentPartsJson?id=${encodeURIComponent(documentId)}`, { headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' }, signal: request.signal });
             if (!stillCurrent(request)) return;
+            if (res.status === 401) { host.innerHTML = `<div class="alert alert-warning mb-0">${esc(sessionExpiredMessage())}</div>`; return; }
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
             if (!stillCurrent(request)) return;

@@ -9,6 +9,7 @@ using InovaGed.Application.Retention;
 using InovaGed.Application.Security;
 using InovaGed.Web.Models.Protocolo;
 using InovaGed.Web.Security;
+using InovaGed.Web.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
@@ -66,13 +67,14 @@ public sealed class ProtocoloController : GedControllerBase
         using var db = await OpenAsync();
         var vm = new ProtocoloNovoVM();
         await PopularCombosAsync(db, vm);
-        if (gedDocumentId is Guid docId && docId != Guid.Empty && UserId is Guid uid)
+        if (ProtocolOriginLinkRules.RequestsLink(gedDocumentId))
         {
-            var title = await db.ExecuteScalarAsync<string?>("select coalesce(nullif(btrim(title),''), code) from ged.document where tenant_id=@TenantId and id=@Id and reg_status='A'", new { TenantId, Id = docId });
-            if (!string.IsNullOrWhiteSpace(title) && await _documentAuthorization.CanAccessDocumentAsync(TenantId, uid, docId, "VIEW", new Dictionary<string, string>(), HttpContext.RequestAborted))
+            var docId = gedDocumentId!.Value;
+            vm.GedDocumentId = docId;
+            vm.GedLinkNotice = ProtocolOriginLinkRules.Requirement;
+            if (UserId is Guid uid && await _documentAuthorization.CanAccessDocumentAsync(TenantId, uid, docId, "VIEW", new Dictionary<string, string>(), HttpContext.RequestAborted))
             {
-                vm.GedDocumentId = docId;
-                vm.GedDocumentTitle = title;
+                vm.GedDocumentTitle = await db.ExecuteScalarAsync<string?>("select coalesce(nullif(btrim(title),''), code) from ged.document where tenant_id=@TenantId and id=@Id and reg_status='A'", new { TenantId, Id = docId });
             }
         }
         return View(vm);
@@ -85,6 +87,17 @@ public sealed class ProtocoloController : GedControllerBase
         using var db = await OpenAsync(); await PopularCombosAsync(db, vm); if (!ModelState.IsValid) return View(vm);
         if (!IsAdminOrGestor() && !User.IsInNormalizedRole(AppRoles.ArquivistaOphir) && !(await GetSetoresUsuarioAsync(db)).Any(x => x.SetorId == vm.SetorOrigemId)) { ModelState.AddModelError("", "Usuário não vinculado ao setor de origem."); return View(vm); }
         var erros = ValidarArquivos(arquivos); if (erros.Any()) { foreach (var e in erros) ModelState.AddModelError("", e); return View(vm); }
+        var origemSolicitada = ProtocolOriginLinkRules.RequestsLink(vm.GedDocumentId);
+        if (origemSolicitada)
+        {
+            var bloqueio = await GedOriginBlockReasonAsync(db, vm.GedDocumentId!.Value, null);
+            if (bloqueio is not null)
+            {
+                ModelState.AddModelError(string.Empty, bloqueio);
+                vm.GedLinkNotice = ProtocolOriginLinkRules.Requirement;
+                return View(vm);
+            }
+        }
         using var tx = db.BeginTransaction();
         try
         {
@@ -96,29 +109,77 @@ public sealed class ProtocoloController : GedControllerBase
             await UpsertParticipanteAsync(db, tx, id, vm.SetorDestinoId, true, !vm.SalvarComoRascunho);
             await RegistrarTramitacaoAsync(db, tx, id, vm.SetorOrigemId, vm.SetorDestinoId, "CRIACAO", null, status, "Protocolo criado.", null, null);
             await SalvarArquivosAsync(db, tx, id, vm.SetorOrigemId, await GetSetorNomeAsync(db, vm.SetorOrigemId) ?? "", arquivos, null, null);
-            if (vm.GedDocumentId is Guid origemId && origemId != Guid.Empty && UserId is Guid uid
-                && await _documentAuthorization.CanAccessDocumentAsync(TenantId, uid, origemId, "VIEW", new Dictionary<string, string>(), HttpContext.RequestAborted)
-                && await _documentAuthorization.CanAccessDocumentAsync(TenantId, uid, origemId, "EDIT", new Dictionary<string, string>(), HttpContext.RequestAborted))
+            if (origemSolicitada)
             {
-                var documentoOk = await db.ExecuteScalarAsync<bool>("select exists(select 1 from ged.document where tenant_id=@TenantId and id=@Id and reg_status='A')", new { TenantId, Id = origemId }, tx);
-                if (documentoOk)
+                var origemId = vm.GedDocumentId!.Value;
+                var bloqueioNaGravacao = await GedOriginBlockReasonAsync(db, origemId, tx);
+                if (bloqueioNaGravacao is not null)
                 {
-                    await db.ExecuteAsync(@"insert into ged.protocolo_documento_ged(id, tenant_id, protocolo_id, ged_document_id, tipo_vinculo, observacao, criado_por, criado_por_nome, created_at, reg_status)
-values (@Id, @TenantId, @ProtocoloId, @GedDocumentId, 'DOCUMENTO_GERAL', null, @UserId, @UserName, now(), 'A')", new { Id = Guid.NewGuid(), TenantId, ProtocoloId = id, GedDocumentId = origemId, UserId, UserName = UserNameSafe }, tx);
+                    tx.Rollback();
+                    ModelState.AddModelError(string.Empty, bloqueioNaGravacao);
+                    vm.GedLinkNotice = ProtocolOriginLinkRules.Requirement;
+                    return View(vm);
                 }
+                var vinculoId = Guid.NewGuid();
+                var inseridos = await db.ExecuteAsync(@"
+insert into ged.protocolo_documento_ged
+(id, tenant_id, protocolo_id, protocolo_documento_id, ged_document_id, tipo_vinculo, observacao, criado_por, criado_por_nome, created_at, reg_status)
+select @Id, @TenantId, @ProtocoloId, null, @GedDocumentId, 'DOCUMENTO_GERAL', null, @UserId, @UserName, now(), 'A'
+where exists (select 1 from ged.document where tenant_id=@TenantId and id=@GedDocumentId and reg_status='A')
+  and not exists (
+      select 1 from ged.protocolo_documento_ged
+      where tenant_id=@TenantId and protocolo_id=@ProtocoloId and ged_document_id=@GedDocumentId and reg_status='A'
+  );", new { Id = vinculoId, TenantId, ProtocoloId = id, GedDocumentId = origemId, UserId, UserName = UserNameSafe }, tx);
+                if (inseridos != 1)
+                {
+                    tx.Rollback();
+                    ModelState.AddModelError(string.Empty, ProtocolOriginLinkRules.LinkNotSaved);
+                    vm.GedLinkNotice = ProtocolOriginLinkRules.Requirement;
+                    return View(vm);
+                }
+                await db.ExecuteAsync(@"
+insert into ged.protocolo_auditoria
+(tenant_id, protocolo_id, entidade, entidade_id, acao, valor_novo, usuario_id, usuario_nome, ip, user_agent)
+values (@TenantId, @ProtocoloId, 'protocolo_documento_ged', @Id, 'GED_VINCULO', cast(@Json as jsonb), @UserId, @UserName, @Ip, @Ua);", new
+                {
+                    TenantId, ProtocoloId = id, Id = vinculoId,
+                    Json = System.Text.Json.JsonSerializer.Serialize(new { gedDocumentId = origemId, tipoVinculo = "DOCUMENTO_GERAL" }),
+                    UserId, UserName = UserNameSafe,
+                    Ip = HttpContext.Connection.RemoteIpAddress?.ToString(),
+                    Ua = Request.Headers.UserAgent.ToString()
+                }, tx);
             }
             tx.Commit();
             if (!vm.SalvarComoRascunho && vm.SetorOrigemId != vm.SetorDestinoId && UserId is not null)
             {
                 var fwd = await _central.ForwardAsync(Actor(), id, null, vm.SetorDestinoId, "Abertura do protocolo", null, $"novo:{id:N}", null, null, null, HttpContext.RequestAborted);
+                var vinculado = origemSolicitada ? " e vinculado ao documento de origem" : "";
                 TempData[fwd.Success ? "ok" : "erro"] = fwd.Success
-                    ? $"Protocolo {num.Numero} criado. {fwd.Message}"
-                    : $"Protocolo {num.Numero} foi criado no setor de origem, mas o encaminhamento não foi concluído: {fwd.Message}";
+                    ? $"Protocolo {num.Numero} criado{vinculado}. {fwd.Message}"
+                    : $"Protocolo {num.Numero} foi criado{vinculado} no setor de origem, mas o encaminhamento não foi concluído: {fwd.Message}";
             }
-            else TempData["ok"] = $"Protocolo {num.Numero} criado com sucesso.";
+            else TempData["ok"] = origemSolicitada
+                ? $"Protocolo {num.Numero} criado e vinculado ao documento de origem."
+                : $"Protocolo {num.Numero} criado com sucesso.";
             return RedirectToAction(nameof(Details), new { id });
         }
-        catch { tx.Rollback(); throw; }
+        catch
+        {
+            tx.Rollback();
+            if (!origemSolicitada) throw;
+            ModelState.AddModelError(string.Empty, ProtocolOriginLinkRules.LinkNotSaved);
+            vm.GedLinkNotice = ProtocolOriginLinkRules.Requirement;
+            return View(vm);
+        }
+    }
+
+    private async Task<string?> GedOriginBlockReasonAsync(System.Data.IDbConnection db, Guid documentId, System.Data.IDbTransaction? tx)
+    {
+        if (UserId is not Guid uid) return "Sua sessão expirou. Entre novamente para criar o protocolo vinculado.";
+        var active = await db.ExecuteScalarAsync<bool>("select exists(select 1 from ged.document where tenant_id=@TenantId and id=@Id and reg_status='A')", new { TenantId, Id = documentId }, tx);
+        var canView = active && await _documentAuthorization.CanAccessDocumentAsync(TenantId, uid, documentId, "VIEW", new Dictionary<string, string>(), HttpContext.RequestAborted);
+        var canEdit = canView && await _documentAuthorization.CanAccessDocumentAsync(TenantId, uid, documentId, "EDIT", new Dictionary<string, string>(), HttpContext.RequestAborted);
+        return ProtocolOriginLinkRules.BlockReason(active, canView, canEdit);
     }
 
     [HttpGet]

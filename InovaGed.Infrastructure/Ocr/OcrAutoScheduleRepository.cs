@@ -252,13 +252,53 @@ LIMIT @take;", new { tenantId, take = Math.Clamp(take, 1, 200) }, cancellationTo
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Histórico do agendamento automático de OCR indisponível.");
+            _logger.LogWarning("Histórico do agendamento automático de OCR indisponível. Tipo={ExceptionType}", ex.GetType().Name);
             return Array.Empty<OcrAutoScheduleRunSummaryDto>();
         }
     }
 
     public async Task<OcrAutoScheduleRunSummaryDto?> GetLastRunAsync(Guid tenantId, CancellationToken ct)
         => (await GetRunHistoryAsync(tenantId, 1, ct)).FirstOrDefault();
+
+    public async Task<IReadOnlyList<OcrOperationalReasonDto>> GetRunReasonsAsync(Guid tenantId, Guid runId, CancellationToken ct)
+    {
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            var rows = await conn.QueryAsync<(Guid DocumentId, Guid? VersionId, string? FileName, string? Status, string? Reason, string? JobStatus)>(new CommandDefinition(@"
+SELECT i.document_id, i.version_id, i.file_name, i.status, i.reason, upper(j.status::text)
+FROM ged.ocr_auto_schedule_run_item i
+LEFT JOIN LATERAL (
+    SELECT status
+    FROM ged.ocr_job
+    WHERE tenant_id = i.tenant_id
+      AND document_version_id = i.version_id
+    ORDER BY COALESCE(finished_at, requested_at) DESC NULLS LAST
+    LIMIT 1
+) j ON true
+WHERE i.tenant_id = @tenantId
+  AND i.run_id = @runId
+ORDER BY i.file_name
+LIMIT 200;", new { tenantId, runId }, cancellationToken: ct));
+            return rows.Select(row =>
+            {
+                var situation = OcrOperationalReason.Present(row.Status, row.JobStatus);
+                return new OcrOperationalReasonDto
+                {
+                    DocumentId = row.DocumentId,
+                    VersionId = row.VersionId,
+                    FileName = row.FileName ?? string.Empty,
+                    Situation = situation,
+                    Detail = OcrOperationalReason.SafeDetail(situation, row.Reason)
+                };
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Motivos do agendamento OCR indisponíveis. Tenant={TenantId} RunId={RunId} Tipo={ExceptionType}", tenantId, runId, ex.GetType().Name);
+            return Array.Empty<OcrOperationalReasonDto>();
+        }
+    }
 
     private static string BuildPendingFilter(OcrAutoScheduleOptions options)
     {

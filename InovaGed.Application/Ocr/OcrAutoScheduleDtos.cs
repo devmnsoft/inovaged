@@ -59,6 +59,7 @@ public sealed class OcrAutoScheduleDashboardDto
     public OcrAutoScheduleRunSummaryDto? LastRun { get; set; }
     public int EligibleDocumentsCount { get; set; }
     public List<OcrAutoScheduleRunSummaryDto> History { get; set; } = new();
+    public List<OcrOperationalReasonDto> LastRunReasons { get; set; } = new();
 }
 
 public sealed class OcrAutoScheduleRunSummaryDto

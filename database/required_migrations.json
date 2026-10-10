@@ -922,5 +922,12 @@
     "area": "Protocol",
     "required": true,
     "description": "Garante a view ged.vw_protocolo_ged_vinculos em instalação limpa e upgrade, sem recriar dados."
+  },
+  {
+    "name": "2026_10_16_protocol_ged_links_view_required",
+    "path": "database/migrations/2026_10_16_protocol_ged_links_view_required.sql",
+    "area": "Protocol",
+    "required": true,
+    "description": "Falha se as tabelas de protocolo não existirem e confirma a view de vínculos após criá-la."
   }
 ]

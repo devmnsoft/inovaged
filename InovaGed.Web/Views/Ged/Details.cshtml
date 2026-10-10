@@ -820,7 +820,14 @@
                     poller.abort = new AbortController();
                     const r = await fetch(statusUrl, { headers: { 'Accept':'application/json' }, signal: poller.abort.signal });
                     if (!r.ok) {
-                        poller.isBusy = false;
+                        if (r.status === 401 || r.status === 403 || r.status === 404 || r.status === 409 || r.status >= 500) {
+                            if (badge) {
+                                badge.className = 'badge bg-danger';
+                                badge.textContent = r.status === 401 ? 'Preview: sessão expirada' : 'Preview: consulta indisponível';
+                            }
+                            stop();
+                            return;
+                        }
                         return schedule(5000);
                     }
                     const d = await r.json();
@@ -1510,7 +1517,7 @@
             const key = `ocr:${versionId}`;
             if (window.gedStatusPollers[key]) return;
 
-            const finalStatuses = new Set(['COMPLETED', 'ERROR', 'CANCELLED']);
+            const finalStatuses = new Set(['COMPLETED', 'ERROR', 'FAILED', 'FAILED_ENVIRONMENT', 'FAILED_PERMANENT', 'CANCELLED']);
             const poller = { timer: null, abort: null, attempts: 0, stopped: false };
             window.gedStatusPollers[key] = poller;
 
@@ -1548,6 +1555,11 @@
                     });
 
                     if (!resp.ok) {
+                        if (resp.status === 401 || resp.status === 403 || resp.status === 404) {
+                            stop();
+                            showGedToast(resp.status === 401 ? 'Sua sessão expirou. Entre novamente para continuar.' : 'Não foi possível consultar o OCR deste documento.', 'danger');
+                            return;
+                        }
                         poller.timer = setTimeout(tick, 5000);
                         return;
                     }
@@ -1564,11 +1576,12 @@
 
                     if (finalStatuses.has(status) || data.completed || data.error) {
                         stop();
-                        if (data.completed) {
+                        const failed = data.error || status === 'ERROR' || status.startsWith('FAILED');
+                        if (data.completed && !failed) {
                             showGedToast('OCR concluído com sucesso.', 'success');
                             showPageAlert('OCR concluído com sucesso. A página será atualizada.', 'success');
                             setTimeout(() => { location.reload(); }, 1200);
-                        } else if (data.error) {
+                        } else if (failed) {
                             showGedToast(data.errorMessage || 'OCR finalizado com erro.', 'danger');
                             showPageAlert(data.errorMessage || 'OCR finalizado com erro.', 'danger');
                             setTimeout(() => { location.reload(); }, 1600);

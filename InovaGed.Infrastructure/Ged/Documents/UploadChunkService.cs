@@ -52,10 +52,16 @@ public sealed class UploadChunkService : IUploadChunkService
         if (request.Metadata.ClassificationId is Guid classificationId && classificationId != Guid.Empty && !await IsActiveClassificationInCurrentPlanAsync(tenantId, classificationId, ct))
             return Result<UploadChunkSessionDto>.Fail("CLASSIFICATION_INVALID", "Classificação documental inválida ou fora do plano vigente.");
 
-        var chunkSize = request.ChunkSizeBytes.GetValueOrDefault(Math.Max(1, _options.ChunkSizeMb) * 1024 * 1024);
-        if (chunkSize <= 0) return Result<UploadChunkSessionDto>.Fail("VALIDATION", "Tamanho da parte inválido.");
-        var computedTotalChunks = (int)Math.Ceiling(request.TotalSizeBytes / (double)chunkSize);
-        if (computedTotalChunks <= 0) return Result<UploadChunkSessionDto>.Fail("VALIDATION", "Quantidade de partes inválida.");
+        const int maxChunkBytes = 20 * 1024 * 1024;
+        var configuredChunk = Math.Max(1, _options.ChunkSizeMb) * 1024L * 1024L;
+        var requestedChunk = request.ChunkSizeBytes ?? configuredChunk;
+        if (requestedChunk <= 0 || requestedChunk > maxChunkBytes)
+            return Result<UploadChunkSessionDto>.Fail("LIMIT", "Cada parte deve ter no máximo 20 MB, dentro do limite usual de uma requisição.");
+        var chunkSize = (int)requestedChunk;
+        var computedChunks = (request.TotalSizeBytes + chunkSize - 1L) / chunkSize;
+        if (computedChunks <= 0 || computedChunks > 100_000)
+            return Result<UploadChunkSessionDto>.Fail("LIMIT", "O arquivo exigiria partes demais. O envio em partes não é ilimitado.");
+        var computedTotalChunks = (int)computedChunks;
         if (request.TotalChunks.HasValue && request.TotalChunks.Value != computedTotalChunks) return Result<UploadChunkSessionDto>.Fail("VALIDATION", "Quantidade de partes incompatível com o tamanho informado.");
         var totalChunks = computedTotalChunks;
         var uploadId = Guid.NewGuid();

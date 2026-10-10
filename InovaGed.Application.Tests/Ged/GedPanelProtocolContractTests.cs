@@ -12,6 +12,21 @@ public sealed class GedPanelProtocolContractTests
         Assert.False(GedPanelResponseGate.Applies(1, 1, "A", "A", "v1", "v1", false));
         Assert.False(GedPanelResponseGate.Applies(1, 1, "A", "A", "historica", "atual", true));
         Assert.True(GedPanelResponseGate.Applies(4, 4, "A", "A", "v2", "v2", true));
+        Assert.True(GedPanelResponseGate.Applies(5, 5, "A", "A", "", "", true));
+        Assert.True(GedPanelResponseGate.Applies(5, 5, "A", "A", "", "resolvida", true));
+        Assert.False(GedPanelResponseGate.Applies(5, 6, "A", "A", "", "resolvida", true));
+    }
+
+    [Fact]
+    public void Protocol_origin_link_is_required_when_a_document_is_requested()
+    {
+        Assert.False(ProtocolOriginLinkRules.RequestsLink(null));
+        Assert.False(ProtocolOriginLinkRules.RequestsLink(Guid.Empty));
+        Assert.True(ProtocolOriginLinkRules.RequestsLink(Guid.NewGuid()));
+        Assert.Equal(ProtocolOriginLinkRules.UnavailableDocument, ProtocolOriginLinkRules.BlockReason(false, true, true));
+        Assert.Equal(ProtocolOriginLinkRules.EditRequired, ProtocolOriginLinkRules.BlockReason(true, true, false));
+        Assert.Equal(ProtocolOriginLinkRules.EditRequired, ProtocolOriginLinkRules.BlockReason(true, false, true));
+        Assert.Null(ProtocolOriginLinkRules.BlockReason(true, true, true));
     }
 
     [Fact]
@@ -33,7 +48,10 @@ public sealed class GedPanelProtocolContractTests
         var js = File.ReadAllText(Path.Combine(root!.FullName, "InovaGed.Web/wwwroot/js/ged-document-side-panel.js"));
         var view = File.ReadAllText(Path.Combine(root.FullName, "InovaGed.Web/Views/Ged/_DocumentSidePanel.cshtml"));
         Assert.Contains("new AbortController()", js);
+        Assert.Contains("GedPanelResponseGate", js);
         Assert.Contains("stillCurrent(request)", js);
+        Assert.Contains("dataset.versionId = resolvedVersion", js);
+        Assert.Contains("Sua sessão expirou", js);
         Assert.Contains("data-ged-protocols-retry", js);
         Assert.DoesNotContain("/Protocolo/Detalhes/", js);
         Assert.Contains("outcome === 'empty'", js);

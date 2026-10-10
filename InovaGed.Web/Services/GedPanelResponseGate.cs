@@ -6,6 +6,9 @@ public static class GedPanelResponseGate
     {
         if (!panelOpen || responseGeneration != currentGeneration) return false;
         if (!string.Equals(responseDocumentId ?? "", openDocumentId ?? "", StringComparison.OrdinalIgnoreCase)) return false;
-        return string.Equals(responseVersionId ?? "", openVersionId ?? "", StringComparison.OrdinalIgnoreCase);
+        var responseVersion = responseVersionId ?? "";
+        var openVersion = openVersionId ?? "";
+        if (responseVersion.Length == 0 || openVersion.Length == 0) return true;
+        return string.Equals(responseVersion, openVersion, StringComparison.OrdinalIgnoreCase);
     }
 }

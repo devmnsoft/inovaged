@@ -1,6 +1,7 @@
 ﻿using InovaGed.Application.Documents;
 using InovaGed.Application.Identity;
 using InovaGed.Application.Retention;
+using InovaGed.Application.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using InovaGed.Web.Security;
@@ -14,17 +15,20 @@ public sealed class DocumentClassificationController : Controller
     private readonly IDocumentCommands _docCmd;
     private readonly RetentionRecalcService _retention;
     private readonly ICurrentUser _currentUser;
+    private readonly IAbacAuthorizationService _documentAuthorization;
     private readonly ILogger<DocumentClassificationController> _logger;
 
     public DocumentClassificationController(
         IDocumentCommands docCmd,
         RetentionRecalcService retention,
         ICurrentUser currentUser,
+        IAbacAuthorizationService documentAuthorization,
         ILogger<DocumentClassificationController> logger)
     {
         _docCmd = docCmd;
         _retention = retention;
         _currentUser = currentUser;
+        _documentAuthorization = documentAuthorization;
         _logger = logger;
     }
 
@@ -54,6 +58,12 @@ public sealed class DocumentClassificationController : Controller
 
             var tenantId = _currentUser.TenantId;
             var userId = _currentUser.UserId;
+            var canEdit = await _documentAuthorization.CanAccessDocumentAsync(tenantId, userId, documentId, "EDIT", new Dictionary<string, string>(), ct);
+            if (!canEdit)
+            {
+                TempData["Error"] = "Você precisa poder editar o documento para classificá-lo.";
+                return RedirectToAction("Index", "Ged");
+            }
 
             await _docCmd.ApplyClassificationAsync(
                 tenantId,

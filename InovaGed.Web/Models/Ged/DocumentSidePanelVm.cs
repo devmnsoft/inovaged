@@ -5,6 +5,7 @@ public sealed class DocumentSidePanelVm
     public Guid DocumentId { get; set; }
     public Guid VersionId { get; set; }
     public bool IsCurrentVersion { get; set; } = true;
+    public string? ArchivalContextMessage { get; set; }
     public string Title { get; set; } = "";
     public string FileName { get; set; } = "";
     public string TypeName { get; set; } = "Sem classificação";

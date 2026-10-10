@@ -141,9 +141,9 @@ public sealed class OcrAutoSchedulerService : IOcrAutoSchedulerService
                     catch (Exception ex)
                     {
                         item.Status = "FAILED";
-                        item.Reason = ex.Message;
+                        item.Reason = "A rotina não concluiu este documento.";
                         result.FailedCount++;
-                        _logger.LogError(ex, "Falha ao enfileirar OCR para documento. Tenant={TenantId} DocumentId={DocumentId} VersionId={VersionId}", options.TenantId, candidate.DocumentId, candidate.VersionId);
+                        _logger.LogError("Falha ao enfileirar OCR para documento. Tenant={TenantId} DocumentId={DocumentId} VersionId={VersionId} Tipo={ExceptionType}", options.TenantId, candidate.DocumentId, candidate.VersionId, ex.GetType().Name);
                         await RegisterItemAsync(result, item, ct);
                     }
                 }
@@ -170,17 +170,16 @@ public sealed class OcrAutoSchedulerService : IOcrAutoSchedulerService
         catch (Exception ex)
         {
             result.Status = "FAILED";
-            result.Message = ex.Message;
+            result.Message = "A rotina de OCR automático não concluiu.";
             result.FinishedAtUtc = DateTimeOffset.UtcNow;
             await SafeUpdateRunAsync(result, CancellationToken.None);
-            await SafeAuditAsync(result.TenantId, result.RunId, "OCR_AUTO_SCHEDULE_FAILED", null, null, ex.Message, result.CorrelationId, new
+            await SafeAuditAsync(result.TenantId, result.RunId, "OCR_AUTO_SCHEDULE_FAILED", null, null, result.Message, result.CorrelationId, new
             {
                 result.RunId,
                 result.TenantId,
-                error = ex.Message,
                 result.FinishedAtUtc
             }, CancellationToken.None);
-            _logger.LogError(ex, "OCR Auto Scheduler FAILED. Tenant={TenantId} RunId={RunId}", result.TenantId, result.RunId);
+            _logger.LogError("OCR Auto Scheduler FAILED. Tenant={TenantId} RunId={RunId} Tipo={ExceptionType}", result.TenantId, result.RunId, ex.GetType().Name);
             return result;
         }
         finally

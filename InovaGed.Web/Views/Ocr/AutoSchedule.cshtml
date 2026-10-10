@@ -148,4 +148,47 @@
             </table>
         </div>
     </div>
+
+    <div class="card mt-4">
+        <div class="card-header">
+            <span class="fw-semibold">Motivo por documento na última execução</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0 align-middle">
+                <thead>
+                    <tr>
+                        <th>Arquivo</th>
+                        <th>Situação</th>
+                        <th>Motivo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @if (Model.LastRunReasons.Count == 0)
+                {
+                    <tr><td colspan="3" class="text-muted">A última execução não registrou documentos.</td></tr>
+                }
+                else
+                {
+                    foreach (var item in Model.LastRunReasons)
+                    {
+                        var badge = item.Situation switch
+                        {
+                            "concluído" => "bg-success",
+                            "aguardando" => "bg-secondary",
+                            "processando" => "bg-primary",
+                            "falhou" => "bg-danger",
+                            "requer intervenção" => "bg-warning text-dark",
+                            _ => "bg-light text-dark"
+                        };
+                        <tr>
+                            <td>@(string.IsNullOrWhiteSpace(item.FileName) ? "Documento sem nome de arquivo" : item.FileName)</td>
+                            <td><span class="badge @badge">@item.Situation</span></td>
+                            <td>@item.Detail</td>
+                        </tr>
+                    }
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
 </div>
