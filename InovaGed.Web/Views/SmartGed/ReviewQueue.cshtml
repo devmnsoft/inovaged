@@ -28,6 +28,15 @@
         <a asp-action="ReviewQueue" asp-route-status="PENDING" class="btn @(currentStatus == "PENDING" ? "btn-primary" : "btn-outline-secondary")">
             Pendentes (@(currentStatus == "PENDING" ? (Model.Classifications.Count + Model.Retentions.Count).ToString() : "•"))
         </a>
+        <a asp-action="ReviewQueue" asp-route-status="PROCESSING" class="btn @(currentStatus == "PROCESSING" ? "btn-primary" : "btn-outline-secondary")">
+            Em aplicação
+        </a>
+        <a asp-action="ReviewQueue" asp-route-status="FAILED" class="btn @(currentStatus == "FAILED" ? "btn-primary" : "btn-outline-secondary")">
+            Falhas
+        </a>
+        <a asp-action="ReviewQueue" asp-route-status="FAILED_APPLIED" class="btn @(currentStatus == "FAILED_APPLIED" ? "btn-primary" : "btn-outline-secondary")">
+            Aplicadas com pendência
+        </a>
         <a asp-action="ReviewQueue" asp-route-status="ACCEPTED" class="btn @(currentStatus == "ACCEPTED" ? "btn-primary" : "btn-outline-secondary")">
             Aceitas
         </a>
@@ -128,9 +137,25 @@
                             {
                                 <span class="badge bg-danger">Rejeitada</span>
                             }
+                            else if (x.Status == "PROCESSING")
+                            {
+                                <span class="badge bg-warning text-dark">Em aplicação</span>
+                            }
+                            else if (x.Status == "FAILED_APPLIED")
+                            {
+                                <span class="badge bg-warning text-dark">Aplicada com pendência</span>
+                            }
+                            else if (x.Status == "FAILED")
+                            {
+                                <span class="badge bg-danger">Falha</span>
+                            }
                             else
                             {
                                 <span class="badge bg-primary">Pendente</span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(x.PublicFailureMessage))
+                            {
+                                <div class="small text-muted mt-1">@x.PublicFailureMessage</div>
                             }
                         </td>
                         <td>
@@ -177,6 +202,13 @@
                                         <i class="bi bi-pencil-square me-1"></i> Ajustar Manualmente
                                     </a>
                                 </div>
+                            }
+                            else if (x.Status == "PROCESSING")
+                            {
+                                <div class="small text-muted mb-2">Operação em andamento desde @(x.ProcessingStartedAt?.ToString("dd/MM/yyyy HH:mm") ?? "instante não registrado"). Aguarde a recuperação automática antes de nova ação.</div>
+                                <a asp-action="Document" asp-route-documentId="@x.DocumentId" class="btn btn-sm btn-outline-secondary">
+                                    <i class="bi bi-eye me-1"></i> Acompanhar
+                                </a>
                             }
                             else
                             {
@@ -291,9 +323,25 @@
                             {
                                 <span class="badge bg-danger">Rejeitada</span>
                             }
+                            else if (x.Status == "PROCESSING")
+                            {
+                                <span class="badge bg-warning text-dark">Em recálculo</span>
+                            }
+                            else if (x.Status == "FAILED_APPLIED")
+                            {
+                                <span class="badge bg-warning text-dark">Recalculada com pendência</span>
+                            }
+                            else if (x.Status == "FAILED")
+                            {
+                                <span class="badge bg-danger">Falha</span>
+                            }
                             else
                             {
                                 <span class="badge bg-primary">Pendente</span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(x.PublicFailureMessage))
+                            {
+                                <div class="small text-muted mt-1">@x.PublicFailureMessage</div>
                             }
                         </td>
                         <td>
@@ -311,7 +359,7 @@
                                             <input type="hidden" name="status" value="@currentStatus" />
                                             <input type="hidden" name="returnUrl" value="@returnUrl" />
                                             <div class="small text-muted mb-2">
-                                                Aprova a recomendação e executa o recálculo canônico sobre o documento via CTE de temporalidade institucional.
+                                                Aprova a recomendação e executa o recálculo canônico de temporalidade institucional.
                                             </div>
                                             <label class="form-label small fw-semibold text-dark mb-1" for="notes-ret-@x.Id">Justificativa do Revisor:</label>
                                             <textarea id="notes-ret-@x.Id" name="notes" class="form-control form-control-sm mb-2" rows="2" placeholder="Justifique a aprovação da temporalidade">Recomendação de temporalidade conferida e validada de acordo com a tabela arquivística vigente.</textarea>
@@ -343,6 +391,13 @@
                                         <i class="bi bi-eye me-1"></i> Ver no Documento
                                     </a>
                                 </div>
+                            }
+                            else if (x.Status == "PROCESSING")
+                            {
+                                <div class="small text-muted mb-2">Recálculo em andamento desde @(x.ProcessingStartedAt?.ToString("dd/MM/yyyy HH:mm") ?? "instante não registrado"). Aguarde a recuperação automática antes de nova ação.</div>
+                                <a asp-action="Document" asp-route-documentId="@x.DocumentId" class="btn btn-sm btn-outline-secondary">
+                                    <i class="bi bi-eye me-1"></i> Acompanhar
+                                </a>
                             }
                             else
                             {

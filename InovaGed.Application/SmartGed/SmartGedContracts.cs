@@ -44,7 +44,10 @@ public sealed record DocumentClassificationSuggestionItem(
     string? ReviewNotes = null,
     Guid? VersionId = null,
     Guid? PlanVersionId = null,
-    bool IsLegacyUnproven = false);
+    bool IsLegacyUnproven = false,
+    Guid? ReviewOperationId = null,
+    DateTimeOffset? ProcessingStartedAt = null,
+    string? PublicFailureMessage = null);
 
 public sealed record DocumentRetentionSuggestionItem(
     Guid Id,
@@ -64,7 +67,10 @@ public sealed record DocumentRetentionSuggestionItem(
     string? ReviewNotes = null,
     Guid? VersionId = null,
     Guid? PlanVersionId = null,
-    bool IsLegacyUnproven = false);
+    bool IsLegacyUnproven = false,
+    Guid? ReviewOperationId = null,
+    DateTimeOffset? ProcessingStartedAt = null,
+    string? PublicFailureMessage = null);
 
 public sealed record DocumentQualityIssueItem(Guid Id, Guid DocumentId, string Type, string Severity, string Title, string? RecommendedAction, string Status);
 public sealed record DocumentIntelligenceDetails(Guid AnalysisId, Guid DocumentId, string Status, string? Summary, string? DocumentType, string? Subject, DateOnly? DetectedDate, IReadOnlyDictionary<string, IReadOnlyList<string>> MaskedIdentifiers, IReadOnlyList<string> SensitiveIndicators, decimal Confidence, DocumentClassificationSuggestionItem? Classification, DocumentRetentionSuggestionItem? Retention, IReadOnlyList<DocumentQualityIssueItem> Issues);

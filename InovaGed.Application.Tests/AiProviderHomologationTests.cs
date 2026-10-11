@@ -128,10 +128,10 @@ public sealed class AiProviderHomologationTests
         private AiKeyScope(string name, string value)
         {
             _name = name;
-            _previous = Environment.GetEnvironmentVariable(name);
-            Environment.SetEnvironmentVariable(name, value);
+            _previous = System.Environment.GetEnvironmentVariable(name);
+            System.Environment.SetEnvironmentVariable(name, value);
         }
         public static AiKeyScope Set(string name, string value) => new(name, value);
-        public void Dispose() => Environment.SetEnvironmentVariable(_name, _previous);
+        public void Dispose() => System.Environment.SetEnvironmentVariable(_name, _previous);
     }
 }

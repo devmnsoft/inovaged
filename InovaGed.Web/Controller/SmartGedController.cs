@@ -319,9 +319,26 @@ where d.tenant_id = @tenantId and d.id = @documentId and coalesce(d.reg_status, 
     private static string SafeReviewMessage(Exception ex) => ex switch
     {
         ArgumentException => ex.Message,
-        InvalidOperationException => ex.Message,
+        InvalidOperationException when IsPublicReviewMessage(ex.Message) => ex.Message,
+        OperationCanceledException => "A operação foi cancelada antes da confirmação segura. Verifique a fila antes de tentar novamente.",
         _ => "Não foi possível concluir a revisão agora. Tente novamente ou acione o suporte com o horário da tentativa."
     };
+
+    private static bool IsPublicReviewMessage(string message)
+    {
+        var known = new[]
+        {
+            "Sugestão não encontrada.",
+            "Sugestão já revisada",
+            "Sugestão sem classe associada",
+            "Documento não encontrado ou inativo.",
+            "A sugestão refere-se a uma versão documental anterior",
+            "A classe sugerida não pertence",
+            "A recomendação de temporalidade refere-se",
+            "Nenhum documento foi atualizado pelo recálculo"
+        };
+        return known.Any(x => message.Contains(x, StringComparison.OrdinalIgnoreCase));
+    }
 
     private async Task PopulateCombosAsync(SmartGedSearchPageVM vm, CancellationToken ct)
     {

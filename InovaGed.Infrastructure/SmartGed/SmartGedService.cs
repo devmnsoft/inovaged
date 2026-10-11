@@ -8,6 +8,7 @@ using InovaGed.Application.Common.Database;
 using InovaGed.Application.Retention;
 using InovaGed.Application.Security;
 using InovaGed.Application.SmartGed;
+using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Infrastructure.SmartGed;
 
@@ -19,6 +20,7 @@ public sealed class SmartGedService : IDocumentIntelligenceService, IDocumentCla
     private readonly IRetentionJobRepository _retentionJobs;
     private readonly IDocumentClassificationCommands _commands;
     private readonly IAbacAuthorizationService _authorization;
+    private readonly ILogger<SmartGedService> _logger;
 
     public SmartGedService(
         IDbConnectionFactory db,
@@ -26,7 +28,8 @@ public sealed class SmartGedService : IDocumentIntelligenceService, IDocumentCla
         IAuditWriter audit,
         IRetentionJobRepository retentionJobs,
         IDocumentClassificationCommands commands,
-        IAbacAuthorizationService authorization)
+        IAbacAuthorizationService authorization,
+        ILogger<SmartGedService> logger)
     {
         _db = db;
         _extractor = extractor;
@@ -34,6 +37,7 @@ public sealed class SmartGedService : IDocumentIntelligenceService, IDocumentCla
         _retentionJobs = retentionJobs;
         _commands = commands;
         _authorization = authorization;
+        _logger = logger;
     }
 
     public async Task<Guid> AnalyzeDocumentAsync(Guid tenantId, Guid documentId, Guid? userId, CancellationToken ct)
@@ -215,12 +219,14 @@ values(@tenantId,@documentId,@analysisId,'CORRENTE',@destination,'Derivada da cl
 
     public async Task<IReadOnlyList<DocumentClassificationSuggestionItem>> ListAsync(Guid tenantId, string? status, Guid? userId, CancellationToken ct)
     {
+        if (!userId.HasValue) return [];
         await using var c = await _db.OpenAsync(ct);
+        await RecoverExpiredReviewOperationsAsync(c, tenantId, ct);
         var filter = string.IsNullOrWhiteSpace(status) || string.Equals(status, "ALL", StringComparison.OrdinalIgnoreCase)
             ? ""
             : "and s.status = @status";
         var items = await ListClassifications(c, tenantId, filter, new { tenantId, status }, ct);
-        if (!userId.HasValue || items.Count == 0) return items;
+        if (items.Count == 0) return items;
 
         var docIds = items.Select(x => x.DocumentId).Distinct().ToArray();
         var authorized = await _authorization.FilterDocumentsAsync(tenantId, userId.Value, docIds, "VIEW", ct);
@@ -238,12 +244,14 @@ values(@tenantId,@documentId,@analysisId,'CORRENTE',@destination,'Derivada da cl
 
     async Task<IReadOnlyList<DocumentRetentionSuggestionItem>> IDocumentRetentionSuggestionService.ListAsync(Guid tenantId, string? status, Guid? userId, CancellationToken ct)
     {
+        if (!userId.HasValue) return [];
         await using var c = await _db.OpenAsync(ct);
+        await RecoverExpiredReviewOperationsAsync(c, tenantId, ct);
         var filter = string.IsNullOrWhiteSpace(status) || string.Equals(status, "ALL", StringComparison.OrdinalIgnoreCase)
             ? ""
             : "and s.status = @status";
         var items = await ListRetentions(c, tenantId, filter, new { tenantId, status }, ct);
-        if (!userId.HasValue || items.Count == 0) return items;
+        if (items.Count == 0) return items;
 
         var docIds = items.Select(x => x.DocumentId).Distinct().ToArray();
         var authorized = await _authorization.FilterDocumentsAsync(tenantId, userId.Value, docIds, "VIEW", ct);
@@ -257,6 +265,8 @@ values(@tenantId,@documentId,@analysisId,'CORRENTE',@destination,'Derivada da cl
 
     private async Task ReviewClassification(Guid tenantId, Guid id, Guid userId, string status, string? notes, CancellationToken ct)
     {
+        notes = NormalizeReviewText(notes);
+        if (status == "REJECTED") RequireReviewReason(notes);
         await using var c = await _db.OpenAsync(ct);
 
         var existing = await c.QuerySingleOrDefaultAsync<ClassificationSuggestionDetailRow>(new CommandDefinition("""
@@ -278,7 +288,7 @@ where s.tenant_id = @tenantId and s.id = @id
         if (string.Equals(existing.Status, status, StringComparison.OrdinalIgnoreCase))
             return;
 
-        if (!string.Equals(existing.Status, "PENDING", StringComparison.OrdinalIgnoreCase))
+        if (!IsReviewableStatus(existing.Status))
             throw new InvalidOperationException($"Sugestão já revisada anteriormente com situação '{existing.Status}'.");
 
         if (status == "REJECTED")
@@ -286,7 +296,7 @@ where s.tenant_id = @tenantId and s.id = @id
             var updated = await c.ExecuteAsync(new CommandDefinition("""
 update ged.document_classification_suggestion
 set status = 'REJECTED', reviewed_by = @userId, reviewed_at = now(), review_notes = @notes
-where tenant_id = @tenantId and id = @id and status = 'PENDING'
+where tenant_id = @tenantId and id = @id and status in ('PENDING','FAILED')
 """, new { tenantId, id, userId, notes }, cancellationToken: ct));
 
             if (updated == 0)
@@ -301,11 +311,30 @@ where tenant_id = @tenantId and id = @id and status = 'PENDING'
             if (!existing.ClassificationId.HasValue)
                 throw new InvalidOperationException("Sugestão sem classe associada não pode ser aceita.");
 
+            var operationId = Guid.NewGuid();
+            var applicationCompleted = false;
             var claimed = await c.ExecuteAsync(new CommandDefinition("""
-update ged.document_classification_suggestion
-set status = 'PROCESSING', reviewed_by = @userId, reviewed_at = now(), review_notes = @notes
-where tenant_id = @tenantId and id = @id and status = 'PENDING'
-""", new { tenantId, id, userId, notes }, cancellationToken: ct));
+update ged.document_classification_suggestion s
+set status = 'PROCESSING',
+    reviewed_by = @userId,
+    reviewed_at = now(),
+    review_notes = @notes,
+    review_operation_id = @operationId,
+    processing_started_at = now(),
+    processing_expires_at = now() + interval '15 minutes',
+    failed_at = null,
+    failure_code = null,
+    public_failure_message = null
+from ged.document d
+where s.tenant_id = @tenantId
+  and s.id = @id
+  and s.status in ('PENDING','FAILED')
+  and d.tenant_id = s.tenant_id
+  and d.id = s.document_id
+  and coalesce(d.reg_status,'A') = 'A'
+  and coalesce(d.status,'') <> 'DELETED'
+  and (s.version_id is null or d.current_version_id is null or s.version_id = d.current_version_id)
+""", new { tenantId, id, userId, notes, operationId }, cancellationToken: ct));
 
             if (claimed == 0)
                 throw new InvalidOperationException("Sugestão já revisada concorrentemente.");
@@ -373,33 +402,47 @@ select exists(
                 var saveResult = await _commands.SaveManualIntegratedAsync(saveCommand, ct);
                 if (!saveResult.Success)
                     throw new InvalidOperationException(saveResult.Message);
+                applicationCompleted = true;
 
                 // 5. Atualizar EXCLUSIVAMENTE a sugestão revisada (não aprova temporalidade indiscriminadamente)
                 var rowsUpdated = await c.ExecuteAsync(new CommandDefinition("""
 update ged.document_classification_suggestion
-set status = 'ACCEPTED', reviewed_by = @userId, reviewed_at = now(), review_notes = @notes
-where tenant_id = @tenantId and id = @id and status = 'PROCESSING';
-""", new { tenantId, id, userId, notes }, cancellationToken: ct));
+set status = 'ACCEPTED',
+    reviewed_by = @userId,
+    reviewed_at = now(),
+    review_notes = @notes,
+    applied_at = now(),
+    processing_expires_at = null,
+    failed_at = null,
+    failure_code = null,
+    public_failure_message = null
+where tenant_id = @tenantId and id = @id and status = 'PROCESSING' and review_operation_id = @operationId;
+""", new { tenantId, id, userId, notes, operationId }, cancellationToken: CancellationToken.None));
 
                 if (rowsUpdated == 0)
                     throw new InvalidOperationException("Sugestão já revisada concorrentemente.");
 
-                await Audit(tenantId, userId, "CLASSIFICATION_SUGGESTION_ACCEPTED", existing.DocumentId, new
+                try
                 {
-                    id,
-                    classificationId = existing.ClassificationId,
-                    retentionRecalculated = saveResult.RetentionRecalculated,
-                    notes
-                }, ct);
+                    await Audit(tenantId, userId, "CLASSIFICATION_SUGGESTION_ACCEPTED", existing.DocumentId, new
+                    {
+                        id,
+                        operationId,
+                        classificationId = existing.ClassificationId,
+                        retentionRecalculated = saveResult.RetentionRecalculated,
+                        notes
+                    }, CancellationToken.None);
+                }
+                catch (Exception auditEx)
+                {
+                    // A decisão já foi persistida; falha de auditoria deve ser tratada operacionalmente sem desfazer a decisão.
+                    _logger.LogError(auditEx, "Falha de auditoria após aceite de classificação assistida. Tenant={TenantId} Suggestion={SuggestionId} Operation={OperationId}", tenantId, id, operationId);
+                }
             }
-            catch
+            catch (Exception ex)
             {
-                await c.ExecuteAsync(new CommandDefinition("""
-update ged.document_classification_suggestion
-set status = 'PENDING', reviewed_by = null, reviewed_at = null,
-    review_notes = coalesce(@notes, '') || case when @notes is null or @notes = '' then '' else E'\n' end || 'Aplicação não concluída; sugestão retornou para revisão.'
-where tenant_id = @tenantId and id = @id and status = 'PROCESSING'
-""", new { tenantId, id, notes }, cancellationToken: ct));
+                await MarkClassificationReviewFailedAsync(c, tenantId, id, operationId, applicationCompleted, ex, CancellationToken.None);
+                _logger.LogWarning(ex, "Falha na revisão de classificação assistida. Tenant={TenantId} Suggestion={SuggestionId} Operation={OperationId} Applied={Applied}", tenantId, id, operationId, applicationCompleted);
                 throw;
             }
         }
@@ -407,6 +450,8 @@ where tenant_id = @tenantId and id = @id and status = 'PROCESSING'
 
     private async Task ReviewRetention(Guid tenantId, Guid id, Guid userId, string status, string? notes, CancellationToken ct)
     {
+        notes = NormalizeReviewText(notes);
+        if (status == "REJECTED") RequireReviewReason(notes);
         await using var c = await _db.OpenAsync(ct);
         var existing = await c.QuerySingleOrDefaultAsync<RetentionSuggestionDetailRow>(new CommandDefinition("""
 select s.id as Id, s.document_id as DocumentId, s.suggested_rule_id as RuleId,
@@ -425,7 +470,7 @@ where s.tenant_id = @tenantId and s.id = @id
         if (string.Equals(existing.Status, status, StringComparison.OrdinalIgnoreCase))
             return;
 
-        if (!string.Equals(existing.Status, "PENDING", StringComparison.OrdinalIgnoreCase))
+        if (!IsReviewableStatus(existing.Status))
             throw new InvalidOperationException($"Sugestão já revisada anteriormente com situação '{existing.Status}'.");
 
         var docState = await c.QuerySingleOrDefaultAsync<DocumentCurrentStateRow>(new CommandDefinition("""
@@ -443,7 +488,7 @@ where tenant_id = @tenantId and id = @DocumentId
             var updated = await c.ExecuteAsync(new CommandDefinition("""
 update ged.document_retention_suggestion
 set status = 'REJECTED', reviewed_by = @userId, reviewed_at = now(), review_notes = @notes
-where tenant_id = @tenantId and id = @id and status = 'PENDING'
+where tenant_id = @tenantId and id = @id and status in ('PENDING','FAILED')
 """, new { tenantId, id, userId, notes }, cancellationToken: ct));
 
             if (updated == 0) throw new InvalidOperationException("Sugestão já revisada ou não pendente.");
@@ -456,11 +501,30 @@ where tenant_id = @tenantId and id = @id and status = 'PENDING'
             if (existing.VersionId.HasValue && docState.CurrentVersionId.HasValue && existing.VersionId.Value != docState.CurrentVersionId.Value)
                 throw new InvalidOperationException("A recomendação de temporalidade refere-se a uma versão anterior do documento.");
 
+            var operationId = Guid.NewGuid();
+            var applicationCompleted = false;
             var claimed = await c.ExecuteAsync(new CommandDefinition("""
-update ged.document_retention_suggestion
-set status = 'PROCESSING', reviewed_by = @userId, reviewed_at = now(), review_notes = @notes
-where tenant_id = @tenantId and id = @id and status = 'PENDING'
-""", new { tenantId, id, userId, notes }, cancellationToken: ct));
+update ged.document_retention_suggestion s
+set status = 'PROCESSING',
+    reviewed_by = @userId,
+    reviewed_at = now(),
+    review_notes = @notes,
+    review_operation_id = @operationId,
+    processing_started_at = now(),
+    processing_expires_at = now() + interval '15 minutes',
+    failed_at = null,
+    failure_code = null,
+    public_failure_message = null
+from ged.document d
+where s.tenant_id = @tenantId
+  and s.id = @id
+  and s.status in ('PENDING','FAILED')
+  and d.tenant_id = s.tenant_id
+  and d.id = s.document_id
+  and coalesce(d.reg_status,'A') = 'A'
+  and coalesce(d.status,'') <> 'DELETED'
+  and (s.version_id is null or d.current_version_id is null or s.version_id = d.current_version_id)
+""", new { tenantId, id, userId, notes, operationId }, cancellationToken: ct));
 
             if (claimed == 0) throw new InvalidOperationException("Sugestão já revisada concorrentemente.");
 
@@ -468,33 +532,187 @@ where tenant_id = @tenantId and id = @id and status = 'PENDING'
             {
                 // Recalcular temporalidade com a base canônica (BuildRetentionCte)
                 var recalcResult = await _retentionJobs.RecalculateOneAsync(tenantId, existing.DocumentId, 30, ct);
+                if (recalcResult <= 0)
+                    throw new InvalidOperationException("Nenhum documento foi atualizado pelo recálculo de temporalidade.");
+                applicationCompleted = true;
 
                 var updated = await c.ExecuteAsync(new CommandDefinition("""
 update ged.document_retention_suggestion
-set status = 'ACCEPTED', reviewed_by = @userId, reviewed_at = now(), review_notes = @notes
-where tenant_id = @tenantId and id = @id and status = 'PROCESSING'
-""", new { tenantId, id, userId, notes }, cancellationToken: ct));
+set status = 'ACCEPTED',
+    reviewed_by = @userId,
+    reviewed_at = now(),
+    review_notes = @notes,
+    applied_at = now(),
+    processing_expires_at = null,
+    failed_at = null,
+    failure_code = null,
+    public_failure_message = null
+where tenant_id = @tenantId and id = @id and status = 'PROCESSING' and review_operation_id = @operationId
+""", new { tenantId, id, userId, notes, operationId }, cancellationToken: CancellationToken.None));
 
                 if (updated == 0) throw new InvalidOperationException("Sugestão já revisada concorrentemente.");
 
-                await Audit(tenantId, userId, "RETENTION_SUGGESTION_ACCEPTED", existing.DocumentId, new
+                try
                 {
-                    id,
-                    recalculated = recalcResult > 0,
-                    notes
-                }, ct);
+                    await Audit(tenantId, userId, "RETENTION_SUGGESTION_ACCEPTED", existing.DocumentId, new
+                    {
+                        id,
+                        operationId,
+                        recalculated = true,
+                        notes
+                    }, CancellationToken.None);
+                }
+                catch (Exception auditEx)
+                {
+                    // A decisão já foi persistida; falha de auditoria deve ser tratada operacionalmente sem desfazer a decisão.
+                    _logger.LogError(auditEx, "Falha de auditoria após aceite de temporalidade assistida. Tenant={TenantId} Suggestion={SuggestionId} Operation={OperationId}", tenantId, id, operationId);
+                }
             }
-            catch
+            catch (Exception ex)
             {
-                await c.ExecuteAsync(new CommandDefinition("""
-update ged.document_retention_suggestion
-set status = 'PENDING', reviewed_by = null, reviewed_at = null,
-    review_notes = coalesce(@notes, '') || case when @notes is null or @notes = '' then '' else E'\n' end || 'Recálculo não concluído; sugestão retornou para revisão.'
-where tenant_id = @tenantId and id = @id and status = 'PROCESSING'
-""", new { tenantId, id, notes }, cancellationToken: ct));
+                await MarkRetentionReviewFailedAsync(c, tenantId, id, operationId, applicationCompleted, ex, CancellationToken.None);
+                _logger.LogWarning(ex, "Falha na revisão de temporalidade assistida. Tenant={TenantId} Suggestion={SuggestionId} Operation={OperationId} Applied={Applied}", tenantId, id, operationId, applicationCompleted);
                 throw;
             }
         }
+    }
+
+    private static string? NormalizeReviewText(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static void RequireReviewReason(string? reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+            throw new ArgumentException("Informe a justificativa da rejeição.");
+    }
+
+    private static bool IsReviewableStatus(string? status) =>
+        status is not null && (status.Equals("PENDING", StringComparison.OrdinalIgnoreCase) || status.Equals("FAILED", StringComparison.OrdinalIgnoreCase));
+
+    private static string PublicReviewFailure(Exception ex)
+    {
+        if (ex is ArgumentException)
+            return ex.Message;
+
+        if (ex is InvalidOperationException && IsPublicReviewFailureMessage(ex.Message))
+            return ex.Message;
+
+        if (ex is OperationCanceledException)
+            return "A operação foi cancelada antes da conclusão segura.";
+
+        return "A operação não foi concluída. Revise o histórico e tente novamente se o efeito não tiver sido aplicado.";
+    }
+
+    private static bool IsPublicReviewFailureMessage(string message)
+    {
+        var known = new[]
+        {
+            "Sugestão não encontrada.",
+            "Sugestão já revisada",
+            "Sugestão sem classe associada",
+            "Documento não encontrado ou inativo.",
+            "A sugestão refere-se a uma versão documental anterior",
+            "A classe sugerida não pertence",
+            "A recomendação de temporalidade refere-se",
+            "Nenhum documento foi atualizado pelo recálculo"
+        };
+        return known.Any(x => message.Contains(x, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static async Task MarkClassificationReviewFailedAsync(
+        Npgsql.NpgsqlConnection connection,
+        Guid tenantId,
+        Guid id,
+        Guid operationId,
+        bool applicationCompleted,
+        Exception ex,
+        CancellationToken ct)
+    {
+        await connection.ExecuteAsync(new CommandDefinition("""
+update ged.document_classification_suggestion
+set status = @status,
+    failed_at = now(),
+    failure_code = @failureCode,
+    public_failure_message = @message,
+    processing_expires_at = null,
+    applied_at = case when @applicationCompleted then coalesce(applied_at, now()) else applied_at end
+where tenant_id = @tenantId and id = @id and status = 'PROCESSING' and review_operation_id = @operationId
+""", new
+        {
+            tenantId,
+            id,
+            operationId,
+            status = applicationCompleted ? "FAILED_APPLIED" : "FAILED",
+            failureCode = ex.GetType().Name,
+            message = PublicReviewFailure(ex),
+            applicationCompleted
+        }, cancellationToken: ct));
+    }
+
+    private static async Task MarkRetentionReviewFailedAsync(
+        Npgsql.NpgsqlConnection connection,
+        Guid tenantId,
+        Guid id,
+        Guid operationId,
+        bool applicationCompleted,
+        Exception ex,
+        CancellationToken ct)
+    {
+        await connection.ExecuteAsync(new CommandDefinition("""
+update ged.document_retention_suggestion
+set status = @status,
+    failed_at = now(),
+    failure_code = @failureCode,
+    public_failure_message = @message,
+    processing_expires_at = null,
+    applied_at = case when @applicationCompleted then coalesce(applied_at, now()) else applied_at end
+where tenant_id = @tenantId and id = @id and status = 'PROCESSING' and review_operation_id = @operationId
+""", new
+        {
+            tenantId,
+            id,
+            operationId,
+            status = applicationCompleted ? "FAILED_APPLIED" : "FAILED",
+            failureCode = ex.GetType().Name,
+            message = PublicReviewFailure(ex),
+            applicationCompleted
+        }, cancellationToken: ct));
+    }
+
+    private static async Task RecoverExpiredReviewOperationsAsync(Npgsql.NpgsqlConnection connection, Guid tenantId, CancellationToken ct)
+    {
+        await connection.ExecuteAsync(new CommandDefinition("""
+update ged.document_classification_suggestion s
+set status = case when d.classification_id = s.suggested_classification_id then 'ACCEPTED' else 'FAILED' end,
+    applied_at = case when d.classification_id = s.suggested_classification_id then coalesce(s.applied_at, now()) else s.applied_at end,
+    failed_at = case when d.classification_id = s.suggested_classification_id then s.failed_at else coalesce(s.failed_at, now()) end,
+    failure_code = case when d.classification_id = s.suggested_classification_id then s.failure_code else coalesce(s.failure_code, 'ProcessingExpired') end,
+    public_failure_message = case when d.classification_id = s.suggested_classification_id
+        then coalesce(s.public_failure_message, 'Aplicação confirmada por recuperação automática.')
+        else coalesce(s.public_failure_message, 'Operação expirada antes de confirmar aplicação. Revise e execute novamente.')
+    end,
+    processing_expires_at = null
+from ged.document d
+where s.tenant_id = @tenantId
+  and s.status = 'PROCESSING'
+  and s.processing_expires_at is not null
+  and s.processing_expires_at < now()
+  and d.tenant_id = s.tenant_id
+  and d.id = s.document_id
+  and coalesce(s.reg_status,'A') = 'A';
+
+update ged.document_retention_suggestion s
+set status = 'FAILED',
+    failed_at = coalesce(s.failed_at, now()),
+    failure_code = coalesce(s.failure_code, 'ProcessingExpired'),
+    public_failure_message = coalesce(s.public_failure_message, 'Operação de temporalidade expirada antes de confirmar recálculo. Revise a memória de cálculo e execute novamente.'),
+    processing_expires_at = null
+where s.tenant_id = @tenantId
+  and s.status = 'PROCESSING'
+  and s.processing_expires_at is not null
+  and s.processing_expires_at < now()
+  and coalesce(s.reg_status,'A') = 'A';
+""", new { tenantId }, cancellationToken: ct));
     }
 
     public async Task<SmartGedSearchResult> SearchAsync(SmartGedSearchQuery query, CancellationToken ct)
@@ -502,6 +720,9 @@ where tenant_id = @tenantId and id = @id and status = 'PROCESSING'
         var clock = Stopwatch.StartNew();
         await using var c = await _db.OpenAsync(ct);
         var term = (query.Text ?? string.Empty).Trim();
+        if (!query.UserId.HasValue)
+            return new(term, [], 0, 0, Math.Max(1, query.Page), Math.Clamp(query.Limit, 1, 100));
+
         var hasFilters = query.FolderId.HasValue || query.ClassificationId.HasValue || query.TypeId.HasValue
             || query.CreatedAfter.HasValue || query.CreatedBefore.HasValue || !string.IsNullOrWhiteSpace(query.RetentionStatus);
 
@@ -515,7 +736,7 @@ where tenant_id = @tenantId and id = @id and status = 'PROCESSING'
             throw new ArgumentException("A data inicial não pode ser superior à data final.");
         }
 
-        var endOfDay = createdBefore.HasValue ? createdBefore.Value.Date.AddDays(1).AddTicks(-1) : (DateTime?)null;
+        var exclusiveEndOfDay = createdBefore.HasValue ? createdBefore.Value.Date.AddDays(1) : (DateTime?)null;
 
         var sql = new System.Text.StringBuilder("""
 select d.id as DocumentId,
@@ -581,10 +802,10 @@ where d.tenant_id = @TenantId
             sql.Append(" and d.created_at >= @CreatedAfter");
             dp.Add("CreatedAfter", createdAfter.Value);
         }
-        if (endOfDay.HasValue)
+        if (exclusiveEndOfDay.HasValue)
         {
-            sql.Append(" and d.created_at <= @EndOfDay");
-            dp.Add("EndOfDay", endOfDay.Value);
+            sql.Append(" and d.created_at < @ExclusiveEndOfDay");
+            dp.Add("ExclusiveEndOfDay", exclusiveEndOfDay.Value);
         }
         if (!string.IsNullOrWhiteSpace(query.RetentionStatus))
         {
@@ -600,16 +821,17 @@ where d.tenant_id = @TenantId
             cancellationToken: ct))).ToArray();
 
         var docIds = candidateIds.Distinct().ToArray();
-        var authorizedIds = query.UserId.HasValue
-            ? await _authorization.FilterDocumentsAsync(query.TenantId, query.UserId.Value, docIds, "VIEW", ct)
-            : docIds.ToHashSet();
+        var authorizedIds = await _authorization.FilterDocumentsAsync(query.TenantId, query.UserId.Value, docIds, "VIEW", ct);
 
         var pageSize = Math.Clamp(query.Limit, 1, 100);
         var page = Math.Max(1, query.Page);
         var totalCount = candidateIds.Count(authorizedIds.Contains);
+        var totalPages = Math.Max(1, (int)Math.Ceiling(totalCount / (double)pageSize));
+        page = Math.Min(page, totalPages);
+        var skip = checked((page - 1) * pageSize);
         var pageIds = candidateIds
             .Where(authorizedIds.Contains)
-            .Skip((page - 1) * pageSize)
+            .Skip(skip)
             .Take(pageSize)
             .ToArray();
 
@@ -718,7 +940,10 @@ select s.id as Id,
        s.review_notes as ReviewNotes,
        s.version_id as VersionId,
        s.plan_version_id as PlanVersionId,
-       coalesce(s.is_legacy_unproven, s.version_id is null) as IsLegacyUnproven
+       coalesce(s.is_legacy_unproven, s.version_id is null) as IsLegacyUnproven,
+       s.review_operation_id as ReviewOperationId,
+       s.processing_started_at as ProcessingStartedAt,
+       s.public_failure_message as PublicFailureMessage
 from ged.document_classification_suggestion s
 left join ged.document d on d.id = s.document_id and d.tenant_id = s.tenant_id
 left join ged.document_version v on v.id = d.current_version_id
@@ -731,7 +956,7 @@ order by s.confidence desc, s.created_at desc
         return rows.Select(x => new DocumentClassificationSuggestionItem(
             x.Id, x.DocumentId, x.Code, x.Title, x.Reason, x.Confidence, x.Status,
             x.DocumentTitle, x.VersionNumber, x.CurrentClassification, x.CreatedAt, x.IsObsolete, x.ReviewNotes,
-            x.VersionId, x.PlanVersionId, x.IsLegacyUnproven)).ToArray();
+            x.VersionId, x.PlanVersionId, x.IsLegacyUnproven, x.ReviewOperationId, x.ProcessingStartedAt, x.PublicFailureMessage)).ToArray();
     }
 
     private static async Task<IReadOnlyList<DocumentRetentionSuggestionItem>> ListRetentions(Npgsql.NpgsqlConnection c, Guid tenantId, string filter, object args, CancellationToken ct)
@@ -758,7 +983,10 @@ select s.id as Id,
        s.review_notes as ReviewNotes,
        s.version_id as VersionId,
        s.plan_version_id as PlanVersionId,
-       coalesce(s.is_legacy_unproven, s.version_id is null) as IsLegacyUnproven
+       coalesce(s.is_legacy_unproven, s.version_id is null) as IsLegacyUnproven,
+       s.review_operation_id as ReviewOperationId,
+       s.processing_started_at as ProcessingStartedAt,
+       s.public_failure_message as PublicFailureMessage
 from ged.document_retention_suggestion s
 left join ged.document d on d.id = s.document_id and d.tenant_id = s.tenant_id
 left join ged.document_version v on v.id = d.current_version_id
@@ -771,7 +999,7 @@ order by s.confidence desc, s.created_at desc
             x.RetentionUntil.HasValue ? DateOnly.FromDateTime(x.RetentionUntil.Value) : null,
             x.Reason, x.Confidence, x.Status,
             x.DocumentTitle, x.VersionNumber, x.CurrentRetention, x.CreatedAt, x.IsObsolete, x.ReviewNotes,
-            x.VersionId, x.PlanVersionId, x.IsLegacyUnproven)).ToArray();
+            x.VersionId, x.PlanVersionId, x.IsLegacyUnproven, x.ReviewOperationId, x.ProcessingStartedAt, x.PublicFailureMessage)).ToArray();
     }
 
     private Task Audit(Guid tenantId, Guid? userId, string action, Guid? documentId, object data, CancellationToken ct) =>
@@ -793,8 +1021,8 @@ order by s.confidence desc, s.created_at desc
     private sealed class ClassificationSuggestionDetailRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public Guid? ClassificationId { get; set; } public decimal Confidence { get; set; } public string Status { get; set; } = ""; public Guid? VersionId { get; set; } public Guid? PlanVersionId { get; set; } }
     private sealed class RetentionSuggestionDetailRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public Guid? RuleId { get; set; } public decimal Confidence { get; set; } public string Status { get; set; } = ""; public Guid? VersionId { get; set; } }
     private sealed class DocumentCurrentStateRow { public Guid Id { get; set; } public string DocStatus { get; set; } = ""; public string RegStatus { get; set; } = ""; public Guid? CurrentClassificationId { get; set; } public Guid? CurrentVersionId { get; set; } }
-    private sealed class ClassificationRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public string? Code { get; set; } public string? Title { get; set; } public string? Reason { get; set; } public decimal Confidence { get; set; } public string Status { get; set; } = ""; public string? DocumentTitle { get; set; } public int? VersionNumber { get; set; } public string? CurrentClassification { get; set; } public DateTimeOffset? CreatedAt { get; set; } public bool IsObsolete { get; set; } public string? ReviewNotes { get; set; } public Guid? VersionId { get; set; } public Guid? PlanVersionId { get; set; } public bool IsLegacyUnproven { get; set; } }
-    private sealed class RetentionRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public string? Phase { get; set; } public string? FinalDestination { get; set; } public string? TriggerEvent { get; set; } public DateTime? RetentionUntil { get; set; } public string? Reason { get; set; } public decimal Confidence { get; set; } public string Status { get; set; } = ""; public string? DocumentTitle { get; set; } public int? VersionNumber { get; set; } public string? CurrentRetention { get; set; } public DateTimeOffset? CreatedAt { get; set; } public bool IsObsolete { get; set; } public string? ReviewNotes { get; set; } public Guid? VersionId { get; set; } public Guid? PlanVersionId { get; set; } public bool IsLegacyUnproven { get; set; } }
+    private sealed class ClassificationRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public string? Code { get; set; } public string? Title { get; set; } public string? Reason { get; set; } public decimal Confidence { get; set; } public string Status { get; set; } = ""; public string? DocumentTitle { get; set; } public int? VersionNumber { get; set; } public string? CurrentClassification { get; set; } public DateTimeOffset? CreatedAt { get; set; } public bool IsObsolete { get; set; } public string? ReviewNotes { get; set; } public Guid? VersionId { get; set; } public Guid? PlanVersionId { get; set; } public bool IsLegacyUnproven { get; set; } public Guid? ReviewOperationId { get; set; } public DateTimeOffset? ProcessingStartedAt { get; set; } public string? PublicFailureMessage { get; set; } }
+    private sealed class RetentionRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public string? Phase { get; set; } public string? FinalDestination { get; set; } public string? TriggerEvent { get; set; } public DateTime? RetentionUntil { get; set; } public string? Reason { get; set; } public decimal Confidence { get; set; } public string Status { get; set; } = ""; public string? DocumentTitle { get; set; } public int? VersionNumber { get; set; } public string? CurrentRetention { get; set; } public DateTimeOffset? CreatedAt { get; set; } public bool IsObsolete { get; set; } public string? ReviewNotes { get; set; } public Guid? VersionId { get; set; } public Guid? PlanVersionId { get; set; } public bool IsLegacyUnproven { get; set; } public Guid? ReviewOperationId { get; set; } public DateTimeOffset? ProcessingStartedAt { get; set; } public string? PublicFailureMessage { get; set; } }
     private sealed class IssueRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public string Type { get; set; } = ""; public string Severity { get; set; } = ""; public string Title { get; set; } = ""; public string? RecommendedAction { get; set; } public string Status { get; set; } = ""; }
     private sealed class SearchRow { public Guid DocumentId { get; set; } public string Document { get; set; } = ""; public string? Summary { get; set; } public string? ExtractedText { get; set; } public string? Classification { get; set; } public string QualityStatus { get; set; } = ""; public int? VersionNumber { get; set; } public string? RetentionStatus { get; set; } public bool IsAnalysisOutdated { get; set; } public bool IsLegacyUnproven { get; set; } public Guid? AnalyzedVersionId { get; set; } public Guid? CurrentVersionId { get; set; } }
 }

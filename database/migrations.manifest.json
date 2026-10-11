@@ -1266,6 +1266,14 @@
       "transactional": true,
       "deploymentSafety": "Additive",
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_10_17_smart_ged_review_operations",
+      "path": "database/migrations/2026_10_17_smart_ged_review_operations.sql",
+      "module": "SmartGed",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
     }
   ]
 }

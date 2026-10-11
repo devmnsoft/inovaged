@@ -929,5 +929,12 @@
     "area": "Protocol",
     "required": true,
     "description": "Falha se as tabelas de protocolo não existirem e confirma a view de vínculos após criá-la."
+  },
+  {
+    "name": "2026_10_17_smart_ged_review_operations",
+    "path": "database/migrations/2026_10_17_smart_ged_review_operations.sql",
+    "area": "SmartGed",
+    "required": true,
+    "description": "Registra operação, expiração, aplicação e falha de revisões assistidas, permitindo recuperação sem sucesso fictício."
   }
 ]
