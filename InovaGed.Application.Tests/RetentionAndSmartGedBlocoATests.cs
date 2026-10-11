@@ -187,12 +187,25 @@ public sealed class RetentionAndSmartGedBlocoATests
     [Fact]
     public void SmartGedReviewQueue_calculates_authorized_pagination_window()
     {
-        var queue = new SmartGedReviewQueue([], [], "FAILED", Page: 3, PageSize: 10, ClassificationTotal: 17, RetentionTotal: 8);
+        var queue = new SmartGedReviewQueue([], [], "FAILED", Page: 2, PageSize: 10, ClassificationTotal: 17, RetentionTotal: 8, CurrentKind: "classification");
 
         Assert.Equal(25, queue.TotalCount);
-        Assert.Equal(3, queue.TotalPages);
-        Assert.Equal(21, queue.FirstItem);
-        Assert.Equal(25, queue.LastItem);
+        Assert.Equal(17, queue.ActiveTotal);
+        Assert.Equal(2, queue.TotalPages);
+        Assert.Equal(11, queue.FirstItem);
+        Assert.Equal(17, queue.LastItem);
+    }
+
+    [Fact]
+    public void SmartGedReviewQueue_uses_independent_retention_pagination()
+    {
+        var queue = new SmartGedReviewQueue([], [], "PENDING", Page: 2, PageSize: 5, ClassificationTotal: 40, RetentionTotal: 8, CurrentKind: "retention");
+
+        Assert.False(queue.ShowingClassifications);
+        Assert.Equal(8, queue.ActiveTotal);
+        Assert.Equal(2, queue.TotalPages);
+        Assert.Equal(6, queue.FirstItem);
+        Assert.Equal(8, queue.LastItem);
     }
 
     [Fact]

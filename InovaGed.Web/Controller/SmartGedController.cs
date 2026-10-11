@@ -45,24 +45,32 @@ public sealed class SmartGedController : Controller
     [HttpGet("ReviewQueue")]
     public async Task<IActionResult> ReviewQueue(
         [FromQuery] string? status = "PENDING",
+        [FromQuery] string? kind = "classification",
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         CancellationToken ct = default)
     {
         var st = string.IsNullOrWhiteSpace(status) ? "PENDING" : status.Trim().ToUpperInvariant();
+        var selectedKind = string.Equals(kind, "retention", StringComparison.OrdinalIgnoreCase) ? "retention" : "classification";
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 10, 50);
-        var classifications = await _classifications.ListAsync(_user.TenantId, st, _user.UserId, ct);
-        var retentions = await _retentions.ListAsync(_user.TenantId, st, _user.UserId, ct);
-        var total = classifications.Count + retentions.Count;
-        var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
-        page = Math.Min(page, totalPages);
-        var skip = checked((page - 1) * pageSize);
-        var pagedClassifications = classifications.Skip(skip).Take(pageSize).ToArray();
-        var remaining = Math.Max(0, pageSize - pagedClassifications.Length);
-        var retentionSkip = Math.Max(0, skip - classifications.Count);
-        var pagedRetentions = retentions.Skip(retentionSkip).Take(remaining).ToArray();
-        return View(new SmartGedReviewQueue(pagedClassifications, pagedRetentions, st, page, pageSize, classifications.Count, retentions.Count));
+
+        var classificationPage = selectedKind == "classification"
+            ? await _classifications.ListPageAsync(_user.TenantId, st, _user.UserId, page, pageSize, ct)
+            : await _classifications.ListPageAsync(_user.TenantId, st, _user.UserId, 1, 10, ct);
+        var retentionPage = selectedKind == "retention"
+            ? await _retentions.ListPageAsync(_user.TenantId, st, _user.UserId, page, pageSize, ct)
+            : await _retentions.ListPageAsync(_user.TenantId, st, _user.UserId, 1, 10, ct);
+
+        return View(new SmartGedReviewQueue(
+            selectedKind == "classification" ? classificationPage.Items : [],
+            selectedKind == "retention" ? retentionPage.Items : [],
+            st,
+            selectedKind == "classification" ? classificationPage.Page : retentionPage.Page,
+            pageSize,
+            classificationPage.TotalCount,
+            retentionPage.TotalCount,
+            selectedKind));
     }
 
     [HttpGet("Document/{documentId:guid}")]

@@ -12,6 +12,7 @@ public interface IDocumentClassificationSuggestionService
     Task<IReadOnlyList<DocumentClassificationSuggestionItem>> ListPendingAsync(Guid tenantId, Guid? userId, CancellationToken ct);
     Task<IReadOnlyList<DocumentClassificationSuggestionItem>> ListAsync(Guid tenantId, string? status, CancellationToken ct) => ListAsync(tenantId, status, null, ct);
     Task<IReadOnlyList<DocumentClassificationSuggestionItem>> ListAsync(Guid tenantId, string? status, Guid? userId, CancellationToken ct);
+    Task<SmartGedSuggestionPage<DocumentClassificationSuggestionItem>> ListPageAsync(Guid tenantId, string? status, Guid? userId, int page, int pageSize, CancellationToken ct);
     Task AcceptAsync(Guid tenantId, Guid suggestionId, Guid userId, string? notes, CancellationToken ct);
     Task RejectAsync(Guid tenantId, Guid suggestionId, Guid userId, string reason, CancellationToken ct);
 }
@@ -21,6 +22,7 @@ public interface IDocumentRetentionSuggestionService
     Task<IReadOnlyList<DocumentRetentionSuggestionItem>> ListPendingAsync(Guid tenantId, Guid? userId, CancellationToken ct);
     Task<IReadOnlyList<DocumentRetentionSuggestionItem>> ListAsync(Guid tenantId, string? status, CancellationToken ct) => ListAsync(tenantId, status, null, ct);
     Task<IReadOnlyList<DocumentRetentionSuggestionItem>> ListAsync(Guid tenantId, string? status, Guid? userId, CancellationToken ct);
+    Task<SmartGedSuggestionPage<DocumentRetentionSuggestionItem>> ListPageAsync(Guid tenantId, string? status, Guid? userId, int page, int pageSize, CancellationToken ct);
     Task AcceptAsync(Guid tenantId, Guid suggestionId, Guid userId, string? notes, CancellationToken ct);
     Task RejectAsync(Guid tenantId, Guid suggestionId, Guid userId, string reason, CancellationToken ct);
 }
@@ -78,6 +80,13 @@ public sealed record SmartGedSearchQuery(Guid TenantId, Guid? UserId, string Tex
 public sealed record SmartGedSearchItem(Guid DocumentId, string Document, string? Summary, string? Classification, string? PhysicalLocation, string QualityStatus, string Excerpt, int? VersionNumber = null, string? RetentionStatus = null, bool IsAnalysisOutdated = false, bool IsLegacyUnproven = false, Guid? AnalyzedVersionId = null, Guid? CurrentVersionId = null);
 public sealed record SmartGedSearchResult(string Query, IReadOnlyList<SmartGedSearchItem> Items, int ExecutionMs, int TotalCount = 0, int Page = 1, int PageSize = 50);
 public sealed record SmartGedDashboard(int WithoutOcr, int WithoutClassification, int Sensitive, int LowConfidence, int PendingSuggestions, int OpenIssues);
+public sealed record SmartGedSuggestionPage<T>(IReadOnlyList<T> Items, int TotalCount, int Page = 1, int PageSize = 20)
+{
+    public int TotalPages => Math.Max(1, (int)Math.Ceiling(Math.Max(0, TotalCount) / (double)Math.Max(1, PageSize)));
+    public int FirstItem => TotalCount == 0 ? 0 : ((Math.Clamp(Page, 1, TotalPages) - 1) * Math.Max(1, PageSize)) + 1;
+    public int LastItem => TotalCount == 0 ? 0 : Math.Min(TotalCount, Math.Clamp(Page, 1, TotalPages) * Math.Max(1, PageSize));
+}
+
 public sealed record SmartGedReviewQueue(
     IReadOnlyList<DocumentClassificationSuggestionItem> Classifications,
     IReadOnlyList<DocumentRetentionSuggestionItem> Retentions,
@@ -85,10 +94,13 @@ public sealed record SmartGedReviewQueue(
     int Page = 1,
     int PageSize = 20,
     int ClassificationTotal = 0,
-    int RetentionTotal = 0)
+    int RetentionTotal = 0,
+    string CurrentKind = "classification")
 {
+    public bool ShowingClassifications => CurrentKind.Equals("classification", StringComparison.OrdinalIgnoreCase);
+    public int ActiveTotal => ShowingClassifications ? Math.Max(0, ClassificationTotal) : Math.Max(0, RetentionTotal);
     public int TotalCount => Math.Max(0, ClassificationTotal) + Math.Max(0, RetentionTotal);
-    public int TotalPages => Math.Max(1, (int)Math.Ceiling(TotalCount / (double)Math.Max(1, PageSize)));
-    public int FirstItem => TotalCount == 0 ? 0 : ((Math.Clamp(Page, 1, TotalPages) - 1) * Math.Max(1, PageSize)) + 1;
-    public int LastItem => TotalCount == 0 ? 0 : Math.Min(TotalCount, Math.Clamp(Page, 1, TotalPages) * Math.Max(1, PageSize));
+    public int TotalPages => Math.Max(1, (int)Math.Ceiling(ActiveTotal / (double)Math.Max(1, PageSize)));
+    public int FirstItem => ActiveTotal == 0 ? 0 : ((Math.Clamp(Page, 1, TotalPages) - 1) * Math.Max(1, PageSize)) + 1;
+    public int LastItem => ActiveTotal == 0 ? 0 : Math.Min(ActiveTotal, Math.Clamp(Page, 1, TotalPages) * Math.Max(1, PageSize));
 }

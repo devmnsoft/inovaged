@@ -8,6 +8,7 @@ using InovaGed.Application.Common.Database;
 using InovaGed.Application.Retention;
 using InovaGed.Application.Security;
 using InovaGed.Application.SmartGed;
+using InovaGed.Infrastructure.Security;
 using Microsoft.Extensions.Logging;
 
 namespace InovaGed.Infrastructure.SmartGed;
@@ -233,6 +234,17 @@ values(@tenantId,@documentId,@analysisId,'CORRENTE',@destination,'Derivada da cl
         return items.Where(x => authorized.Contains(x.DocumentId)).ToArray();
     }
 
+    public async Task<SmartGedSuggestionPage<DocumentClassificationSuggestionItem>> ListPageAsync(Guid tenantId, string? status, Guid? userId, int page, int pageSize, CancellationToken ct)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 10, 50);
+        if (!userId.HasValue) return new([], 0, page, pageSize);
+
+        await using var c = await _db.OpenAsync(ct);
+        await RecoverExpiredReviewOperationsAsync(c, tenantId, ct);
+        return await ListClassificationPage(c, tenantId, NormalizeReviewStatus(status), userId.Value, page, pageSize, ct);
+    }
+
     Task<IReadOnlyList<DocumentRetentionSuggestionItem>> IDocumentRetentionSuggestionService.ListPendingAsync(Guid tenantId, CancellationToken ct) =>
         ((IDocumentRetentionSuggestionService)this).ListPendingAsync(tenantId, null, ct);
 
@@ -256,6 +268,17 @@ values(@tenantId,@documentId,@analysisId,'CORRENTE',@destination,'Derivada da cl
         var docIds = items.Select(x => x.DocumentId).Distinct().ToArray();
         var authorized = await _authorization.FilterDocumentsAsync(tenantId, userId.Value, docIds, "VIEW", ct);
         return items.Where(x => authorized.Contains(x.DocumentId)).ToArray();
+    }
+
+    async Task<SmartGedSuggestionPage<DocumentRetentionSuggestionItem>> IDocumentRetentionSuggestionService.ListPageAsync(Guid tenantId, string? status, Guid? userId, int page, int pageSize, CancellationToken ct)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 10, 50);
+        if (!userId.HasValue) return new([], 0, page, pageSize);
+
+        await using var c = await _db.OpenAsync(ct);
+        await RecoverExpiredReviewOperationsAsync(c, tenantId, ct);
+        return await ListRetentionPage(c, tenantId, NormalizeReviewStatus(status), userId.Value, page, pageSize, ct);
     }
 
     public Task AcceptAsync(Guid tenantId, Guid suggestionId, Guid userId, string? notes, CancellationToken ct) => ReviewClassification(tenantId, suggestionId, userId, "ACCEPTED", notes, ct);
@@ -579,6 +602,14 @@ where tenant_id = @tenantId and id = @id and status = 'PROCESSING' and review_op
 
     private static string? NormalizeReviewText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string? NormalizeReviewStatus(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status) || status.Equals("ALL", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        return status.Trim().ToUpperInvariant();
+    }
 
     private static void RequireReviewReason(string? reason)
     {
@@ -918,7 +949,33 @@ order by array_position(@PageIds, d.id)
         return snippet;
     }
 
-    private static async Task<IReadOnlyList<DocumentClassificationSuggestionItem>> ListClassifications(Npgsql.NpgsqlConnection c, Guid tenantId, string filter, object args, CancellationToken ct)
+    private static async Task<SmartGedSuggestionPage<DocumentClassificationSuggestionItem>> ListClassificationPage(Npgsql.NpgsqlConnection c, Guid tenantId, string? status, Guid userId, int page, int pageSize, CancellationToken ct)
+    {
+        var offset = checked((page - 1) * pageSize);
+        var whereStatus = status is null ? "" : "and s.status = @status";
+        var args = ReviewPageArgs(tenantId, userId, status, pageSize, offset);
+        var total = await c.ExecuteScalarAsync<int>(new CommandDefinition($"""
+select count(*)
+from ged.document_classification_suggestion s
+join ged.document d on d.id = s.document_id and d.tenant_id = s.tenant_id
+where s.tenant_id = @tenantId and s.reg_status = 'A'
+  {whereStatus}
+  and {AbacAuthorizationService.DocumentAccessPredicate("d")}
+""", args, cancellationToken: ct));
+
+        var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
+        page = Math.Min(page, totalPages);
+        offset = checked((page - 1) * pageSize);
+        args = ReviewPageArgs(tenantId, userId, status, pageSize, offset);
+
+        var items = await ListClassifications(c, tenantId, $"""
+  {whereStatus}
+  and {AbacAuthorizationService.DocumentAccessPredicate("d")}
+""", args, ct, "s.created_at desc, s.confidence desc, s.id desc", "limit @pageSize offset @offset");
+        return new(items, total, page, pageSize);
+    }
+
+    private static async Task<IReadOnlyList<DocumentClassificationSuggestionItem>> ListClassifications(Npgsql.NpgsqlConnection c, Guid tenantId, string filter, object args, CancellationToken ct, string orderBy = "s.confidence desc, s.created_at desc", string pageClause = "")
     {
         var sql = $"""
 select s.id as Id,
@@ -950,7 +1007,8 @@ left join ged.document_version v on v.id = d.current_version_id
 left join ged.classification_plan cp on cp.id = d.classification_id and cp.tenant_id = d.tenant_id
 left join ged.classification_plan_version_item pvi on pvi.tenant_id = d.tenant_id and pvi.version_id = d.classification_version_id and pvi.classification_id = d.classification_id
 where s.tenant_id = @tenantId and s.reg_status = 'A' {filter}
-order by s.confidence desc, s.created_at desc
+order by {orderBy}
+{pageClause}
 """;
         var rows = await c.QueryAsync<ClassificationRow>(new CommandDefinition(sql, args, cancellationToken: ct));
         return rows.Select(x => new DocumentClassificationSuggestionItem(
@@ -959,7 +1017,47 @@ order by s.confidence desc, s.created_at desc
             x.VersionId, x.PlanVersionId, x.IsLegacyUnproven, x.ReviewOperationId, x.ProcessingStartedAt, x.PublicFailureMessage)).ToArray();
     }
 
-    private static async Task<IReadOnlyList<DocumentRetentionSuggestionItem>> ListRetentions(Npgsql.NpgsqlConnection c, Guid tenantId, string filter, object args, CancellationToken ct)
+    private static async Task<SmartGedSuggestionPage<DocumentRetentionSuggestionItem>> ListRetentionPage(Npgsql.NpgsqlConnection c, Guid tenantId, string? status, Guid userId, int page, int pageSize, CancellationToken ct)
+    {
+        var offset = checked((page - 1) * pageSize);
+        var whereStatus = status is null ? "" : "and s.status = @status";
+        var args = ReviewPageArgs(tenantId, userId, status, pageSize, offset);
+        var total = await c.ExecuteScalarAsync<int>(new CommandDefinition($"""
+select count(*)
+from ged.document_retention_suggestion s
+join ged.document d on d.id = s.document_id and d.tenant_id = s.tenant_id
+where s.tenant_id = @tenantId and s.reg_status = 'A'
+  {whereStatus}
+  and {AbacAuthorizationService.DocumentAccessPredicate("d")}
+""", args, cancellationToken: ct));
+
+        var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
+        page = Math.Min(page, totalPages);
+        offset = checked((page - 1) * pageSize);
+        args = ReviewPageArgs(tenantId, userId, status, pageSize, offset);
+
+        var items = await ListRetentions(c, tenantId, $"""
+  {whereStatus}
+  and {AbacAuthorizationService.DocumentAccessPredicate("d")}
+""", args, ct, "s.created_at desc, s.confidence desc, s.id desc", "limit @pageSize offset @offset");
+        return new(items, total, page, pageSize);
+    }
+
+    private static DynamicParameters ReviewPageArgs(Guid tenantId, Guid userId, string? status, int pageSize, int offset)
+    {
+        var args = new DynamicParameters();
+        args.Add("tenantId", tenantId);
+        args.Add("userId", userId);
+        args.Add("status", status);
+        args.Add("pageSize", pageSize);
+        args.Add("offset", offset);
+        args.Add("permissionCode", "Documents.View");
+        args.Add("write", false);
+        args.Add("hour", DateTime.UtcNow.Hour);
+        return args;
+    }
+
+    private static async Task<IReadOnlyList<DocumentRetentionSuggestionItem>> ListRetentions(Npgsql.NpgsqlConnection c, Guid tenantId, string filter, object args, CancellationToken ct, string orderBy = "s.confidence desc, s.created_at desc", string pageClause = "")
     {
         var sql = $"""
 select s.id as Id,
@@ -991,7 +1089,8 @@ from ged.document_retention_suggestion s
 left join ged.document d on d.id = s.document_id and d.tenant_id = s.tenant_id
 left join ged.document_version v on v.id = d.current_version_id
 where s.tenant_id = @tenantId and s.reg_status = 'A' {filter}
-order by s.confidence desc, s.created_at desc
+order by {orderBy}
+{pageClause}
 """;
         var rows = await c.QueryAsync<RetentionRow>(new CommandDefinition(sql, args, cancellationToken: ct));
         return rows.Select(x => new DocumentRetentionSuggestionItem(

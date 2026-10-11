@@ -7,6 +7,7 @@
     var returnUrl = Context.Request.Path + Context.Request.QueryString;
     var previousPage = Math.Max(1, Model.Page - 1);
     var nextPage = Math.Min(Model.TotalPages, Model.Page + 1);
+    var currentKind = Model.ShowingClassifications ? "classification" : "retention";
 }
 
 <partial name="Atlas/_AtlasPageHero" />
@@ -27,25 +28,25 @@
 
 <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
     <div class="btn-group" role="group" aria-label="Filtro por situação da sugestão">
-        <a asp-action="ReviewQueue" asp-route-status="PENDING" class="btn @(currentStatus == "PENDING" ? "btn-primary" : "btn-outline-secondary")">
+        <a asp-action="ReviewQueue" asp-route-status="PENDING" asp-route-kind="@currentKind" class="btn @(currentStatus == "PENDING" ? "btn-primary" : "btn-outline-secondary")">
             Pendentes
         </a>
-        <a asp-action="ReviewQueue" asp-route-status="PROCESSING" class="btn @(currentStatus == "PROCESSING" ? "btn-primary" : "btn-outline-secondary")">
+        <a asp-action="ReviewQueue" asp-route-status="PROCESSING" asp-route-kind="@currentKind" class="btn @(currentStatus == "PROCESSING" ? "btn-primary" : "btn-outline-secondary")">
             Em aplicação
         </a>
-        <a asp-action="ReviewQueue" asp-route-status="FAILED" class="btn @(currentStatus == "FAILED" ? "btn-primary" : "btn-outline-secondary")">
+        <a asp-action="ReviewQueue" asp-route-status="FAILED" asp-route-kind="@currentKind" class="btn @(currentStatus == "FAILED" ? "btn-primary" : "btn-outline-secondary")">
             Falhas
         </a>
-        <a asp-action="ReviewQueue" asp-route-status="FAILED_APPLIED" class="btn @(currentStatus == "FAILED_APPLIED" ? "btn-primary" : "btn-outline-secondary")">
+        <a asp-action="ReviewQueue" asp-route-status="FAILED_APPLIED" asp-route-kind="@currentKind" class="btn @(currentStatus == "FAILED_APPLIED" ? "btn-primary" : "btn-outline-secondary")">
             Aplicadas com pendência
         </a>
-        <a asp-action="ReviewQueue" asp-route-status="ACCEPTED" class="btn @(currentStatus == "ACCEPTED" ? "btn-primary" : "btn-outline-secondary")">
+        <a asp-action="ReviewQueue" asp-route-status="ACCEPTED" asp-route-kind="@currentKind" class="btn @(currentStatus == "ACCEPTED" ? "btn-primary" : "btn-outline-secondary")">
             Aceitas
         </a>
-        <a asp-action="ReviewQueue" asp-route-status="REJECTED" class="btn @(currentStatus == "REJECTED" ? "btn-primary" : "btn-outline-secondary")">
+        <a asp-action="ReviewQueue" asp-route-status="REJECTED" asp-route-kind="@currentKind" class="btn @(currentStatus == "REJECTED" ? "btn-primary" : "btn-outline-secondary")">
             Rejeitadas
         </a>
-        <a asp-action="ReviewQueue" asp-route-status="ALL" class="btn @(currentStatus == "ALL" ? "btn-primary" : "btn-outline-secondary")">
+        <a asp-action="ReviewQueue" asp-route-status="ALL" asp-route-kind="@currentKind" class="btn @(currentStatus == "ALL" ? "btn-primary" : "btn-outline-secondary")">
             Todas
         </a>
     </div>
@@ -57,19 +58,42 @@
     </div>
 </div>
 
+<ul class="nav nav-tabs mb-3" role="tablist" aria-label="Tipo de recomendação">
+    <li class="nav-item" role="presentation">
+        <a asp-action="ReviewQueue"
+           asp-route-status="@currentStatus"
+           asp-route-kind="classification"
+           asp-route-pageSize="@Model.PageSize"
+           class="nav-link @(Model.ShowingClassifications ? "active" : "")">
+            Classificação <span class="badge text-bg-light ms-1">@Model.ClassificationTotal</span>
+        </a>
+    </li>
+    <li class="nav-item" role="presentation">
+        <a asp-action="ReviewQueue"
+           asp-route-status="@currentStatus"
+           asp-route-kind="retention"
+           asp-route-pageSize="@Model.PageSize"
+           class="nav-link @(!Model.ShowingClassifications ? "active" : "")">
+            Temporalidade <span class="badge text-bg-light ms-1">@Model.RetentionTotal</span>
+        </a>
+    </li>
+</ul>
+
 <nav class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3" aria-label="Paginação da fila de revisão">
     <div class="small text-muted">
-        Página @Model.Page de @Model.TotalPages · @Model.ClassificationTotal classificação(ões), @Model.RetentionTotal temporalidade(s)
+        Página @Model.Page de @Model.TotalPages · @Model.ActiveTotal item(ns) nesta aba
     </div>
     <div class="btn-group" role="group">
         <a asp-action="ReviewQueue"
            asp-route-status="@currentStatus"
+           asp-route-kind="@currentKind"
            asp-route-page="@previousPage"
            asp-route-pageSize="@Model.PageSize"
            class="btn btn-outline-secondary @(Model.Page <= 1 ? "disabled" : "")"
            aria-disabled="@(Model.Page <= 1 ? "true" : "false")">Anterior</a>
         <a asp-action="ReviewQueue"
            asp-route-status="@currentStatus"
+           asp-route-kind="@currentKind"
            asp-route-page="@nextPage"
            asp-route-pageSize="@Model.PageSize"
            class="btn btn-outline-secondary @(Model.Page >= Model.TotalPages ? "disabled" : "")"
@@ -77,6 +101,8 @@
     </div>
 </nav>
 
+@if (Model.ShowingClassifications)
+{
 <!-- BLOCO 1: SUGESTÕES DE CLASSIFICAÇÃO ARQUIVÍSTICA -->
 <div class="card atlas-card mb-4 shadow-sm border-0">
     <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center border-bottom">
@@ -254,7 +280,10 @@
         </table>
     </div>
 </div>
+}
 
+@if (!Model.ShowingClassifications)
+{
 <!-- BLOCO 2: SUGESTÕES DE TEMPORALIDADE ARQUIVÍSTICA -->
 <div class="card atlas-card shadow-sm border-0">
     <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center border-bottom">
@@ -443,3 +472,4 @@
         </table>
     </div>
 </div>
+}
