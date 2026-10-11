@@ -10,6 +10,8 @@
 <div class="card atlas-card mb-4">
     <div class="card-body">
         <form method="get" asp-action="Search" class="row g-3">
+            <input type="hidden" name="page" value="1" />
+            <input type="hidden" name="pageSize" value="@Model.PageSize" />
             <div class="col-12 col-md-6">
                 <label class="form-label fw-bold" for="searchQuery">Termo de pesquisa</label>
                 <div class="input-group">
@@ -84,11 +86,15 @@
     </div>
 </div>
 
-@if (Model.Result.Items.Count > 0 || !string.IsNullOrWhiteSpace(Model.Query) || Model.FolderId.HasValue || Model.ClassificationId.HasValue || Model.TypeId.HasValue || Model.CreatedAfter.HasValue || Model.CreatedBefore.HasValue || !string.IsNullOrWhiteSpace(Model.RetentionStatus))
+@if (Model.Result.Items.Count > 0 || Model.HasSearch)
 {
     <div class="d-flex justify-content-between align-items-center mb-3">
         <span class="text-muted small">
-            <strong>@Model.Result.Items.Count</strong> documento(s) autorizado(s) encontrado(s) em @Model.Result.ExecutionMs ms.
+            <strong>@Model.Result.TotalCount</strong> documento(s) autorizado(s) encontrado(s) em @Model.Result.ExecutionMs ms.
+            @if (Model.Result.TotalCount > 0)
+            {
+                <span> Página @Model.Result.Page de @Model.TotalPages.</span>
+            }
         </span>
         @if (Model.Result.Items.Count > 0)
         {
@@ -212,4 +218,41 @@
             </table>
         </div>
     </div>
+    @if (Model.TotalPages > 1)
+    {
+        <nav class="mt-3" aria-label="Paginação da busca inteligente">
+            <ul class="pagination justify-content-end flex-wrap">
+                @{
+                    var previous = Math.Max(1, Model.Result.Page - 1);
+                    var next = Math.Min(Model.TotalPages, Model.Result.Page + 1);
+                    object routeFor(int p) => new
+                    {
+                        query = Model.Query,
+                        folderId = Model.FolderId,
+                        classificationId = Model.ClassificationId,
+                        typeId = Model.TypeId,
+                        createdAfter = Model.CreatedAfter?.ToString("yyyy-MM-dd"),
+                        createdBefore = Model.CreatedBefore?.ToString("yyyy-MM-dd"),
+                        retentionStatus = Model.RetentionStatus,
+                        page = p,
+                        pageSize = Model.Result.PageSize
+                    };
+                    var start = Math.Max(1, Model.Result.Page - 2);
+                    var end = Math.Min(Model.TotalPages, Model.Result.Page + 2);
+                }
+                <li class="page-item @(Model.Result.Page <= 1 ? "disabled" : null)">
+                    <a class="page-link" href="@Url.Action("Search", routeFor(previous))">Anterior</a>
+                </li>
+                @for (var p = start; p <= end; p++)
+                {
+                    <li class="page-item @(p == Model.Result.Page ? "active" : null)">
+                        <a class="page-link" href="@Url.Action("Search", routeFor(p))">@p</a>
+                    </li>
+                }
+                <li class="page-item @(Model.Result.Page >= Model.TotalPages ? "disabled" : null)">
+                    <a class="page-link" href="@Url.Action("Search", routeFor(next))">Próxima</a>
+                </li>
+            </ul>
+        </nav>
+    }
 }

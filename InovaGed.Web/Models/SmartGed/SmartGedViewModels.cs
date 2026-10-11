@@ -12,10 +12,15 @@ public sealed class SmartGedSearchPageVM
     public DateTime? CreatedAfter { get; set; }
     public DateTime? CreatedBefore { get; set; }
     public string? RetentionStatus { get; set; }
+    public int Page { get; set; } = 1;
+    public int PageSize { get; set; } = 50;
     public SmartGedSearchResult Result { get; set; } = new(string.Empty, [], 0);
     public IReadOnlyList<SelectListItem> Folders { get; set; } = [];
     public IReadOnlyList<SelectListItem> Classifications { get; set; } = [];
     public IReadOnlyList<SelectListItem> DocumentTypes { get; set; } = [];
+    public int TotalPages => Result.PageSize <= 0 ? 0 : (int)Math.Ceiling(Result.TotalCount / (double)Result.PageSize);
+    public bool HasSearch => !string.IsNullOrWhiteSpace(Query) || FolderId.HasValue || ClassificationId.HasValue || TypeId.HasValue
+        || CreatedAfter.HasValue || CreatedBefore.HasValue || !string.IsNullOrWhiteSpace(RetentionStatus);
 }
 
 public sealed class SmartGedDocumentVM

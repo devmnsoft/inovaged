@@ -269,17 +269,17 @@ where s.tenant_id = @tenantId and s.id = @id
 
         if (existing is null) throw new InvalidOperationException("Sugestão não encontrada.");
 
-        // Idempotência para re-submissões idênticas
+        // 1. Validar autorização documental no servidor tanto para ACEITAR quanto para REJEITAR
+        var allowed = await _authorization.CanAccessDocumentAsync(tenantId, userId, existing.DocumentId, "CLASSIFY", new Dictionary<string, string>(), ct);
+        if (!allowed)
+            throw new UnauthorizedAccessException("Usuário não possui autorização para classificar este documento.");
+
+        // Idempotência só depois da autorização: estado existente não pode virar oráculo de acesso.
         if (string.Equals(existing.Status, status, StringComparison.OrdinalIgnoreCase))
             return;
 
         if (!string.Equals(existing.Status, "PENDING", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException($"Sugestão já revisada anteriormente com situação '{existing.Status}'.");
-
-        // 1. Validar autorização documental no servidor tanto para ACEITAR quanto para REJEITAR
-        var allowed = await _authorization.CanAccessDocumentAsync(tenantId, userId, existing.DocumentId, "CLASSIFY", new Dictionary<string, string>(), ct);
-        if (!allowed)
-            throw new UnauthorizedAccessException("Usuário não possui autorização para classificar este documento.");
 
         if (status == "REJECTED")
         {
@@ -301,30 +301,41 @@ where tenant_id = @tenantId and id = @id and status = 'PENDING'
             if (!existing.ClassificationId.HasValue)
                 throw new InvalidOperationException("Sugestão sem classe associada não pode ser aceita.");
 
+            var claimed = await c.ExecuteAsync(new CommandDefinition("""
+update ged.document_classification_suggestion
+set status = 'PROCESSING', reviewed_by = @userId, reviewed_at = now(), review_notes = @notes
+where tenant_id = @tenantId and id = @id and status = 'PENDING'
+""", new { tenantId, id, userId, notes }, cancellationToken: ct));
+
+            if (claimed == 0)
+                throw new InvalidOperationException("Sugestão já revisada concorrentemente.");
+
             // 2. Proteger contra sugestão obsoleta e validar documento ativo
-            var docState = await c.QuerySingleOrDefaultAsync<DocumentCurrentStateRow>(new CommandDefinition("""
+            try
+            {
+                var docState = await c.QuerySingleOrDefaultAsync<DocumentCurrentStateRow>(new CommandDefinition("""
 select id as Id, coalesce(status,'') as DocStatus, coalesce(reg_status,'A') as RegStatus,
        classification_id as CurrentClassificationId, current_version_id as CurrentVersionId
 from ged.document
 where tenant_id = @tenantId and id = @DocumentId
 """, new { tenantId, DocumentId = existing.DocumentId }, cancellationToken: ct));
 
-            if (docState is null || docState.RegStatus != "A" || docState.DocStatus == "DELETED")
-                throw new InvalidOperationException("Documento não encontrado ou inativo.");
+                if (docState is null || docState.RegStatus != "A" || docState.DocStatus == "DELETED")
+                    throw new InvalidOperationException("Documento não encontrado ou inativo.");
 
-            if (existing.VersionId.HasValue && docState.CurrentVersionId.HasValue && existing.VersionId.Value != docState.CurrentVersionId.Value)
-            {
-                throw new InvalidOperationException("A sugestão refere-se a uma versão documental anterior à atual. É necessária uma nova análise.");
-            }
+                if (existing.VersionId.HasValue && docState.CurrentVersionId.HasValue && existing.VersionId.Value != docState.CurrentVersionId.Value)
+                {
+                    throw new InvalidOperationException("A sugestão refere-se a uma versão documental anterior à atual. É necessária uma nova análise.");
+                }
 
-            // 3. Validar classe e versão elegíveis
-            var maxVersion = await c.ExecuteScalarAsync<int?>(new CommandDefinition(
-                "select max(version_no) from ged.classification_plan_version where tenant_id=@tenantId and coalesce(reg_status,'A')='A'",
-                new { tenantId }, cancellationToken: ct));
+                // 3. Validar classe e versão elegíveis
+                var maxVersion = await c.ExecuteScalarAsync<int?>(new CommandDefinition(
+                    "select max(version_no) from ged.classification_plan_version where tenant_id=@tenantId and coalesce(reg_status,'A')='A'",
+                    new { tenantId }, cancellationToken: ct));
 
-            if (maxVersion.HasValue)
-            {
-                var isEligible = await c.ExecuteScalarAsync<bool>(new CommandDefinition("""
+                if (maxVersion.HasValue)
+                {
+                    var isEligible = await c.ExecuteScalarAsync<bool>(new CommandDefinition("""
 select exists(
     select 1
     from ged.classification_plan_version_item i
@@ -337,49 +348,60 @@ select exists(
 )
 """, new { tenantId, ClassificationId = existing.ClassificationId.Value, maxVersion = maxVersion.Value }, cancellationToken: ct));
 
-                if (!isEligible)
-                    throw new InvalidOperationException("A classe sugerida não pertence à versão vigente do plano de classificação ou está inativa.");
-            }
+                    if (!isEligible)
+                        throw new InvalidOperationException("A classe sugerida não pertence à versão vigente do plano de classificação ou está inativa.");
+                }
 
-            // 4. Aplicar classificação pelo comando canônico existente
-            var saveCommand = new SaveManualIntegratedCommand(
-                TenantId: tenantId,
-                DocumentId: existing.DocumentId,
-                UserId: userId,
-                ClassificationAction: ClassificationEditAction.Replace,
-                ClassificationId: existing.ClassificationId,
-                ConfirmClassificationRemoval: false,
-                TypeAction: DocumentTypeEditAction.Keep,
-                DocumentTypeId: null,
-                HasTags: false,
-                Tags: null,
-                HasMetadata: false,
-                Metadata: null,
-                IsSystemExecution: false,
-                SystemExecutionReason: "SMART_GED_CONFIRMED"
-            );
+                // 4. Aplicar classificação pelo comando canônico existente
+                var saveCommand = new SaveManualIntegratedCommand(
+                    TenantId: tenantId,
+                    DocumentId: existing.DocumentId,
+                    UserId: userId,
+                    ClassificationAction: ClassificationEditAction.Replace,
+                    ClassificationId: existing.ClassificationId,
+                    ConfirmClassificationRemoval: false,
+                    TypeAction: DocumentTypeEditAction.Keep,
+                    DocumentTypeId: null,
+                    HasTags: false,
+                    Tags: null,
+                    HasMetadata: false,
+                    Metadata: null,
+                    IsSystemExecution: false,
+                    SystemExecutionReason: "SMART_GED_CONFIRMED"
+                );
 
-            var saveResult = await _commands.SaveManualIntegratedAsync(saveCommand, ct);
-            if (!saveResult.Success)
-                throw new InvalidOperationException(saveResult.Message);
+                var saveResult = await _commands.SaveManualIntegratedAsync(saveCommand, ct);
+                if (!saveResult.Success)
+                    throw new InvalidOperationException(saveResult.Message);
 
-            // 5. Atualizar EXCLUSIVAMENTE a sugestão revisada (não aprova temporalidade indiscriminadamente)
-            var rowsUpdated = await c.ExecuteAsync(new CommandDefinition("""
+                // 5. Atualizar EXCLUSIVAMENTE a sugestão revisada (não aprova temporalidade indiscriminadamente)
+                var rowsUpdated = await c.ExecuteAsync(new CommandDefinition("""
 update ged.document_classification_suggestion
 set status = 'ACCEPTED', reviewed_by = @userId, reviewed_at = now(), review_notes = @notes
-where tenant_id = @tenantId and id = @id and status = 'PENDING';
+where tenant_id = @tenantId and id = @id and status = 'PROCESSING';
 """, new { tenantId, id, userId, notes }, cancellationToken: ct));
 
-            if (rowsUpdated == 0)
-                throw new InvalidOperationException("Sugestão já revisada concorrentemente.");
+                if (rowsUpdated == 0)
+                    throw new InvalidOperationException("Sugestão já revisada concorrentemente.");
 
-            await Audit(tenantId, userId, "CLASSIFICATION_SUGGESTION_ACCEPTED", existing.DocumentId, new
+                await Audit(tenantId, userId, "CLASSIFICATION_SUGGESTION_ACCEPTED", existing.DocumentId, new
+                {
+                    id,
+                    classificationId = existing.ClassificationId,
+                    retentionRecalculated = saveResult.RetentionRecalculated,
+                    notes
+                }, ct);
+            }
+            catch
             {
-                id,
-                classificationId = existing.ClassificationId,
-                retentionRecalculated = saveResult.RetentionRecalculated,
-                notes
-            }, ct);
+                await c.ExecuteAsync(new CommandDefinition("""
+update ged.document_classification_suggestion
+set status = 'PENDING', reviewed_by = null, reviewed_at = null,
+    review_notes = coalesce(@notes, '') || case when @notes is null or @notes = '' then '' else E'\n' end || 'Aplicação não concluída; sugestão retornou para revisão.'
+where tenant_id = @tenantId and id = @id and status = 'PROCESSING'
+""", new { tenantId, id, notes }, cancellationToken: ct));
+                throw;
+            }
         }
     }
 
@@ -395,16 +417,16 @@ where s.tenant_id = @tenantId and s.id = @id
 
         if (existing is null) throw new InvalidOperationException("Sugestão não encontrada.");
 
+        var allowed = await _authorization.CanAccessDocumentAsync(tenantId, userId, existing.DocumentId, "CLASSIFY", new Dictionary<string, string>(), ct)
+                   || await _authorization.CanAccessDocumentAsync(tenantId, userId, existing.DocumentId, "RETENTION_REVIEW", new Dictionary<string, string>(), ct);
+        if (!allowed)
+            throw new UnauthorizedAccessException("Usuário não possui autorização para revisar temporalidade deste documento.");
+
         if (string.Equals(existing.Status, status, StringComparison.OrdinalIgnoreCase))
             return;
 
         if (!string.Equals(existing.Status, "PENDING", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException($"Sugestão já revisada anteriormente com situação '{existing.Status}'.");
-
-        var allowed = await _authorization.CanAccessDocumentAsync(tenantId, userId, existing.DocumentId, "CLASSIFY", new Dictionary<string, string>(), ct)
-                   || await _authorization.CanAccessDocumentAsync(tenantId, userId, existing.DocumentId, "RETENTION_REVIEW", new Dictionary<string, string>(), ct);
-        if (!allowed)
-            throw new UnauthorizedAccessException("Usuário não possui autorização para revisar temporalidade deste documento.");
 
         var docState = await c.QuerySingleOrDefaultAsync<DocumentCurrentStateRow>(new CommandDefinition("""
 select id as Id, coalesce(status,'') as DocStatus, coalesce(reg_status,'A') as RegStatus,
@@ -434,23 +456,44 @@ where tenant_id = @tenantId and id = @id and status = 'PENDING'
             if (existing.VersionId.HasValue && docState.CurrentVersionId.HasValue && existing.VersionId.Value != docState.CurrentVersionId.Value)
                 throw new InvalidOperationException("A recomendação de temporalidade refere-se a uma versão anterior do documento.");
 
-            // Recalcular temporalidade com a base canônica (BuildRetentionCte)
-            var recalcResult = await _retentionJobs.RecalculateOneAsync(tenantId, existing.DocumentId, 30, ct);
-
-            var updated = await c.ExecuteAsync(new CommandDefinition("""
+            var claimed = await c.ExecuteAsync(new CommandDefinition("""
 update ged.document_retention_suggestion
-set status = 'ACCEPTED', reviewed_by = @userId, reviewed_at = now(), review_notes = @notes
+set status = 'PROCESSING', reviewed_by = @userId, reviewed_at = now(), review_notes = @notes
 where tenant_id = @tenantId and id = @id and status = 'PENDING'
 """, new { tenantId, id, userId, notes }, cancellationToken: ct));
 
-            if (updated == 0) throw new InvalidOperationException("Sugestão já revisada concorrentemente.");
+            if (claimed == 0) throw new InvalidOperationException("Sugestão já revisada concorrentemente.");
 
-            await Audit(tenantId, userId, "RETENTION_SUGGESTION_ACCEPTED", existing.DocumentId, new
+            try
             {
-                id,
-                recalculated = recalcResult > 0,
-                notes
-            }, ct);
+                // Recalcular temporalidade com a base canônica (BuildRetentionCte)
+                var recalcResult = await _retentionJobs.RecalculateOneAsync(tenantId, existing.DocumentId, 30, ct);
+
+                var updated = await c.ExecuteAsync(new CommandDefinition("""
+update ged.document_retention_suggestion
+set status = 'ACCEPTED', reviewed_by = @userId, reviewed_at = now(), review_notes = @notes
+where tenant_id = @tenantId and id = @id and status = 'PROCESSING'
+""", new { tenantId, id, userId, notes }, cancellationToken: ct));
+
+                if (updated == 0) throw new InvalidOperationException("Sugestão já revisada concorrentemente.");
+
+                await Audit(tenantId, userId, "RETENTION_SUGGESTION_ACCEPTED", existing.DocumentId, new
+                {
+                    id,
+                    recalculated = recalcResult > 0,
+                    notes
+                }, ct);
+            }
+            catch
+            {
+                await c.ExecuteAsync(new CommandDefinition("""
+update ged.document_retention_suggestion
+set status = 'PENDING', reviewed_by = null, reviewed_at = null,
+    review_notes = coalesce(@notes, '') || case when @notes is null or @notes = '' then '' else E'\n' end || 'Recálculo não concluído; sugestão retornou para revisão.'
+where tenant_id = @tenantId and id = @id and status = 'PROCESSING'
+""", new { tenantId, id, notes }, cancellationToken: ct));
+                throw;
+            }
         }
     }
 
@@ -551,22 +594,63 @@ where d.tenant_id = @TenantId
 
         sql.Append(" order by d.created_at desc, d.id desc");
 
-        // Executa busca ordenada completa para autorização precisa (evita corte de LIMIT antes de autorização)
-        var allCandidateRows = (await c.QueryAsync<SearchRow>(new CommandDefinition(sql.ToString(), dp, cancellationToken: ct))).ToList();
+        var candidateIds = (await c.QueryAsync<Guid>(new CommandDefinition(
+            $"select q.documentid from ({sql}) q",
+            dp,
+            cancellationToken: ct))).ToArray();
 
-        var docIds = allCandidateRows.Select(x => x.DocumentId).Distinct().ToArray();
+        var docIds = candidateIds.Distinct().ToArray();
         var authorizedIds = query.UserId.HasValue
             ? await _authorization.FilterDocumentsAsync(query.TenantId, query.UserId.Value, docIds, "VIEW", ct)
             : docIds.ToHashSet();
 
-        var authorizedRows = allCandidateRows
-            .Where(x => authorizedIds.Contains(x.DocumentId))
-            .ToList();
-
         var pageSize = Math.Clamp(query.Limit, 1, 100);
         var page = Math.Max(1, query.Page);
-        var totalCount = authorizedRows.Count;
-        var pagedRows = authorizedRows.Skip((page - 1) * pageSize).Take(pageSize);
+        var totalCount = candidateIds.Count(authorizedIds.Contains);
+        var pageIds = candidateIds
+            .Where(authorizedIds.Contains)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToArray();
+
+        IReadOnlyList<SearchRow> pagedRows = [];
+        if (pageIds.Length > 0)
+        {
+            pagedRows = (await c.QueryAsync<SearchRow>(new CommandDefinition("""
+select d.id as DocumentId,
+       coalesce(d.title, 'Documento') as Document,
+       a.extracted_summary as Summary,
+       a.extracted_text as ExtractedText,
+       coalesce(pvi.code || ' - ' || coalesce(pvi.name, pvi.title), cp.code || ' - ' || cp.name, 'Não classificado') as Classification,
+       case when exists(select 1 from ged.document_quality_issue qi where qi.tenant_id=d.tenant_id and qi.document_id=d.id and qi.status='OPEN') then 'ATENÇÃO' else 'OK' end as QualityStatus,
+       v.version_number as VersionNumber,
+       d.retention_status as RetentionStatus,
+       case
+           when a.id is null then false
+           when a.version_id is not null and d.current_version_id is not null and a.version_id <> d.current_version_id then true
+           when coalesce(a.is_legacy_unproven, false) then true
+           when a.created_at is not null and d.updated_at is not null and a.created_at < d.updated_at then true
+           else false
+       end as IsAnalysisOutdated,
+       coalesce(a.is_legacy_unproven, a.version_id is null and a.id is not null) as IsLegacyUnproven,
+       a.version_id as AnalyzedVersionId,
+       d.current_version_id as CurrentVersionId
+from ged.document d
+left join lateral (
+    select id, analysis_status, extracted_summary, extracted_text, confidence, created_at,
+           version_id, is_legacy_unproven
+    from ged.document_ai_analysis a
+    where a.tenant_id = d.tenant_id and a.document_id = d.id and a.reg_status = 'A'
+    order by (a.version_id = d.current_version_id) desc nulls last, a.created_at desc
+    limit 1
+) a on true
+left join ged.document_version v on v.id = d.current_version_id
+left join ged.classification_plan cp on cp.id = d.classification_id and cp.tenant_id = d.tenant_id
+left join ged.classification_plan_version_item pvi on pvi.tenant_id = d.tenant_id and pvi.version_id = d.classification_version_id and pvi.classification_id = d.classification_id
+where d.tenant_id = @TenantId and d.id = any(@PageIds)
+order by array_position(@PageIds, d.id)
+""", new { query.TenantId, PageIds = pageIds }, cancellationToken: ct))).ToArray();
+        }
 
         var items = pagedRows
             .Select(x => new SmartGedSearchItem(

@@ -120,9 +120,9 @@ where d.tenant_id = @tenantId and d.id = @documentId and coalesce(d.reg_status, 
         {
             return Forbid();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            TempData["Error"] = ex.Message;
+            TempData["Error"] = "Não foi possível concluir a análise agora. Tente novamente ou acione o suporte com o horário da tentativa.";
         }
 
         return RedirectToAction(nameof(Document), new { documentId });
@@ -134,8 +134,7 @@ where d.tenant_id = @tenantId and d.id = @documentId and coalesce(d.reg_status, 
     {
         try
         {
-            var reviewerNotes = string.IsNullOrWhiteSpace(notes) ? "Classificação confirmada na revisão assistida" : notes.Trim();
-            await _classifications.AcceptAsync(_user.TenantId, id, _user.UserId, reviewerNotes, ct);
+            await _classifications.AcceptAsync(_user.TenantId, id, _user.UserId, NormalizeOptional(notes), ct);
             TempData["Success"] = "Classificação assistida confirmada e aplicada com sucesso.";
         }
         catch (UnauthorizedAccessException)
@@ -144,7 +143,7 @@ where d.tenant_id = @tenantId and d.id = @documentId and coalesce(d.reg_status, 
         }
         catch (Exception ex)
         {
-            TempData["Error"] = ex.Message;
+            TempData["Error"] = SafeReviewMessage(ex);
         }
 
         if (!string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl)) return LocalRedirect(returnUrl);
@@ -157,7 +156,7 @@ where d.tenant_id = @tenantId and d.id = @documentId and coalesce(d.reg_status, 
     {
         try
         {
-            var reviewerReason = string.IsNullOrWhiteSpace(reason) ? "Rejeitada pelo revisor humano" : reason.Trim();
+            var reviewerReason = RequireReason(reason);
             await _classifications.RejectAsync(_user.TenantId, id, _user.UserId, reviewerReason, ct);
             TempData["Success"] = "Classificação assistida rejeitada com sucesso.";
         }
@@ -167,7 +166,7 @@ where d.tenant_id = @tenantId and d.id = @documentId and coalesce(d.reg_status, 
         }
         catch (Exception ex)
         {
-            TempData["Error"] = ex.Message;
+            TempData["Error"] = SafeReviewMessage(ex);
         }
 
         if (!string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl)) return LocalRedirect(returnUrl);
@@ -180,8 +179,7 @@ where d.tenant_id = @tenantId and d.id = @documentId and coalesce(d.reg_status, 
     {
         try
         {
-            var reviewerNotes = string.IsNullOrWhiteSpace(notes) ? "Recomendação de temporalidade aprovada e recalculada na base canônica" : notes.Trim();
-            await _retentions.AcceptAsync(_user.TenantId, id, _user.UserId, reviewerNotes, ct);
+            await _retentions.AcceptAsync(_user.TenantId, id, _user.UserId, NormalizeOptional(notes), ct);
             TempData["Success"] = "Recomendação de temporalidade confirmada e cálculo canônico atualizado.";
         }
         catch (UnauthorizedAccessException)
@@ -190,7 +188,7 @@ where d.tenant_id = @tenantId and d.id = @documentId and coalesce(d.reg_status, 
         }
         catch (Exception ex)
         {
-            TempData["Error"] = ex.Message;
+            TempData["Error"] = SafeReviewMessage(ex);
         }
 
         if (!string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl)) return LocalRedirect(returnUrl);
@@ -203,7 +201,7 @@ where d.tenant_id = @tenantId and d.id = @documentId and coalesce(d.reg_status, 
     {
         try
         {
-            var reviewerReason = string.IsNullOrWhiteSpace(reason) ? "Recomendação de temporalidade rejeitada pelo revisor humano" : reason.Trim();
+            var reviewerReason = RequireReason(reason);
             await _retentions.RejectAsync(_user.TenantId, id, _user.UserId, reviewerReason, ct);
             TempData["Success"] = "Recomendação de temporalidade rejeitada com sucesso.";
         }
@@ -213,7 +211,7 @@ where d.tenant_id = @tenantId and d.id = @documentId and coalesce(d.reg_status, 
         }
         catch (Exception ex)
         {
-            TempData["Error"] = ex.Message;
+            TempData["Error"] = SafeReviewMessage(ex);
         }
 
         if (!string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl)) return LocalRedirect(returnUrl);
@@ -232,8 +230,12 @@ where d.tenant_id = @tenantId and d.id = @documentId and coalesce(d.reg_status, 
         [FromQuery] DateTime? createdAfter,
         [FromQuery] DateTime? createdBefore,
         [FromQuery] string? retentionStatus,
-        CancellationToken ct)
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50,
+        CancellationToken ct = default)
     {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 10, 100);
         var vm = new SmartGedSearchPageVM
         {
             Query = query,
@@ -242,7 +244,9 @@ where d.tenant_id = @tenantId and d.id = @documentId and coalesce(d.reg_status, 
             TypeId = typeId,
             CreatedAfter = createdAfter,
             CreatedBefore = createdBefore,
-            RetentionStatus = retentionStatus
+            RetentionStatus = retentionStatus,
+            Page = page,
+            PageSize = pageSize
         };
         await PopulateCombosAsync(vm, ct);
 
@@ -252,13 +256,14 @@ where d.tenant_id = @tenantId and d.id = @documentId and coalesce(d.reg_status, 
             return View(vm);
         }
 
-        if (!string.IsNullOrWhiteSpace(query) || folderId.HasValue || classificationId.HasValue || typeId.HasValue || createdAfter.HasValue || createdBefore.HasValue || !string.IsNullOrWhiteSpace(retentionStatus))
+        if (vm.HasSearch)
         {
             var q = new SmartGedSearchQuery(
                 TenantId: _user.TenantId,
                 UserId: _user.UserId,
                 Text: query ?? string.Empty,
-                Limit: 50,
+                Limit: pageSize,
+                Page: page,
                 FolderId: folderId,
                 ClassificationId: classificationId,
                 TypeId: typeId,
@@ -288,7 +293,8 @@ where d.tenant_id = @tenantId and d.id = @documentId and coalesce(d.reg_status, 
             TenantId: _user.TenantId,
             UserId: _user.UserId,
             Text: vm.Query ?? string.Empty,
-            Limit: 50,
+            Limit: Math.Clamp(vm.PageSize, 10, 100),
+            Page: Math.Max(1, vm.Page),
             FolderId: vm.FolderId,
             ClassificationId: vm.ClassificationId,
             TypeId: vm.TypeId,
@@ -299,6 +305,23 @@ where d.tenant_id = @tenantId and d.id = @documentId and coalesce(d.reg_status, 
         vm.Result = await _search.SearchAsync(q, ct);
         return View(vm);
     }
+
+    private static string? NormalizeOptional(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string RequireReason(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            throw new ArgumentException("Informe a justificativa da rejeição.");
+        return value.Trim();
+    }
+
+    private static string SafeReviewMessage(Exception ex) => ex switch
+    {
+        ArgumentException => ex.Message,
+        InvalidOperationException => ex.Message,
+        _ => "Não foi possível concluir a revisão agora. Tente novamente ou acione o suporte com o horário da tentativa."
+    };
 
     private async Task PopulateCombosAsync(SmartGedSearchPageVM vm, CancellationToken ct)
     {
