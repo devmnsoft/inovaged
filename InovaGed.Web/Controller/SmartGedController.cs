@@ -43,12 +43,26 @@ public sealed class SmartGedController : Controller
     public IActionResult Index() => View();
 
     [HttpGet("ReviewQueue")]
-    public async Task<IActionResult> ReviewQueue([FromQuery] string? status = "PENDING", CancellationToken ct = default)
+    public async Task<IActionResult> ReviewQueue(
+        [FromQuery] string? status = "PENDING",
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default)
     {
         var st = string.IsNullOrWhiteSpace(status) ? "PENDING" : status.Trim().ToUpperInvariant();
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 10, 50);
         var classifications = await _classifications.ListAsync(_user.TenantId, st, _user.UserId, ct);
         var retentions = await _retentions.ListAsync(_user.TenantId, st, _user.UserId, ct);
-        return View(new SmartGedReviewQueue(classifications, retentions, st));
+        var total = classifications.Count + retentions.Count;
+        var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
+        page = Math.Min(page, totalPages);
+        var skip = checked((page - 1) * pageSize);
+        var pagedClassifications = classifications.Skip(skip).Take(pageSize).ToArray();
+        var remaining = Math.Max(0, pageSize - pagedClassifications.Length);
+        var retentionSkip = Math.Max(0, skip - classifications.Count);
+        var pagedRetentions = retentions.Skip(retentionSkip).Take(remaining).ToArray();
+        return View(new SmartGedReviewQueue(pagedClassifications, pagedRetentions, st, page, pageSize, classifications.Count, retentions.Count));
     }
 
     [HttpGet("Document/{documentId:guid}")]

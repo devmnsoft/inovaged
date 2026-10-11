@@ -5,6 +5,8 @@
     ViewData["Icon"] = "sparkles";
     var currentStatus = Model.CurrentStatus ?? "PENDING";
     var returnUrl = Context.Request.Path + Context.Request.QueryString;
+    var previousPage = Math.Max(1, Model.Page - 1);
+    var nextPage = Math.Min(Model.TotalPages, Model.Page + 1);
 }
 
 <partial name="Atlas/_AtlasPageHero" />
@@ -26,7 +28,7 @@
 <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
     <div class="btn-group" role="group" aria-label="Filtro por situação da sugestão">
         <a asp-action="ReviewQueue" asp-route-status="PENDING" class="btn @(currentStatus == "PENDING" ? "btn-primary" : "btn-outline-secondary")">
-            Pendentes (@(currentStatus == "PENDING" ? (Model.Classifications.Count + Model.Retentions.Count).ToString() : "•"))
+            Pendentes
         </a>
         <a asp-action="ReviewQueue" asp-route-status="PROCESSING" class="btn @(currentStatus == "PROCESSING" ? "btn-primary" : "btn-outline-secondary")">
             Em aplicação
@@ -51,8 +53,29 @@
     <div class="small text-muted">
         <i class="bi bi-clock-history me-1"></i>
         Exibindo situação: <span class="badge bg-secondary">@currentStatus</span>
+        <span class="ms-2">Itens @Model.FirstItem-@Model.LastItem de @Model.TotalCount</span>
     </div>
 </div>
+
+<nav class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3" aria-label="Paginação da fila de revisão">
+    <div class="small text-muted">
+        Página @Model.Page de @Model.TotalPages · @Model.ClassificationTotal classificação(ões), @Model.RetentionTotal temporalidade(s)
+    </div>
+    <div class="btn-group" role="group">
+        <a asp-action="ReviewQueue"
+           asp-route-status="@currentStatus"
+           asp-route-page="@previousPage"
+           asp-route-pageSize="@Model.PageSize"
+           class="btn btn-outline-secondary @(Model.Page <= 1 ? "disabled" : "")"
+           aria-disabled="@(Model.Page <= 1 ? "true" : "false")">Anterior</a>
+        <a asp-action="ReviewQueue"
+           asp-route-status="@currentStatus"
+           asp-route-page="@nextPage"
+           asp-route-pageSize="@Model.PageSize"
+           class="btn btn-outline-secondary @(Model.Page >= Model.TotalPages ? "disabled" : "")"
+           aria-disabled="@(Model.Page >= Model.TotalPages ? "true" : "false")">Próxima</a>
+    </div>
+</nav>
 
 <!-- BLOCO 1: SUGESTÕES DE CLASSIFICAÇÃO ARQUIVÍSTICA -->
 <div class="card atlas-card mb-4 shadow-sm border-0">
@@ -173,7 +196,7 @@
                                             <input type="hidden" name="status" value="@currentStatus" />
                                             <input type="hidden" name="returnUrl" value="@returnUrl" />
                                             <label class="form-label small fw-semibold text-dark mb-1" for="notes-cls-@x.Id">Justificativa do Revisor:</label>
-                                            <textarea id="notes-cls-@x.Id" name="notes" class="form-control form-control-sm mb-2" rows="2" placeholder="Justifique a aprovação da classe sugerida">Classificação confirmada na revisão assistida com base no conteúdo documental.</textarea>
+                                            <textarea id="notes-cls-@x.Id" name="notes" class="form-control form-control-sm mb-2" rows="2" placeholder="Justifique a aprovação da classe sugerida"></textarea>
                                             <button class="btn btn-sm btn-success w-100" type="submit">
                                                 Confirmar Aplicação
                                             </button>
@@ -191,7 +214,7 @@
                                             <input type="hidden" name="status" value="@currentStatus" />
                                             <input type="hidden" name="returnUrl" value="@returnUrl" />
                                             <label class="form-label small fw-semibold text-dark mb-1" for="reason-cls-@x.Id">Motivo da Rejeição (obrigatório):</label>
-                                            <textarea id="reason-cls-@x.Id" name="reason" class="form-control form-control-sm mb-2" rows="2" required placeholder="Informe o motivo da rejeição">Sugestão não aderente à natureza do documento.</textarea>
+                                            <textarea id="reason-cls-@x.Id" name="reason" class="form-control form-control-sm mb-2" rows="2" required placeholder="Informe o motivo da rejeição"></textarea>
                                             <button class="btn btn-sm btn-danger w-100" type="submit">
                                                 Confirmar Rejeição
                                             </button>
@@ -362,7 +385,7 @@
                                                 Aprova a recomendação e executa o recálculo canônico de temporalidade institucional.
                                             </div>
                                             <label class="form-label small fw-semibold text-dark mb-1" for="notes-ret-@x.Id">Justificativa do Revisor:</label>
-                                            <textarea id="notes-ret-@x.Id" name="notes" class="form-control form-control-sm mb-2" rows="2" placeholder="Justifique a aprovação da temporalidade">Recomendação de temporalidade conferida e validada de acordo com a tabela arquivística vigente.</textarea>
+                                            <textarea id="notes-ret-@x.Id" name="notes" class="form-control form-control-sm mb-2" rows="2" placeholder="Justifique a aprovação da temporalidade"></textarea>
                                             <button class="btn btn-sm btn-success w-100" type="submit">
                                                 Aprovar Recomendação e Recalcular
                                             </button>
@@ -380,7 +403,7 @@
                                             <input type="hidden" name="status" value="@currentStatus" />
                                             <input type="hidden" name="returnUrl" value="@returnUrl" />
                                             <label class="form-label small fw-semibold text-dark mb-1" for="reason-ret-@x.Id">Motivo da Rejeição (obrigatório):</label>
-                                            <textarea id="reason-ret-@x.Id" name="reason" class="form-control form-control-sm mb-2" rows="2" required placeholder="Informe o motivo da rejeição">Recomendação não aplicável às condições de guarda do documento.</textarea>
+                                            <textarea id="reason-ret-@x.Id" name="reason" class="form-control form-control-sm mb-2" rows="2" required placeholder="Informe o motivo da rejeição"></textarea>
                                             <button class="btn btn-sm btn-danger w-100" type="submit">
                                                 Confirmar Rejeição
                                             </button>
