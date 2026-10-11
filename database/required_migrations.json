@@ -936,5 +936,12 @@
     "area": "SmartGed",
     "required": true,
     "description": "Registra operação, expiração, aplicação e falha de revisões assistidas, permitindo recuperação sem sucesso fictício."
+  },
+  {
+    "name": "2026_10_18_smart_ged_review_recovery",
+    "path": "database/migrations/2026_10_18_smart_ged_review_recovery.sql",
+    "area": "SmartGed",
+    "required": true,
+    "description": "Separa data de recuperação da data de aplicação e indexa operações expiradas de revisão assistida."
   }
 ]

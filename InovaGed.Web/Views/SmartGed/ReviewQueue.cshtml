@@ -8,6 +8,7 @@
     var previousPage = Math.Max(1, Model.Page - 1);
     var nextPage = Math.Min(Model.TotalPages, Model.Page + 1);
     var currentKind = Model.ShowingClassifications ? "classification" : "retention";
+    var canRecoverExpired = InovaGed.Web.Security.RolePolicyHelper.IsFullAdmin(User);
 }
 
 <partial name="Atlas/_AtlasPageHero" />
@@ -56,6 +57,20 @@
         Exibindo situação: <span class="badge bg-secondary">@currentStatus</span>
         <span class="ms-2">Itens @Model.FirstItem-@Model.LastItem de @Model.TotalCount</span>
     </div>
+
+    @if (canRecoverExpired)
+    {
+        <form method="post" asp-action="RecoverExpiredReviews" class="d-inline-flex">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="status" value="@currentStatus" />
+            <input type="hidden" name="kind" value="@currentKind" />
+            <input type="hidden" name="page" value="@Model.Page" />
+            <input type="hidden" name="pageSize" value="@Model.PageSize" />
+            <button type="submit" class="btn btn-outline-secondary">
+                <i class="bi bi-life-preserver me-1"></i> Recuperar expiradas
+            </button>
+        </form>
+    }
 </div>
 
 <ul class="nav nav-tabs mb-3" role="tablist" aria-label="Tipo de recomendação">
@@ -206,6 +221,14 @@
                             {
                                 <div class="small text-muted mt-1">@x.PublicFailureMessage</div>
                             }
+                            @if (x.RecoveredAt.HasValue)
+                            {
+                                <div class="small text-muted mt-1">Recuperada em @x.RecoveredAt.Value.ToString("dd/MM/yyyy HH:mm")</div>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(x.RecoveryNotes))
+                            {
+                                <div class="small text-muted mt-1">@x.RecoveryNotes</div>
+                            }
                         </td>
                         <td>
                             @if (x.Status == "PENDING")
@@ -254,7 +277,7 @@
                             }
                             else if (x.Status == "PROCESSING")
                             {
-                                <div class="small text-muted mb-2">Operação em andamento desde @(x.ProcessingStartedAt?.ToString("dd/MM/yyyy HH:mm") ?? "instante não registrado"). Aguarde a recuperação automática antes de nova ação.</div>
+                                <div class="small text-muted mb-2">Operação em andamento desde @(x.ProcessingStartedAt?.ToString("dd/MM/yyyy HH:mm") ?? "instante não registrado"). Aguarde a conclusão ou use a recuperação administrativa após expirar.</div>
                                 <a asp-action="Document" asp-route-documentId="@x.DocumentId" class="btn btn-sm btn-outline-secondary">
                                     <i class="bi bi-eye me-1"></i> Acompanhar
                                 </a>
@@ -395,6 +418,14 @@
                             {
                                 <div class="small text-muted mt-1">@x.PublicFailureMessage</div>
                             }
+                            @if (x.RecoveredAt.HasValue)
+                            {
+                                <div class="small text-muted mt-1">Recuperada em @x.RecoveredAt.Value.ToString("dd/MM/yyyy HH:mm")</div>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(x.RecoveryNotes))
+                            {
+                                <div class="small text-muted mt-1">@x.RecoveryNotes</div>
+                            }
                         </td>
                         <td>
                             @if (x.Status == "PENDING")
@@ -446,7 +477,7 @@
                             }
                             else if (x.Status == "PROCESSING")
                             {
-                                <div class="small text-muted mb-2">Recálculo em andamento desde @(x.ProcessingStartedAt?.ToString("dd/MM/yyyy HH:mm") ?? "instante não registrado"). Aguarde a recuperação automática antes de nova ação.</div>
+                                <div class="small text-muted mb-2">Recálculo em andamento desde @(x.ProcessingStartedAt?.ToString("dd/MM/yyyy HH:mm") ?? "instante não registrado"). Aguarde a conclusão ou use a recuperação administrativa após expirar.</div>
                                 <a asp-action="Document" asp-route-documentId="@x.DocumentId" class="btn btn-sm btn-outline-secondary">
                                     <i class="bi bi-eye me-1"></i> Acompanhar
                                 </a>

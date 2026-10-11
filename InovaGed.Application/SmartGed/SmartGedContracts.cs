@@ -13,6 +13,7 @@ public interface IDocumentClassificationSuggestionService
     Task<IReadOnlyList<DocumentClassificationSuggestionItem>> ListAsync(Guid tenantId, string? status, CancellationToken ct) => ListAsync(tenantId, status, null, ct);
     Task<IReadOnlyList<DocumentClassificationSuggestionItem>> ListAsync(Guid tenantId, string? status, Guid? userId, CancellationToken ct);
     Task<SmartGedSuggestionPage<DocumentClassificationSuggestionItem>> ListPageAsync(Guid tenantId, string? status, Guid? userId, int page, int pageSize, CancellationToken ct);
+    Task<int> CountAsync(Guid tenantId, string? status, Guid? userId, CancellationToken ct);
     Task AcceptAsync(Guid tenantId, Guid suggestionId, Guid userId, string? notes, CancellationToken ct);
     Task RejectAsync(Guid tenantId, Guid suggestionId, Guid userId, string reason, CancellationToken ct);
 }
@@ -23,10 +24,24 @@ public interface IDocumentRetentionSuggestionService
     Task<IReadOnlyList<DocumentRetentionSuggestionItem>> ListAsync(Guid tenantId, string? status, CancellationToken ct) => ListAsync(tenantId, status, null, ct);
     Task<IReadOnlyList<DocumentRetentionSuggestionItem>> ListAsync(Guid tenantId, string? status, Guid? userId, CancellationToken ct);
     Task<SmartGedSuggestionPage<DocumentRetentionSuggestionItem>> ListPageAsync(Guid tenantId, string? status, Guid? userId, int page, int pageSize, CancellationToken ct);
+    Task<int> CountAsync(Guid tenantId, string? status, Guid? userId, CancellationToken ct);
     Task AcceptAsync(Guid tenantId, Guid suggestionId, Guid userId, string? notes, CancellationToken ct);
     Task RejectAsync(Guid tenantId, Guid suggestionId, Guid userId, string reason, CancellationToken ct);
 }
+public interface ISmartGedReviewRecoveryService
+{
+    Task<SmartGedReviewRecoveryResult> RecoverExpiredAsync(Guid tenantId, Guid performedBy, CancellationToken ct);
+}
 public interface ISmartGedSearchService { Task<SmartGedSearchResult> SearchAsync(SmartGedSearchQuery query, CancellationToken ct); }
+
+public sealed record SmartGedReviewRecoveryResult(
+    int ClassificationFailed,
+    int ClassificationAppliedPending,
+    int RetentionFailed,
+    int RetentionAppliedPending)
+{
+    public int Total => ClassificationFailed + ClassificationAppliedPending + RetentionFailed + RetentionAppliedPending;
+}
 
 public sealed record DocumentMetadataExtractionInput(string Text, string? FileName = null);
 public sealed record DocumentMetadataExtractionResult(string Summary, string? DocumentType, string? Subject, DateOnly? DetectedDate, IReadOnlyList<string> Keywords, IReadOnlyDictionary<string, IReadOnlyList<string>> Identifiers, IReadOnlyList<string> SensitiveIndicators, decimal Confidence);
@@ -49,7 +64,9 @@ public sealed record DocumentClassificationSuggestionItem(
     bool IsLegacyUnproven = false,
     Guid? ReviewOperationId = null,
     DateTimeOffset? ProcessingStartedAt = null,
-    string? PublicFailureMessage = null);
+    string? PublicFailureMessage = null,
+    DateTimeOffset? RecoveredAt = null,
+    string? RecoveryNotes = null);
 
 public sealed record DocumentRetentionSuggestionItem(
     Guid Id,
@@ -72,7 +89,9 @@ public sealed record DocumentRetentionSuggestionItem(
     bool IsLegacyUnproven = false,
     Guid? ReviewOperationId = null,
     DateTimeOffset? ProcessingStartedAt = null,
-    string? PublicFailureMessage = null);
+    string? PublicFailureMessage = null,
+    DateTimeOffset? RecoveredAt = null,
+    string? RecoveryNotes = null);
 
 public sealed record DocumentQualityIssueItem(Guid Id, Guid DocumentId, string Type, string Severity, string Title, string? RecommendedAction, string Status);
 public sealed record DocumentIntelligenceDetails(Guid AnalysisId, Guid DocumentId, string Status, string? Summary, string? DocumentType, string? Subject, DateOnly? DetectedDate, IReadOnlyDictionary<string, IReadOnlyList<string>> MaskedIdentifiers, IReadOnlyList<string> SensitiveIndicators, decimal Confidence, DocumentClassificationSuggestionItem? Classification, DocumentRetentionSuggestionItem? Retention, IReadOnlyList<DocumentQualityIssueItem> Issues);

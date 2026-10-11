@@ -1,6 +1,7 @@
 using InovaGed.Application.Ged.Protocols;
 using InovaGed.Application.Retention;
 using InovaGed.Application.SmartGed;
+using System.IO;
 using Xunit;
 
 namespace InovaGed.Application.Tests;
@@ -209,6 +210,29 @@ public sealed class RetentionAndSmartGedBlocoATests
     }
 
     [Fact]
+    public void SmartGed_queue_queries_do_not_trigger_expired_review_recovery()
+    {
+        var source = File.ReadAllText(RepoPath("InovaGed.Infrastructure", "SmartGed", "SmartGedService.cs"));
+        var listRegion = source[source.IndexOf("public async Task<IReadOnlyList<DocumentClassificationSuggestionItem>> ListAsync", StringComparison.Ordinal)..source.IndexOf("public Task AcceptAsync", StringComparison.Ordinal)];
+
+        Assert.DoesNotContain("RecoverExpiredReviewOperationsAsync", listRegion);
+        Assert.Contains("public async Task<SmartGedReviewRecoveryResult> RecoverExpiredAsync", source);
+    }
+
+    [Fact]
+    public void SmartGed_recovery_does_not_accept_classification_by_current_class_equality()
+    {
+        var source = File.ReadAllText(RepoPath("InovaGed.Infrastructure", "SmartGed", "SmartGedService.cs"));
+        var recoveryRegion = source[source.IndexOf("private static async Task<SmartGedReviewRecoveryResult> RecoverExpiredReviewOperationsAsync", StringComparison.Ordinal)..source.IndexOf("public async Task<SmartGedSearchResult> SearchAsync", StringComparison.Ordinal)];
+
+        Assert.DoesNotContain("status = case when d.classification_id = s.suggested_classification_id then 'ACCEPTED'", recoveryRegion);
+        Assert.DoesNotContain("then 'ACCEPTED'", recoveryRegion);
+        Assert.DoesNotContain("coalesce(s.applied_at, now())", recoveryRegion);
+        Assert.Contains("recovered_at = now()", recoveryRegion);
+        Assert.Contains("FAILED_APPLIED", recoveryRegion);
+    }
+
+    [Fact]
     public void Explicit_zero_period_calculates_due_at_equal_to_basis_date()
     {
         var basis = new DateTime(2025, 6, 1, 10, 0, 0, DateTimeKind.Utc);
@@ -368,6 +392,16 @@ public sealed class RetentionAndSmartGedBlocoATests
         var finalDate = withMonths.AddDays(10); // 2026-06-25
 
         Assert.Equal(new DateTime(2026, 6, 25, 0, 0, 0, DateTimeKind.Utc), finalDate);
+    }
+
+    private static string RepoPath(params string[] segments)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "InovaGed.sln")))
+            dir = dir.Parent;
+
+        if (dir is null) throw new DirectoryNotFoundException("Raiz do repositório não encontrada.");
+        return Path.Combine(new[] { dir.FullName }.Concat(segments).ToArray());
     }
 }
 

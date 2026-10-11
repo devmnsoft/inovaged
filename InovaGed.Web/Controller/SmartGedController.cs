@@ -3,6 +3,7 @@ using InovaGed.Application.Common.Database;
 using InovaGed.Application.Identity;
 using InovaGed.Application.SmartGed;
 using InovaGed.Web.Models.SmartGed;
+using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
@@ -16,6 +17,7 @@ public sealed class SmartGedController : Controller
     private readonly IDocumentIntelligenceService _intelligence;
     private readonly IDocumentClassificationSuggestionService _classifications;
     private readonly IDocumentRetentionSuggestionService _retentions;
+    private readonly ISmartGedReviewRecoveryService _reviewRecovery;
     private readonly ISmartGedSearchService _search;
     private readonly ICurrentUser _user;
     private readonly IDbConnectionFactory _db;
@@ -25,6 +27,7 @@ public sealed class SmartGedController : Controller
         IDocumentIntelligenceService intelligence,
         IDocumentClassificationSuggestionService classifications,
         IDocumentRetentionSuggestionService retentions,
+        ISmartGedReviewRecoveryService reviewRecovery,
         ISmartGedSearchService search,
         ICurrentUser user,
         IDbConnectionFactory db,
@@ -33,6 +36,7 @@ public sealed class SmartGedController : Controller
         _intelligence = intelligence;
         _classifications = classifications;
         _retentions = retentions;
+        _reviewRecovery = reviewRecovery;
         _search = search;
         _user = user;
         _db = db;
@@ -57,10 +61,10 @@ public sealed class SmartGedController : Controller
 
         var classificationPage = selectedKind == "classification"
             ? await _classifications.ListPageAsync(_user.TenantId, st, _user.UserId, page, pageSize, ct)
-            : await _classifications.ListPageAsync(_user.TenantId, st, _user.UserId, 1, 10, ct);
+            : new SmartGedSuggestionPage<DocumentClassificationSuggestionItem>([], await _classifications.CountAsync(_user.TenantId, st, _user.UserId, ct), 1, pageSize);
         var retentionPage = selectedKind == "retention"
             ? await _retentions.ListPageAsync(_user.TenantId, st, _user.UserId, page, pageSize, ct)
-            : await _retentions.ListPageAsync(_user.TenantId, st, _user.UserId, 1, 10, ct);
+            : new SmartGedSuggestionPage<DocumentRetentionSuggestionItem>([], await _retentions.CountAsync(_user.TenantId, st, _user.UserId, ct), 1, pageSize);
 
         return View(new SmartGedReviewQueue(
             selectedKind == "classification" ? classificationPage.Items : [],
@@ -71,6 +75,18 @@ public sealed class SmartGedController : Controller
             classificationPage.TotalCount,
             retentionPage.TotalCount,
             selectedKind));
+    }
+
+    [HttpPost("ReviewQueue/RecoverExpired")]
+    [Authorize(Policy = AppPolicies.FullAdminOnly)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RecoverExpiredReviews([FromForm] string? status, [FromForm] string? kind, [FromForm] int page = 1, [FromForm] int pageSize = 20, CancellationToken ct = default)
+    {
+        var result = await _reviewRecovery.RecoverExpiredAsync(_user.TenantId, _user.UserId, ct);
+        TempData[result.Total > 0 ? "Success" : "Info"] = result.Total > 0
+            ? $"Recuperação concluída: {result.Total} operação(ões) expirada(s) reconciliada(s) sem aceite automático."
+            : "Nenhuma operação expirada elegível para recuperação.";
+        return RedirectToAction(nameof(ReviewQueue), new { status = status ?? "PENDING", kind = kind ?? "classification", page, pageSize });
     }
 
     [HttpGet("Document/{documentId:guid}")]
