@@ -14,6 +14,7 @@ namespace InovaGed.Infrastructure.SystemHealth.Migrations;
 public sealed class DatabaseMigrationRunner(IDbConnectionFactory db, IHostEnvironment environment) : IDatabaseMigrationRunner
 {
     private static readonly Regex DestructiveSql = new(@"\b(drop\s+(table|schema)|truncate|delete\s+from)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex ExplicitTransactionSql = new(@"^\s*(begin|start\s+transaction)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly IReadOnlySet<string> DestructiveAllowList = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     private readonly string _root = FindRoot(environment.ContentRootPath);
 
@@ -71,6 +72,24 @@ public sealed class DatabaseMigrationRunner(IDbConnectionFactory db, IHostEnviro
         var watch = Stopwatch.StartNew();
         await using var connection = await db.OpenAsync(ct);
         await EnsureHistoryAsync(connection, ct);
+        if (HasExplicitTransaction(sql))
+        {
+            try
+            {
+                await connection.ExecuteAsync(new CommandDefinition(sql, commandTimeout: 300, cancellationToken: ct));
+                watch.Stop();
+                await connection.ExecuteAsync(new CommandDefinition(InsertHistorySql, new { entry.Name, Path = entry.Path, Checksum = checksum, UserId = userId, UserName = userName, Success = true, Duration = (int)watch.ElapsedMilliseconds, Error = (string?)null }, cancellationToken: ct));
+                return new(true, "Migration aplicada com sucesso.", [new(entry.Name, entry.Path, true, (int)watch.ElapsedMilliseconds, null)]);
+            }
+            catch (Exception ex)
+            {
+                watch.Stop();
+                var safeError = SafeMigrationError(ex);
+                await connection.ExecuteAsync(new CommandDefinition(InsertHistorySql, new { entry.Name, Path = entry.Path, Checksum = checksum, UserId = userId, UserName = userName, Success = false, Duration = (int)watch.ElapsedMilliseconds, Error = safeError }, cancellationToken: ct));
+                return Failure(entry.Name, entry.Path, safeError, (int)watch.ElapsedMilliseconds);
+            }
+        }
+
         await using var transaction = await connection.BeginTransactionAsync(ct);
         try
         {
@@ -84,7 +103,7 @@ public sealed class DatabaseMigrationRunner(IDbConnectionFactory db, IHostEnviro
         {
             watch.Stop();
             await transaction.RollbackAsync(CancellationToken.None);
-            var safeError = ex is PostgresException pg ? $"{pg.SqlState}: {pg.MessageText}{(pg.Position<=0?"":$" (posição {pg.Position})")}" : ex.Message;
+            var safeError = SafeMigrationError(ex);
             await connection.ExecuteAsync(new CommandDefinition(InsertHistorySql, new { entry.Name, Path = entry.Path, Checksum = checksum, UserId = userId, UserName = userName, Success = false, Duration = (int)watch.ElapsedMilliseconds, Error = safeError }, cancellationToken: ct));
             return Failure(entry.Name, entry.Path, safeError, (int)watch.ElapsedMilliseconds);
         }
@@ -101,6 +120,8 @@ public sealed class DatabaseMigrationRunner(IDbConnectionFactory db, IHostEnviro
     private string ResolveCatalogPath(string path) { var full = Path.GetFullPath(Path.Combine(_root, path.Replace('/', Path.DirectorySeparatorChar))); var migrations = Path.GetFullPath(Path.Combine(_root, "database", "migrations")) + Path.DirectorySeparatorChar; if (!full.StartsWith(migrations, StringComparison.Ordinal)) throw new InvalidOperationException("Path de migration fora do diretório permitido."); return full; }
     private static async Task<string> ChecksumAsync(string path, CancellationToken ct) { await using var stream = File.OpenRead(path); return Convert.ToHexString(await SHA256.HashDataAsync(stream, ct)).ToLowerInvariant(); }
     private static string RemoveComments(string sql) => Regex.Replace(Regex.Replace(sql, @"/\*.*?\*/", "", RegexOptions.Singleline), @"--.*?$", "", RegexOptions.Multiline);
+    private static bool HasExplicitTransaction(string sql) => ExplicitTransactionSql.IsMatch(RemoveComments(sql));
+    private static string SafeMigrationError(Exception ex) => ex is PostgresException pg ? $"{pg.SqlState}: {pg.MessageText}{(pg.Position<=0?"":$" (posição {pg.Position})")}" : ex.Message;
     private static string FindRoot(string start) { for (var d = new DirectoryInfo(start); d is not null; d = d.Parent) if (File.Exists(Path.Combine(d.FullName, "InovaGed.sln"))) return d.FullName; throw new DirectoryNotFoundException("Raiz do InovaGED não encontrada."); }
     private static DatabaseMigrationResult Failure(string name, string path, string error, int duration = 0) => new(false, error, [new(name, path, false, duration, error)]);
     private static Task EnsureHistoryAsync(NpgsqlConnection c, CancellationToken ct) => c.ExecuteAsync(new CommandDefinition(HistorySql, cancellationToken: ct));

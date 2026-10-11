@@ -943,5 +943,12 @@
     "area": "SmartGed",
     "required": true,
     "description": "Separa data de recuperação da data de aplicação e indexa operações expiradas de revisão assistida."
+  },
+  {
+    "name": "2026_10_19_smart_ged_review_operation_results",
+    "path": "database/migrations/2026_10_19_smart_ged_review_operation_results.sql",
+    "area": "SmartGed",
+    "required": true,
+    "description": "Registra resultado persistente por operação de revisão assistida para recuperação baseada em evidência transacional."
   }
 ]

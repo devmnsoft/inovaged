@@ -41,6 +41,9 @@
         <a asp-action="ReviewQueue" asp-route-status="FAILED_APPLIED" asp-route-kind="@currentKind" class="btn @(currentStatus == "FAILED_APPLIED" ? "btn-primary" : "btn-outline-secondary")">
             Aplicadas com pendência
         </a>
+        <a asp-action="ReviewQueue" asp-route-status="RECOVERY_INDETERMINATE" asp-route-kind="@currentKind" class="btn @(currentStatus == "RECOVERY_INDETERMINATE" ? "btn-primary" : "btn-outline-secondary")">
+            Indeterminadas
+        </a>
         <a asp-action="ReviewQueue" asp-route-status="ACCEPTED" asp-route-kind="@currentKind" class="btn @(currentStatus == "ACCEPTED" ? "btn-primary" : "btn-outline-secondary")">
             Aceitas
         </a>
@@ -212,6 +215,10 @@
                             else if (x.Status == "FAILED")
                             {
                                 <span class="badge bg-danger">Falha</span>
+                            }
+                            else if (x.Status == "RECOVERY_INDETERMINATE")
+                            {
+                                <span class="badge bg-secondary">Efeito indeterminado</span>
                             }
                             else
                             {
@@ -409,6 +416,10 @@
                             else if (x.Status == "FAILED")
                             {
                                 <span class="badge bg-danger">Falha</span>
+                            }
+                            else if (x.Status == "RECOVERY_INDETERMINATE")
+                            {
+                                <span class="badge bg-secondary">Efeito indeterminado</span>
                             }
                             else
                             {

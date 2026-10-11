@@ -5,6 +5,7 @@ using Dapper;
 using InovaGed.Application.Audit;
 using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Database;
+using InovaGed.Application.Identity;
 using InovaGed.Application.Retention;
 using InovaGed.Application.Security;
 using InovaGed.Application.SmartGed;
@@ -21,6 +22,7 @@ public sealed class SmartGedService : IDocumentIntelligenceService, IDocumentCla
     private readonly IRetentionJobRepository _retentionJobs;
     private readonly IDocumentClassificationCommands _commands;
     private readonly IAbacAuthorizationService _authorization;
+    private readonly IPermissionChecker _permissions;
     private readonly ILogger<SmartGedService> _logger;
 
     public SmartGedService(
@@ -30,6 +32,7 @@ public sealed class SmartGedService : IDocumentIntelligenceService, IDocumentCla
         IRetentionJobRepository retentionJobs,
         IDocumentClassificationCommands commands,
         IAbacAuthorizationService authorization,
+        IPermissionChecker permissions,
         ILogger<SmartGedService> logger)
     {
         _db = db;
@@ -38,6 +41,7 @@ public sealed class SmartGedService : IDocumentIntelligenceService, IDocumentCla
         _retentionJobs = retentionJobs;
         _commands = commands;
         _authorization = authorization;
+        _permissions = permissions;
         _logger = logger;
     }
 
@@ -436,6 +440,22 @@ select exists(
                 if (!saveResult.Success)
                     throw new InvalidOperationException(saveResult.Message);
                 applicationCompleted = true;
+                await UpsertReviewOperationResultAsync(
+                    c,
+                    tenantId,
+                    operationId,
+                    "CLASSIFICATION",
+                    id,
+                    existing.DocumentId,
+                    existing.VersionId,
+                    existing.PlanVersionId,
+                    existing.ClassificationId,
+                    null,
+                    "EFFECT_CONFIRMED",
+                    "EFFECT_CONFIRMED",
+                    true,
+                    new { classificationId = existing.ClassificationId, retentionRecalculated = saveResult.RetentionRecalculated },
+                    CancellationToken.None);
 
                 // 5. Atualizar EXCLUSIVAMENTE a sugestão revisada (não aprova temporalidade indiscriminadamente)
                 var rowsUpdated = await c.ExecuteAsync(new CommandDefinition("""
@@ -465,6 +485,7 @@ where tenant_id = @tenantId and id = @id and status = 'PROCESSING' and review_op
                         retentionRecalculated = saveResult.RetentionRecalculated,
                         notes
                     }, CancellationToken.None);
+                    await MarkReviewOperationAuditedAsync(c, tenantId, operationId, "CLASSIFICATION_SUGGESTION_ACCEPTED", CancellationToken.None);
                 }
                 catch (Exception auditEx)
                 {
@@ -474,6 +495,22 @@ where tenant_id = @tenantId and id = @id and status = 'PROCESSING' and review_op
             }
             catch (Exception ex)
             {
+                await UpsertReviewOperationResultAsync(
+                    c,
+                    tenantId,
+                    operationId,
+                    "CLASSIFICATION",
+                    id,
+                    existing.DocumentId,
+                    existing.VersionId,
+                    existing.PlanVersionId,
+                    existing.ClassificationId,
+                    null,
+                    applicationCompleted ? "EFFECT_CONFIRMED" : "NO_EFFECT",
+                    applicationCompleted ? "FAILED_AFTER_EFFECT" : "FAILED_BEFORE_EFFECT",
+                    applicationCompleted,
+                    new { failure = ex.GetType().Name, message = PublicReviewFailure(ex) },
+                    CancellationToken.None);
                 await MarkClassificationReviewFailedAsync(c, tenantId, id, operationId, applicationCompleted, ex, CancellationToken.None);
                 _logger.LogWarning(ex, "Falha na revisão de classificação assistida. Tenant={TenantId} Suggestion={SuggestionId} Operation={OperationId} Applied={Applied}", tenantId, id, operationId, applicationCompleted);
                 throw;
@@ -568,6 +605,22 @@ where s.tenant_id = @tenantId
                 if (recalcResult <= 0)
                     throw new InvalidOperationException("Nenhum documento foi atualizado pelo recálculo de temporalidade.");
                 applicationCompleted = true;
+                await UpsertReviewOperationResultAsync(
+                    c,
+                    tenantId,
+                    operationId,
+                    "RETENTION",
+                    id,
+                    existing.DocumentId,
+                    existing.VersionId,
+                    null,
+                    null,
+                    existing.RuleId,
+                    "EFFECT_CONFIRMED",
+                    "EFFECT_CONFIRMED",
+                    true,
+                    new { recalculated = true, rows = recalcResult },
+                    CancellationToken.None);
 
                 var updated = await c.ExecuteAsync(new CommandDefinition("""
 update ged.document_retention_suggestion
@@ -594,6 +647,7 @@ where tenant_id = @tenantId and id = @id and status = 'PROCESSING' and review_op
                         recalculated = true,
                         notes
                     }, CancellationToken.None);
+                    await MarkReviewOperationAuditedAsync(c, tenantId, operationId, "RETENTION_SUGGESTION_ACCEPTED", CancellationToken.None);
                 }
                 catch (Exception auditEx)
                 {
@@ -603,6 +657,22 @@ where tenant_id = @tenantId and id = @id and status = 'PROCESSING' and review_op
             }
             catch (Exception ex)
             {
+                await UpsertReviewOperationResultAsync(
+                    c,
+                    tenantId,
+                    operationId,
+                    "RETENTION",
+                    id,
+                    existing.DocumentId,
+                    existing.VersionId,
+                    null,
+                    null,
+                    existing.RuleId,
+                    applicationCompleted ? "EFFECT_CONFIRMED" : "NO_EFFECT",
+                    applicationCompleted ? "FAILED_AFTER_EFFECT" : "FAILED_BEFORE_EFFECT",
+                    applicationCompleted,
+                    new { failure = ex.GetType().Name, message = PublicReviewFailure(ex) },
+                    CancellationToken.None);
                 await MarkRetentionReviewFailedAsync(c, tenantId, id, operationId, applicationCompleted, ex, CancellationToken.None);
                 _logger.LogWarning(ex, "Falha na revisão de temporalidade assistida. Tenant={TenantId} Suggestion={SuggestionId} Operation={OperationId} Applied={Applied}", tenantId, id, operationId, applicationCompleted);
                 throw;
@@ -659,6 +729,68 @@ where tenant_id = @tenantId and id = @id and status = 'PROCESSING' and review_op
         };
         return known.Any(x => message.Contains(x, StringComparison.OrdinalIgnoreCase));
     }
+
+    private static Task UpsertReviewOperationResultAsync(
+        Npgsql.NpgsqlConnection connection,
+        Guid tenantId,
+        Guid operationId,
+        string suggestionKind,
+        Guid suggestionId,
+        Guid documentId,
+        Guid? versionId,
+        Guid? planVersionId,
+        Guid? classificationId,
+        Guid? retentionRuleId,
+        string effectStatus,
+        string resultStatus,
+        bool effectApplied,
+        object payload,
+        CancellationToken ct)
+    {
+        var effectiveAt = effectApplied ? DateTimeOffset.UtcNow : (DateTimeOffset?)null;
+        return connection.ExecuteAsync(new CommandDefinition("""
+insert into ged.smart_ged_review_operation_result(
+  tenant_id, operation_id, suggestion_kind, suggestion_id, document_id, version_id, plan_version_id,
+  classification_id, retention_rule_id, effect_status, result_status, effect_applied, effective_at, result_payload_json)
+values(
+  @tenantId, @operationId, @suggestionKind, @suggestionId, @documentId, @versionId, @planVersionId,
+  @classificationId, @retentionRuleId, @effectStatus, @resultStatus, @effectApplied, @effectiveAt, cast(@payloadJson as jsonb))
+on conflict (tenant_id, operation_id) where reg_status = 'A'
+do update set
+  effect_status = excluded.effect_status,
+  result_status = excluded.result_status,
+  effect_applied = excluded.effect_applied,
+  effective_at = coalesce(ged.smart_ged_review_operation_result.effective_at, excluded.effective_at),
+  result_payload_json = excluded.result_payload_json,
+  updated_at = now()
+""", new
+        {
+            tenantId,
+            operationId,
+            suggestionKind,
+            suggestionId,
+            documentId,
+            versionId,
+            planVersionId,
+            classificationId,
+            retentionRuleId,
+            effectStatus,
+            resultStatus,
+            effectApplied,
+            effectiveAt,
+            payloadJson = JsonSerializer.Serialize(payload)
+        }, cancellationToken: ct));
+    }
+
+    private static Task MarkReviewOperationAuditedAsync(Npgsql.NpgsqlConnection connection, Guid tenantId, Guid operationId, string auditEvent, CancellationToken ct) =>
+        connection.ExecuteAsync(new CommandDefinition("""
+update ged.smart_ged_review_operation_result
+set result_status = 'FINALIZED',
+    audit_event = @auditEvent,
+    audit_recorded_at = now(),
+    updated_at = now()
+where tenant_id = @tenantId and operation_id = @operationId and reg_status = 'A'
+""", new { tenantId, operationId, auditEvent }, cancellationToken: ct));
 
     private static async Task MarkClassificationReviewFailedAsync(
         Npgsql.NpgsqlConnection connection,
@@ -722,6 +854,7 @@ where tenant_id = @tenantId and id = @id and status = 'PROCESSING' and review_op
 
     public async Task<SmartGedReviewRecoveryResult> RecoverExpiredAsync(Guid tenantId, Guid performedBy, CancellationToken ct)
     {
+        await _permissions.DemandAsync(tenantId, performedBy, "GED.DOCUMENTS", ct);
         await using var connection = await _db.OpenAsync(ct);
         var result = await RecoverExpiredReviewOperationsAsync(connection, tenantId, ct);
         await Audit(tenantId, performedBy, "SMART_GED_REVIEW_RECOVERY_EXECUTED", null, result, ct);
@@ -734,34 +867,59 @@ where tenant_id = @tenantId and id = @id and status = 'PROCESSING' and review_op
 update ged.document_classification_suggestion s
 set status = 'FAILED_APPLIED',
     failed_at = coalesce(s.failed_at, now()),
-    failure_code = coalesce(s.failure_code, 'ProcessingExpiredAfterEffectDetected'),
-    public_failure_message = coalesce(s.public_failure_message, 'Operação expirada com efeito compatível no documento, mas sem finalização transacional da revisão. Valide auditoria e não reaplique automaticamente.'),
+    failure_code = coalesce(s.failure_code, 'ProcessingExpiredWithRecordedEffect'),
+    public_failure_message = coalesce(s.public_failure_message, 'Operação expirada com efeito registrado para esta operação, mas sem decisão finalizada. Valide auditoria e não reaplique automaticamente.'),
     recovered_at = now(),
-    recovery_notes = coalesce(s.recovery_notes, 'Recuperação conservadora: documento está com a classe sugerida após expiração; status mantido como pendência aplicada, não como aceite.'),
-    processing_expires_at = null
-from ged.document d
+    recovery_notes = coalesce(s.recovery_notes, 'Recuperação baseada no resultado persistente da operação: efeito comprovado sem finalização da revisão.'),
+    processing_expires_at = null,
+    applied_at = coalesce(s.applied_at, r.effective_at)
+from ged.smart_ged_review_operation_result r
 where s.tenant_id = @tenantId
   and s.status = 'PROCESSING'
   and s.processing_expires_at is not null
   and s.processing_expires_at < now()
-  and d.tenant_id = s.tenant_id
-  and d.id = s.document_id
   and coalesce(s.reg_status,'A') = 'A'
-  and coalesce(d.reg_status,'A') = 'A'
-  and coalesce(d.status,'') <> 'DELETED'
-  and s.review_operation_id is not null
-  and s.suggested_classification_id is not null
-  and d.classification_id = s.suggested_classification_id;
+  and r.tenant_id = s.tenant_id
+  and r.operation_id = s.review_operation_id
+  and r.suggestion_kind = 'CLASSIFICATION'
+  and r.suggestion_id = s.id
+  and r.document_id = s.document_id
+  and coalesce(r.reg_status,'A') = 'A'
+  and r.effect_status = 'EFFECT_CONFIRMED';
 """, new { tenantId }, cancellationToken: ct));
 
         var classificationFailed = await connection.ExecuteAsync(new CommandDefinition("""
 update ged.document_classification_suggestion s
 set status = 'FAILED',
     failed_at = coalesce(s.failed_at, now()),
-    failure_code = coalesce(s.failure_code, 'ProcessingExpiredWithoutConfirmedEffect'),
-    public_failure_message = coalesce(s.public_failure_message, 'Operação expirada sem comprovação suficiente de aplicação. Revise o documento e execute novamente se necessário.'),
+    failure_code = coalesce(s.failure_code, 'ProcessingExpiredWithRecordedNoEffect'),
+    public_failure_message = coalesce(s.public_failure_message, 'Operação expirada com registro de ausência de efeito. Revise a causa antes de nova decisão.'),
     recovered_at = now(),
-    recovery_notes = coalesce(s.recovery_notes, 'Recuperação conservadora: não foi encontrado efeito aplicado compatível com a operação expirada.'),
+    recovery_notes = coalesce(s.recovery_notes, 'Recuperação baseada no resultado persistente da operação: ausência de efeito comprovada.'),
+    processing_expires_at = null
+from ged.smart_ged_review_operation_result r
+where s.tenant_id = @tenantId
+  and s.status = 'PROCESSING'
+  and s.processing_expires_at is not null
+  and s.processing_expires_at < now()
+  and coalesce(s.reg_status,'A') = 'A'
+  and r.tenant_id = s.tenant_id
+  and r.operation_id = s.review_operation_id
+  and r.suggestion_kind = 'CLASSIFICATION'
+  and r.suggestion_id = s.id
+  and r.document_id = s.document_id
+  and coalesce(r.reg_status,'A') = 'A'
+  and r.effect_status = 'NO_EFFECT';
+""", new { tenantId }, cancellationToken: ct));
+
+        var classificationIndeterminate = await connection.ExecuteAsync(new CommandDefinition("""
+update ged.document_classification_suggestion s
+set status = 'RECOVERY_INDETERMINATE',
+    failed_at = coalesce(s.failed_at, now()),
+    failure_code = coalesce(s.failure_code, 'ProcessingExpiredIndeterminate'),
+    public_failure_message = coalesce(s.public_failure_message, 'Operação expirada sem registro transacional suficiente para comprovar aplicação ou ausência de efeito. Não reaplique automaticamente.'),
+    recovered_at = now(),
+    recovery_notes = coalesce(s.recovery_notes, 'Recuperação sem prova operacional: resultado indeterminado bloqueia aceite ou retry automático.'),
     processing_expires_at = null
 where s.tenant_id = @tenantId
   and s.status = 'PROCESSING'
@@ -774,34 +932,59 @@ where s.tenant_id = @tenantId
 update ged.document_retention_suggestion s
 set status = 'FAILED_APPLIED',
     failed_at = coalesce(s.failed_at, now()),
-    failure_code = coalesce(s.failure_code, 'ProcessingExpiredAfterRecalculationDetected'),
-    public_failure_message = coalesce(s.public_failure_message, 'Operação de temporalidade expirada com recálculo compatível detectado, mas sem decisão final registrada. Valide a memória de cálculo antes de nova ação.'),
+    failure_code = coalesce(s.failure_code, 'ProcessingExpiredWithRecordedEffect'),
+    public_failure_message = coalesce(s.public_failure_message, 'Operação de temporalidade expirada com efeito registrado para esta operação, mas sem decisão finalizada. Valide a memória de cálculo antes de nova ação.'),
     recovered_at = now(),
-    recovery_notes = coalesce(s.recovery_notes, 'Recuperação conservadora: há indício de recálculo posterior ao início da operação; status mantido como pendência aplicada.'),
-    processing_expires_at = null
-from ged.document d
+    recovery_notes = coalesce(s.recovery_notes, 'Recuperação baseada no resultado persistente da operação: recálculo comprovado sem finalização da revisão.'),
+    processing_expires_at = null,
+    applied_at = coalesce(s.applied_at, r.effective_at)
+from ged.smart_ged_review_operation_result r
 where s.tenant_id = @tenantId
   and s.status = 'PROCESSING'
   and s.processing_expires_at is not null
   and s.processing_expires_at < now()
-  and d.tenant_id = s.tenant_id
-  and d.id = s.document_id
   and coalesce(s.reg_status,'A') = 'A'
-  and coalesce(d.reg_status,'A') = 'A'
-  and coalesce(d.status,'') <> 'DELETED'
-  and s.review_operation_id is not null
-  and d.retention_status is not null
-  and d.updated_at >= s.processing_started_at;
+  and r.tenant_id = s.tenant_id
+  and r.operation_id = s.review_operation_id
+  and r.suggestion_kind = 'RETENTION'
+  and r.suggestion_id = s.id
+  and r.document_id = s.document_id
+  and coalesce(r.reg_status,'A') = 'A'
+  and r.effect_status = 'EFFECT_CONFIRMED';
 """, new { tenantId }, cancellationToken: ct));
 
         var retentionFailed = await connection.ExecuteAsync(new CommandDefinition("""
 update ged.document_retention_suggestion s
 set status = 'FAILED',
     failed_at = coalesce(s.failed_at, now()),
-    failure_code = coalesce(s.failure_code, 'ProcessingExpiredWithoutConfirmedRecalculation'),
-    public_failure_message = coalesce(s.public_failure_message, 'Operação de temporalidade expirada sem comprovação suficiente de recálculo. Revise a memória de cálculo e execute novamente se necessário.'),
+    failure_code = coalesce(s.failure_code, 'ProcessingExpiredWithRecordedNoEffect'),
+    public_failure_message = coalesce(s.public_failure_message, 'Operação de temporalidade expirada com registro de ausência de recálculo. Revise a causa antes de nova decisão.'),
     recovered_at = now(),
-    recovery_notes = coalesce(s.recovery_notes, 'Recuperação conservadora: não foi encontrado recálculo compatível com a operação expirada.'),
+    recovery_notes = coalesce(s.recovery_notes, 'Recuperação baseada no resultado persistente da operação: ausência de efeito comprovada.'),
+    processing_expires_at = null
+from ged.smart_ged_review_operation_result r
+where s.tenant_id = @tenantId
+  and s.status = 'PROCESSING'
+  and s.processing_expires_at is not null
+  and s.processing_expires_at < now()
+  and coalesce(s.reg_status,'A') = 'A'
+  and r.tenant_id = s.tenant_id
+  and r.operation_id = s.review_operation_id
+  and r.suggestion_kind = 'RETENTION'
+  and r.suggestion_id = s.id
+  and r.document_id = s.document_id
+  and coalesce(r.reg_status,'A') = 'A'
+  and r.effect_status = 'NO_EFFECT';
+""", new { tenantId }, cancellationToken: ct));
+
+        var retentionIndeterminate = await connection.ExecuteAsync(new CommandDefinition("""
+update ged.document_retention_suggestion s
+set status = 'RECOVERY_INDETERMINATE',
+    failed_at = coalesce(s.failed_at, now()),
+    failure_code = coalesce(s.failure_code, 'ProcessingExpiredIndeterminate'),
+    public_failure_message = coalesce(s.public_failure_message, 'Operação de temporalidade expirada sem registro transacional suficiente para comprovar recálculo ou ausência de efeito. Não reaplique automaticamente.'),
+    recovered_at = now(),
+    recovery_notes = coalesce(s.recovery_notes, 'Recuperação sem prova operacional: resultado indeterminado bloqueia aceite ou retry automático.'),
     processing_expires_at = null
 where s.tenant_id = @tenantId
   and s.status = 'PROCESSING'
@@ -810,7 +993,7 @@ where s.tenant_id = @tenantId
   and coalesce(s.reg_status,'A') = 'A';
 """, new { tenantId }, cancellationToken: ct));
 
-        return new(classificationFailed, classificationAppliedPending, retentionFailed, retentionAppliedPending);
+        return new(classificationFailed, classificationAppliedPending, classificationIndeterminate, retentionFailed, retentionAppliedPending, retentionIndeterminate);
     }
 
     public async Task<SmartGedSearchResult> SearchAsync(SmartGedSearchQuery query, CancellationToken ct)

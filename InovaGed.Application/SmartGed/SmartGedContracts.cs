@@ -37,10 +37,12 @@ public interface ISmartGedSearchService { Task<SmartGedSearchResult> SearchAsync
 public sealed record SmartGedReviewRecoveryResult(
     int ClassificationFailed,
     int ClassificationAppliedPending,
+    int ClassificationIndeterminate,
     int RetentionFailed,
-    int RetentionAppliedPending)
+    int RetentionAppliedPending,
+    int RetentionIndeterminate)
 {
-    public int Total => ClassificationFailed + ClassificationAppliedPending + RetentionFailed + RetentionAppliedPending;
+    public int Total => ClassificationFailed + ClassificationAppliedPending + ClassificationIndeterminate + RetentionFailed + RetentionAppliedPending + RetentionIndeterminate;
 }
 
 public sealed record DocumentMetadataExtractionInput(string Text, string? FileName = null);
