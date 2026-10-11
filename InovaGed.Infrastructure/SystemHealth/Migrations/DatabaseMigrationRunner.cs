@@ -77,17 +77,34 @@ public sealed class DatabaseMigrationRunner(IDbConnectionFactory db, IHostEnviro
             try
             {
                 await connection.ExecuteAsync(new CommandDefinition(sql, commandTimeout: 300, cancellationToken: ct));
-                watch.Stop();
-                await connection.ExecuteAsync(new CommandDefinition(InsertHistorySql, new { entry.Name, Path = entry.Path, Checksum = checksum, UserId = userId, UserName = userName, Success = true, Duration = (int)watch.ElapsedMilliseconds, Error = (string?)null }, cancellationToken: ct));
-                return new(true, "Migration aplicada com sucesso.", [new(entry.Name, entry.Path, true, (int)watch.ElapsedMilliseconds, null)]);
             }
             catch (Exception ex)
             {
                 watch.Stop();
                 var safeError = SafeMigrationError(ex);
-                await connection.ExecuteAsync(new CommandDefinition(InsertHistorySql, new { entry.Name, Path = entry.Path, Checksum = checksum, UserId = userId, UserName = userName, Success = false, Duration = (int)watch.ElapsedMilliseconds, Error = safeError }, cancellationToken: ct));
+                try
+                {
+                    await InsertHistoryOutOfBandAsync(entry.Name, entry.Path, checksum, userId, userName, false, (int)watch.ElapsedMilliseconds, safeError, CancellationToken.None);
+                }
+                catch (Exception historyEx)
+                {
+                    safeError = $"{safeError} | Falha ao registrar histórico: {SafeMigrationError(historyEx)}";
+                }
                 return Failure(entry.Name, entry.Path, safeError, (int)watch.ElapsedMilliseconds);
             }
+
+            watch.Stop();
+            try
+            {
+                await InsertHistoryOutOfBandAsync(entry.Name, entry.Path, checksum, userId, userName, true, (int)watch.ElapsedMilliseconds, null, ct);
+            }
+            catch (Exception historyEx)
+            {
+                var safeError = $"Migration executada, mas o histórico de sucesso não foi registrado: {SafeMigrationError(historyEx)}";
+                return Failure(entry.Name, entry.Path, safeError, (int)watch.ElapsedMilliseconds);
+            }
+
+            return new(true, "Migration aplicada com sucesso.", [new(entry.Name, entry.Path, true, (int)watch.ElapsedMilliseconds, null)]);
         }
 
         await using var transaction = await connection.BeginTransactionAsync(ct);
@@ -125,6 +142,12 @@ public sealed class DatabaseMigrationRunner(IDbConnectionFactory db, IHostEnviro
     private static string FindRoot(string start) { for (var d = new DirectoryInfo(start); d is not null; d = d.Parent) if (File.Exists(Path.Combine(d.FullName, "InovaGed.sln"))) return d.FullName; throw new DirectoryNotFoundException("Raiz do InovaGED não encontrada."); }
     private static DatabaseMigrationResult Failure(string name, string path, string error, int duration = 0) => new(false, error, [new(name, path, false, duration, error)]);
     private static Task EnsureHistoryAsync(NpgsqlConnection c, CancellationToken ct) => c.ExecuteAsync(new CommandDefinition(HistorySql, cancellationToken: ct));
+    private async Task InsertHistoryOutOfBandAsync(string name, string path, string checksum, Guid? userId, string? userName, bool success, int duration, string? error, CancellationToken ct)
+    {
+        await using var historyConnection = await db.OpenAsync(ct);
+        await EnsureHistoryAsync(historyConnection, ct);
+        await historyConnection.ExecuteAsync(new CommandDefinition(InsertHistorySql, new { Name = name, Path = path, Checksum = checksum, UserId = userId, UserName = userName, Success = success, Duration = duration, Error = error }, cancellationToken: ct));
+    }
     private const string InsertHistorySql = """insert into ged.schema_migration_history(script_name,script_path,checksum_sha256,applied_by,applied_by_name,source,success,duration_ms,error_message) values (@Name,@Path,@Checksum,@UserId,@UserName,'RUNNER',@Success,@Duration,@Error)""";
     private const string HistorySql = """
         create schema if not exists ged; create extension if not exists pgcrypto;

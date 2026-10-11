@@ -5,7 +5,6 @@ using Dapper;
 using InovaGed.Application.Audit;
 using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Database;
-using InovaGed.Application.Identity;
 using InovaGed.Application.Retention;
 using InovaGed.Application.Security;
 using InovaGed.Application.SmartGed;
@@ -22,7 +21,7 @@ public sealed class SmartGedService : IDocumentIntelligenceService, IDocumentCla
     private readonly IRetentionJobRepository _retentionJobs;
     private readonly IDocumentClassificationCommands _commands;
     private readonly IAbacAuthorizationService _authorization;
-    private readonly IPermissionChecker _permissions;
+    private readonly IGedAccessPolicyService _accessPolicy;
     private readonly ILogger<SmartGedService> _logger;
 
     public SmartGedService(
@@ -32,7 +31,7 @@ public sealed class SmartGedService : IDocumentIntelligenceService, IDocumentCla
         IRetentionJobRepository retentionJobs,
         IDocumentClassificationCommands commands,
         IAbacAuthorizationService authorization,
-        IPermissionChecker permissions,
+        IGedAccessPolicyService accessPolicy,
         ILogger<SmartGedService> logger)
     {
         _db = db;
@@ -41,7 +40,7 @@ public sealed class SmartGedService : IDocumentIntelligenceService, IDocumentCla
         _retentionJobs = retentionJobs;
         _commands = commands;
         _authorization = authorization;
-        _permissions = permissions;
+        _accessPolicy = accessPolicy;
         _logger = logger;
     }
 
@@ -506,10 +505,10 @@ where tenant_id = @tenantId and id = @id and status = 'PROCESSING' and review_op
                     existing.PlanVersionId,
                     existing.ClassificationId,
                     null,
-                    applicationCompleted ? "EFFECT_CONFIRMED" : "NO_EFFECT",
-                    applicationCompleted ? "FAILED_AFTER_EFFECT" : "FAILED_BEFORE_EFFECT",
+                    applicationCompleted ? "EFFECT_CONFIRMED" : "INDETERMINATE",
+                    applicationCompleted ? "FAILED_AFTER_EFFECT" : "INDETERMINATE",
                     applicationCompleted,
-                    new { failure = ex.GetType().Name, message = PublicReviewFailure(ex) },
+                    new { failure = ex.GetType().Name, message = PublicReviewFailure(ex), effectConfirmation = applicationCompleted ? "CONFIRMED" : "UNKNOWN" },
                     CancellationToken.None);
                 await MarkClassificationReviewFailedAsync(c, tenantId, id, operationId, applicationCompleted, ex, CancellationToken.None);
                 _logger.LogWarning(ex, "Falha na revisão de classificação assistida. Tenant={TenantId} Suggestion={SuggestionId} Operation={OperationId} Applied={Applied}", tenantId, id, operationId, applicationCompleted);
@@ -668,10 +667,10 @@ where tenant_id = @tenantId and id = @id and status = 'PROCESSING' and review_op
                     null,
                     null,
                     existing.RuleId,
-                    applicationCompleted ? "EFFECT_CONFIRMED" : "NO_EFFECT",
-                    applicationCompleted ? "FAILED_AFTER_EFFECT" : "FAILED_BEFORE_EFFECT",
+                    applicationCompleted ? "EFFECT_CONFIRMED" : "INDETERMINATE",
+                    applicationCompleted ? "FAILED_AFTER_EFFECT" : "INDETERMINATE",
                     applicationCompleted,
-                    new { failure = ex.GetType().Name, message = PublicReviewFailure(ex) },
+                    new { failure = ex.GetType().Name, message = PublicReviewFailure(ex), effectConfirmation = applicationCompleted ? "CONFIRMED" : "UNKNOWN" },
                     CancellationToken.None);
                 await MarkRetentionReviewFailedAsync(c, tenantId, id, operationId, applicationCompleted, ex, CancellationToken.None);
                 _logger.LogWarning(ex, "Falha na revisão de temporalidade assistida. Tenant={TenantId} Suggestion={SuggestionId} Operation={OperationId} Applied={Applied}", tenantId, id, operationId, applicationCompleted);
@@ -757,11 +756,20 @@ values(
   @classificationId, @retentionRuleId, @effectStatus, @resultStatus, @effectApplied, @effectiveAt, cast(@payloadJson as jsonb))
 on conflict (tenant_id, operation_id) where reg_status = 'A'
 do update set
-  effect_status = excluded.effect_status,
-  result_status = excluded.result_status,
-  effect_applied = excluded.effect_applied,
+  effect_status = case
+      when ged.smart_ged_review_operation_result.effect_status = 'EFFECT_CONFIRMED' then 'EFFECT_CONFIRMED'
+      when excluded.effect_status = 'EFFECT_CONFIRMED' then 'EFFECT_CONFIRMED'
+      when ged.smart_ged_review_operation_result.effect_status = 'NO_EFFECT' and excluded.effect_status = 'INDETERMINATE' then 'NO_EFFECT'
+      else excluded.effect_status
+  end,
+  result_status = case
+      when ged.smart_ged_review_operation_result.result_status = 'FINALIZED' then 'FINALIZED'
+      when ged.smart_ged_review_operation_result.effect_status = 'EFFECT_CONFIRMED' and excluded.effect_status <> 'EFFECT_CONFIRMED' then ged.smart_ged_review_operation_result.result_status
+      else excluded.result_status
+  end,
+  effect_applied = ged.smart_ged_review_operation_result.effect_applied or excluded.effect_applied,
   effective_at = coalesce(ged.smart_ged_review_operation_result.effective_at, excluded.effective_at),
-  result_payload_json = excluded.result_payload_json,
+  result_payload_json = coalesce(ged.smart_ged_review_operation_result.result_payload_json, '{}'::jsonb) || excluded.result_payload_json,
   updated_at = now()
 """, new
         {
@@ -854,7 +862,10 @@ where tenant_id = @tenantId and id = @id and status = 'PROCESSING' and review_op
 
     public async Task<SmartGedReviewRecoveryResult> RecoverExpiredAsync(Guid tenantId, Guid performedBy, CancellationToken ct)
     {
-        await _permissions.DemandAsync(tenantId, performedBy, "GED.DOCUMENTS", ct);
+        var isAdmin = await _accessPolicy.IsAdminAsync(tenantId, performedBy, null, ct);
+        if (!isAdmin)
+            throw new UnauthorizedAccessException("Recuperação administrativa de revisões assistidas exige perfil FullAdmin.");
+
         await using var connection = await _db.OpenAsync(ct);
         var result = await RecoverExpiredReviewOperationsAsync(connection, tenantId, ct);
         await Audit(tenantId, performedBy, "SMART_GED_REVIEW_RECOVERY_EXECUTED", null, result, ct);

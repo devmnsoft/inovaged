@@ -233,6 +233,52 @@ public sealed class RetentionAndSmartGedBlocoATests
     }
 
     [Fact]
+    public void SmartGed_review_failure_without_confirmed_effect_is_indeterminate_not_no_effect()
+    {
+        var source = File.ReadAllText(RepoPath("InovaGed.Infrastructure", "SmartGed", "SmartGedService.cs"));
+        var reviewRegion = source[source.IndexOf("private async Task ReviewClassification", StringComparison.Ordinal)..source.IndexOf("public async Task<SmartGedReviewRecoveryResult> RecoverExpiredAsync", StringComparison.Ordinal)];
+
+        Assert.DoesNotContain("applicationCompleted ? \"EFFECT_CONFIRMED\" : \"NO_EFFECT\"", reviewRegion);
+        Assert.DoesNotContain("applicationCompleted ? \"FAILED_AFTER_EFFECT\" : \"FAILED_BEFORE_EFFECT\"", reviewRegion);
+        Assert.Contains("applicationCompleted ? \"EFFECT_CONFIRMED\" : \"INDETERMINATE\"", reviewRegion);
+        Assert.Contains("effectConfirmation = applicationCompleted ? \"CONFIRMED\" : \"UNKNOWN\"", reviewRegion);
+    }
+
+    [Fact]
+    public void SmartGed_review_operation_result_upsert_preserves_confirmed_effect()
+    {
+        var source = File.ReadAllText(RepoPath("InovaGed.Infrastructure", "SmartGed", "SmartGedService.cs"));
+        var upsertRegion = source[source.IndexOf("private static Task UpsertReviewOperationResultAsync", StringComparison.Ordinal)..source.IndexOf("private static Task MarkReviewOperationAuditedAsync", StringComparison.Ordinal)];
+
+        Assert.Contains("when ged.smart_ged_review_operation_result.effect_status = 'EFFECT_CONFIRMED' then 'EFFECT_CONFIRMED'", upsertRegion);
+        Assert.Contains("effect_applied = ged.smart_ged_review_operation_result.effect_applied or excluded.effect_applied", upsertRegion);
+        Assert.Contains("result_payload_json = coalesce(ged.smart_ged_review_operation_result.result_payload_json, '{}'::jsonb) || excluded.result_payload_json", upsertRegion);
+    }
+
+    [Fact]
+    public void SmartGed_recovery_requires_full_admin_policy_in_controller_and_service()
+    {
+        var controller = File.ReadAllText(RepoPath("InovaGed.Web", "Controller", "SmartGedController.cs"));
+        var service = File.ReadAllText(RepoPath("InovaGed.Infrastructure", "SmartGed", "SmartGedService.cs"));
+        var recoveryServiceRegion = service[service.IndexOf("public async Task<SmartGedReviewRecoveryResult> RecoverExpiredAsync", StringComparison.Ordinal)..service.IndexOf("private static async Task<SmartGedReviewRecoveryResult> RecoverExpiredReviewOperationsAsync", StringComparison.Ordinal)];
+
+        Assert.Contains("[Authorize(Policy = AppPolicies.FullAdminOnly)]", controller);
+        Assert.Contains("_accessPolicy.IsAdminAsync", recoveryServiceRegion);
+        Assert.DoesNotContain("GED.DOCUMENTS", recoveryServiceRegion);
+    }
+
+    [Fact]
+    public void Explicit_transaction_migrations_record_history_out_of_band()
+    {
+        var source = File.ReadAllText(RepoPath("InovaGed.Infrastructure", "SystemHealth", "Migrations", "DatabaseMigrationRunner.cs"));
+        var explicitTransactionRegion = source[source.IndexOf("if (HasExplicitTransaction(sql))", StringComparison.Ordinal)..source.IndexOf("await using var transaction = await connection.BeginTransactionAsync(ct)", StringComparison.Ordinal)];
+
+        Assert.Contains("InsertHistoryOutOfBandAsync", explicitTransactionRegion);
+        Assert.Contains("Falha ao registrar histórico", explicitTransactionRegion);
+        Assert.Contains("await using var historyConnection = await db.OpenAsync(ct);", source);
+    }
+
+    [Fact]
     public void Explicit_zero_period_calculates_due_at_equal_to_basis_date()
     {
         var basis = new DateTime(2025, 6, 1, 10, 0, 0, DateTimeKind.Utc);
