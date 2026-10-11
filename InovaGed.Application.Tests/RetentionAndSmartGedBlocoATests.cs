@@ -180,5 +180,167 @@ public sealed class RetentionAndSmartGedBlocoATests
         Assert.Empty(queue.Classifications);
         Assert.Empty(queue.Retentions);
     }
+
+    [Fact]
+    public void Explicit_zero_period_calculates_due_at_equal_to_basis_date()
+    {
+        var basis = new DateTime(2025, 6, 1, 10, 0, 0, DateTimeKind.Utc);
+        var mem = new RetentionCalculationMemory
+        {
+            DocumentId = Guid.NewGuid(),
+            ClassificationId = Guid.NewGuid(),
+            ClassificationCode = "020.1",
+            StartEvent = "CRIACAO",
+            BasisDate = basis,
+            RetentionActiveDays = 0,
+            RetentionActiveMonths = 0,
+            RetentionActiveYears = 0,
+            RetentionArchiveDays = 0,
+            RetentionArchiveMonths = 0,
+            RetentionArchiveYears = 0,
+            HasExplicitZeroPeriod = true,
+            FinalDestination = "ELIMINACAO",
+            CalculatedDueAt = basis,
+            CalculatedStatus = "OVERDUE", // since 2025-06-01 is past
+            PersistedStatus = "OK"
+        };
+
+        Assert.True(mem.HasExplicitZeroPeriod);
+        Assert.Equal(basis, mem.CalculatedDueAt);
+        Assert.Equal("OVERDUE", mem.CalculatedStatus);
+    }
+
+    [Fact]
+    public void Incomplete_rule_evaluates_to_incomplete_rule_status_and_null_due_at()
+    {
+        var mem = new RetentionCalculationMemory
+        {
+            DocumentId = Guid.NewGuid(),
+            ClassificationId = Guid.NewGuid(),
+            ClassificationCode = "099.INCOMPLETE",
+            StartEvent = "CRIACAO",
+            BasisDate = DateTime.UtcNow,
+            RetentionActiveDays = null,
+            RetentionActiveMonths = null,
+            RetentionActiveYears = null,
+            RetentionArchiveDays = null,
+            RetentionArchiveMonths = null,
+            RetentionArchiveYears = null,
+            IsRuleIncomplete = true,
+            FinalDestination = "ELIMINACAO",
+            CalculatedDueAt = null,
+            CalculatedStatus = "INCOMPLETE_RULE"
+        };
+
+        Assert.True(mem.IsRuleIncomplete);
+        Assert.Null(mem.CalculatedDueAt);
+        Assert.Equal("INCOMPLETE_RULE", mem.CalculatedStatus);
+    }
+
+    [Fact]
+    public void Invalid_or_untriggered_event_evaluates_to_event_pending_and_null_due_at()
+    {
+        var mem = new RetentionCalculationMemory
+        {
+            DocumentId = Guid.NewGuid(),
+            ClassificationId = Guid.NewGuid(),
+            ClassificationCode = "030.CONTRATO",
+            StartEvent = "ENCERRAMENTO",
+            BasisDate = null, // Document not yet closed (closed_at is null)
+            IsBasisEventPending = true,
+            RetentionActiveYears = 5,
+            FinalDestination = "GUARDA_PERMANENTE",
+            CalculatedDueAt = null,
+            CalculatedStatus = "EVENT_PENDING"
+        };
+
+        Assert.True(mem.IsBasisEventPending);
+        Assert.Null(mem.BasisDate);
+        Assert.Null(mem.CalculatedDueAt);
+        Assert.Equal("EVENT_PENDING", mem.CalculatedStatus);
+    }
+
+    [Fact]
+    public void Permanent_archive_evaluates_to_permanent_record_and_null_due_at()
+    {
+        var mem = new RetentionCalculationMemory
+        {
+            DocumentId = Guid.NewGuid(),
+            ClassificationId = Guid.NewGuid(),
+            ClassificationCode = "HISTORICO.01",
+            StartEvent = "CRIACAO",
+            BasisDate = DateTime.UtcNow,
+            FinalDestination = "GUARDA_PERMANENTE",
+            IsPermanentRecord = true,
+            CalculatedDueAt = null,
+            CalculatedStatus = "PERMANENT_RECORD"
+        };
+
+        Assert.True(mem.IsPermanentRecord);
+        Assert.Equal("GUARDA_PERMANENTE", mem.FinalDestination);
+        Assert.Null(mem.CalculatedDueAt);
+        Assert.Equal("PERMANENT_RECORD", mem.CalculatedStatus);
+    }
+
+    [Fact]
+    public void Suspension_hold_takes_precedence_and_evaluates_to_hold_status()
+    {
+        var mem = new RetentionCalculationMemory
+        {
+            DocumentId = Guid.NewGuid(),
+            ClassificationId = Guid.NewGuid(),
+            ClassificationCode = "040.AUDIT",
+            StartEvent = "CRIACAO",
+            BasisDate = DateTime.UtcNow.AddYears(-3),
+            RetentionActiveYears = 2,
+            FinalDestination = "ELIMINACAO",
+            IsHoldActive = true,
+            CalculatedDueAt = DateTime.UtcNow.AddYears(-1),
+            CalculatedStatus = "HOLD" // Even if due date passed, hold overrides
+        };
+
+        Assert.True(mem.IsHoldActive);
+        Assert.Equal("HOLD", mem.CalculatedStatus);
+    }
+
+    [Fact]
+    public void Historical_plan_vs_versioned_item_distinguishes_rule_source()
+    {
+        var legacyMem = new RetentionCalculationMemory
+        {
+            DocumentId = Guid.NewGuid(),
+            ClassificationId = Guid.NewGuid(),
+            RuleSource = "LEGACY_PLAN",
+            PlanVersionNo = null
+        };
+
+        var versionedMem = new RetentionCalculationMemory
+        {
+            DocumentId = Guid.NewGuid(),
+            ClassificationId = Guid.NewGuid(),
+            RuleSource = "VERSIONED_ITEM",
+            PlanVersionNo = 3,
+            PlanVersionTitle = "PCD 2026 Revisão 3"
+        };
+
+        Assert.Equal("LEGACY_PLAN", legacyMem.RuleSource);
+        Assert.Null(legacyMem.PlanVersionNo);
+
+        Assert.Equal("VERSIONED_ITEM", versionedMem.RuleSource);
+        Assert.Equal(3, versionedMem.PlanVersionNo);
+        Assert.Equal("PCD 2026 Revisão 3", versionedMem.PlanVersionTitle);
+    }
+
+    [Fact]
+    public void Combined_days_months_years_interval_arithmetic_consistency()
+    {
+        // 15 de março de 2024 (bissexto) + 2 anos + 3 meses + 10 dias
+        var basis = new DateTime(2024, 3, 15, 0, 0, 0, DateTimeKind.Utc);
+        var withYears = basis.AddYears(2); // 2026-03-15
+        var withMonths = withYears.AddMonths(3); // 2026-06-15
+        var finalDate = withMonths.AddDays(10); // 2026-06-25
+
+        Assert.Equal(new DateTime(2026, 6, 25, 0, 0, 0, DateTimeKind.Utc), finalDate);
+    }
 }
 

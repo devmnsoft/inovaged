@@ -38,40 +38,77 @@ public sealed class SmartGedService : IDocumentIntelligenceService, IDocumentCla
 
     public async Task<Guid> AnalyzeDocumentAsync(Guid tenantId, Guid documentId, Guid? userId, CancellationToken ct)
     {
+        if (userId.HasValue)
+        {
+            var canAnalyze = await _authorization.CanAccessDocumentAsync(tenantId, userId.Value, documentId, "CLASSIFY", new Dictionary<string, string>(), ct)
+                          || await _authorization.CanAccessDocumentAsync(tenantId, userId.Value, documentId, "EDIT", new Dictionary<string, string>(), ct);
+            if (!canAnalyze)
+                throw new UnauthorizedAccessException("Usuário não possui autorização para analisar este documento.");
+        }
+
         await using var c = await _db.OpenAsync(ct);
-        var document = await c.QuerySingleOrDefaultAsync<DocumentTextRow>(new CommandDefinition("select id as Id,coalesce(title,'Documento sem título') as Title from ged.document where tenant_id=@tenantId and id=@documentId and coalesce(reg_status,'A')='A'", new { tenantId, documentId }, cancellationToken: ct));
+        var document = await c.QuerySingleOrDefaultAsync<DocumentHeaderRow>(new CommandDefinition(
+            "select id as Id, coalesce(title,'Documento sem título') as Title, current_version_id as CurrentVersionId from ged.document where tenant_id=@tenantId and id=@documentId and coalesce(reg_status,'A')='A'",
+            new { tenantId, documentId }, cancellationToken: ct));
         if (document is null) throw new InvalidOperationException("Documento não encontrado no tenant informado.");
+
         var hasSearch = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select to_regclass('ged.document_search') is not null", cancellationToken: ct));
         var text = document.Title;
         if (hasSearch)
         {
             var columns = (await c.QueryAsync<string>(new CommandDefinition("select column_name from information_schema.columns where table_schema='ged' and table_name='document_search'", cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var textColumn = columns.Contains("ocr_text") ? "ocr_text" : columns.Contains("content") ? "content" : columns.Contains("search_text") ? "search_text" : null;
-            if (textColumn is not null && columns.Contains("document_id")) text += "\n" + await c.ExecuteScalarAsync<string?>(new CommandDefinition($"select {textColumn} from ged.document_search where tenant_id=@tenantId and document_id=@documentId limit 1", new { tenantId, documentId }, cancellationToken: ct));
+            if (textColumn is not null && columns.Contains("document_id"))
+            {
+                var searchContent = await c.ExecuteScalarAsync<string?>(new CommandDefinition($"select {textColumn} from ged.document_search where tenant_id=@tenantId and document_id=@documentId limit 1", new { tenantId, documentId }, cancellationToken: ct));
+                if (!string.IsNullOrWhiteSpace(searchContent)) text += "\n" + searchContent;
+            }
         }
+
         var extraction = await _extractor.ExtractAsync(new(text, document.Title), ct);
         var id = Guid.NewGuid();
-        await c.ExecuteAsync(new CommandDefinition("""
+
+        var aiCols = (await c.QueryAsync<string>(new CommandDefinition("select column_name from information_schema.columns where table_schema='ged' and table_name='document_ai_analysis'", cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var hasVersionCol = aiCols.Contains("version_id");
+
+        if (hasVersionCol)
+        {
+            await c.ExecuteAsync(new CommandDefinition("""
+insert into ged.document_ai_analysis(id,tenant_id,document_id,version_id,analysis_status,analysis_source,extracted_text,extracted_summary,detected_document_type,detected_subject,detected_date,detected_identifiers,detected_sensitive_data,confidence,analyzed_at)
+values(@id,@tenantId,@documentId,@CurrentVersionId,'COMPLETED','LOCAL_RULES',@text,@Summary,@DocumentType,@Subject,@DetectedDate,cast(@identifiers as jsonb),cast(@sensitive as jsonb),@Confidence,now())
+""", new { id, tenantId, documentId, CurrentVersionId = document.CurrentVersionId, text, extraction.Summary, extraction.DocumentType, extraction.Subject, DetectedDate = extraction.DetectedDate?.ToDateTime(TimeOnly.MinValue), identifiers = JsonSerializer.Serialize(extraction.Identifiers), sensitive = JsonSerializer.Serialize(extraction.SensitiveIndicators), extraction.Confidence }, cancellationToken: ct));
+        }
+        else
+        {
+            await c.ExecuteAsync(new CommandDefinition("""
 insert into ged.document_ai_analysis(id,tenant_id,document_id,analysis_status,analysis_source,extracted_text,extracted_summary,detected_document_type,detected_subject,detected_date,detected_identifiers,detected_sensitive_data,confidence,analyzed_at)
 values(@id,@tenantId,@documentId,'COMPLETED','LOCAL_RULES',@text,@Summary,@DocumentType,@Subject,@DetectedDate,cast(@identifiers as jsonb),cast(@sensitive as jsonb),@Confidence,now())
 """, new { id, tenantId, documentId, text, extraction.Summary, extraction.DocumentType, extraction.Subject, DetectedDate = extraction.DetectedDate?.ToDateTime(TimeOnly.MinValue), identifiers = JsonSerializer.Serialize(extraction.Identifiers), sensitive = JsonSerializer.Serialize(extraction.SensitiveIndicators), extraction.Confidence }, cancellationToken: ct));
-        await CreateSuggestionsAsync(c, tenantId, documentId, id, extraction, ct);
-        await Audit(tenantId, userId, "DOCUMENT_AI_ANALYZED", documentId, new { analysisId = id, source = "LOCAL_RULES", extraction.Confidence }, ct);
+        }
+
+        await CreateSuggestionsAsync(c, tenantId, documentId, document.CurrentVersionId, id, extraction, ct);
+        await Audit(tenantId, userId, "DOCUMENT_AI_ANALYZED", documentId, new { analysisId = id, versionId = document.CurrentVersionId, source = "LOCAL_RULES", extraction.Confidence }, ct);
         return id;
     }
 
-    private async Task CreateSuggestionsAsync(Npgsql.NpgsqlConnection c, Guid tenantId, Guid documentId, Guid analysisId, DocumentMetadataExtractionResult extraction, CancellationToken ct)
+    private async Task CreateSuggestionsAsync(Npgsql.NpgsqlConnection c, Guid tenantId, Guid documentId, Guid? versionId, Guid analysisId, DocumentMetadataExtractionResult extraction, CancellationToken ct)
     {
         var planReady = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select to_regclass('ged.classification_plan') is not null", cancellationToken: ct));
         if (planReady)
         {
-            var maxVersion = await c.ExecuteScalarAsync<int?>(new CommandDefinition(
-                "select max(version_no) from ged.classification_plan_version where tenant_id=@tenantId and coalesce(reg_status,'A')='A'",
-                new { tenantId }, cancellationToken: ct));
+            var maxVersionRow = await c.QuerySingleOrDefaultAsync<PlanVersionInfoRow>(new CommandDefinition("""
+select id as Id, version_no as VersionNo
+from ged.classification_plan_version
+where tenant_id=@tenantId and coalesce(reg_status,'A')='A'
+order by version_no desc limit 1
+""", new { tenantId }, cancellationToken: ct));
 
             List<PlanRow> plans = [];
-            if (maxVersion.HasValue)
+            Guid? planVersionId = null;
+
+            if (maxVersionRow is not null)
             {
+                planVersionId = maxVersionRow.Id;
                 // Versão vigente do plano de classificação
                 plans = (await c.QueryAsync<PlanRow>(new CommandDefinition("""
 select coalesce(i.classification_id, cp.id) as Id,
@@ -85,11 +122,10 @@ left join ged.classification_plan cp on cp.tenant_id=i.tenant_id and cp.id=i.cla
 where i.tenant_id=@tenantId and coalesce(i.is_active,true) and coalesce(v.reg_status,'A')='A'
   and v.version_no=@maxVersion
 order by i.code limit 500
-""", new { tenantId, maxVersion = maxVersion.Value }, cancellationToken: ct))).ToList();
+""", new { tenantId, maxVersion = maxVersionRow.VersionNo }, cancellationToken: ct))).ToList();
 
                 if (plans.Count == 0)
                 {
-                    // Plano vigente existe mas não tem classes ativas elegíveis; NÃO faz fallback para planos antigos
                     await c.ExecuteAsync(new CommandDefinition("insert into ged.document_quality_issue(tenant_id,document_id,issue_type,severity,title,recommended_action) values(@tenantId,@documentId,'NO_ELIGIBLE_CLASSES','MEDIUM','Plano de classificação vigente sem classes ativas.','Cadastre ou ative classes na versão vigente do plano de classificação.')", new { tenantId, documentId }, cancellationToken: ct));
                     return;
                 }
@@ -109,10 +145,42 @@ order by code limit 500
             if (best is { Score: > 0 })
             {
                 var confidence = Math.Min(95, 45 + best.Score * 15);
-                await c.ExecuteAsync(new CommandDefinition("insert into ged.document_classification_suggestion(tenant_id,document_id,analysis_id,suggested_classification_id,suggested_classification_code,suggested_classification_title,suggested_reason,confidence) values(@tenantId,@documentId,@analysisId,@Id,@Code,@Title,@reason,@confidence)", new { tenantId, documentId, analysisId, best.Plan.Id, best.Plan.Code, best.Plan.Title, reason = $"Correspondência local de {best.Score} palavra(s)-chave.", confidence }, cancellationToken: ct));
-                await Audit(tenantId, null, "CLASSIFICATION_SUGGESTION_CREATED", documentId, new { analysisId, best.Plan.Id, confidence }, ct);
-                await c.ExecuteAsync(new CommandDefinition("insert into ged.document_retention_suggestion(tenant_id,document_id,analysis_id,suggested_phase,suggested_final_destination,suggested_reason,confidence,status) values(@tenantId,@documentId,@analysisId,'CORRENTE',@destination,'Derivada da classificação sugerida; exige confirmação humana.',@confidence,'PENDING')", new { tenantId, documentId, analysisId, destination = best.Plan.FinalDestination ?? "REQUER_REVISAO", confidence = confidence - 10 }, cancellationToken: ct));
-                await Audit(tenantId, null, "RETENTION_SUGGESTION_CREATED", documentId, new { analysisId }, ct);
+
+                var classCols = (await c.QueryAsync<string>(new CommandDefinition("select column_name from information_schema.columns where table_schema='ged' and table_name='document_classification_suggestion'", cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                if (classCols.Contains("version_id"))
+                {
+                    await c.ExecuteAsync(new CommandDefinition("""
+insert into ged.document_classification_suggestion(tenant_id,document_id,analysis_id,version_id,plan_version_id,suggested_classification_id,suggested_classification_code,suggested_classification_title,suggested_reason,confidence)
+values(@tenantId,@documentId,@analysisId,@versionId,@planVersionId,@Id,@Code,@Title,@reason,@confidence)
+""", new { tenantId, documentId, analysisId, versionId, planVersionId, best.Plan.Id, best.Plan.Code, best.Plan.Title, reason = $"Correspondência local de {best.Score} palavra(s)-chave.", confidence }, cancellationToken: ct));
+                }
+                else
+                {
+                    await c.ExecuteAsync(new CommandDefinition("""
+insert into ged.document_classification_suggestion(tenant_id,document_id,analysis_id,suggested_classification_id,suggested_classification_code,suggested_classification_title,suggested_reason,confidence)
+values(@tenantId,@documentId,@analysisId,@Id,@Code,@Title,@reason,@confidence)
+""", new { tenantId, documentId, analysisId, best.Plan.Id, best.Plan.Code, best.Plan.Title, reason = $"Correspondência local de {best.Score} palavra(s)-chave.", confidence }, cancellationToken: ct));
+                }
+
+                await Audit(tenantId, null, "CLASSIFICATION_SUGGESTION_CREATED", documentId, new { analysisId, versionId, best.Plan.Id, confidence }, ct);
+
+                var retCols = (await c.QueryAsync<string>(new CommandDefinition("select column_name from information_schema.columns where table_schema='ged' and table_name='document_retention_suggestion'", cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                if (retCols.Contains("version_id"))
+                {
+                    await c.ExecuteAsync(new CommandDefinition("""
+insert into ged.document_retention_suggestion(tenant_id,document_id,analysis_id,version_id,plan_version_id,suggested_phase,suggested_final_destination,suggested_reason,confidence,status)
+values(@tenantId,@documentId,@analysisId,@versionId,@planVersionId,'CORRENTE',@destination,'Derivada da classificação sugerida; exige confirmação humana.',@confidence,'PENDING')
+""", new { tenantId, documentId, analysisId, versionId, planVersionId, destination = best.Plan.FinalDestination ?? "REQUER_REVISAO", confidence = confidence - 10 }, cancellationToken: ct));
+                }
+                else
+                {
+                    await c.ExecuteAsync(new CommandDefinition("""
+insert into ged.document_retention_suggestion(tenant_id,document_id,analysis_id,suggested_phase,suggested_final_destination,suggested_reason,confidence,status)
+values(@tenantId,@documentId,@analysisId,'CORRENTE',@destination,'Derivada da classificação sugerida; exige confirmação humana.',@confidence,'PENDING')
+""", new { tenantId, documentId, analysisId, destination = best.Plan.FinalDestination ?? "REQUER_REVISAO", confidence = confidence - 10 }, cancellationToken: ct));
+                }
+
+                await Audit(tenantId, null, "RETENTION_SUGGESTION_CREATED", documentId, new { analysisId, versionId }, ct);
             }
         }
         else
@@ -120,7 +188,9 @@ order by code limit 500
             await c.ExecuteAsync(new CommandDefinition("insert into ged.document_quality_issue(tenant_id,document_id,issue_type,severity,title,recommended_action) values(@tenantId,@documentId,'CLASSIFICATION_PLAN_UNAVAILABLE','HIGH','Plano de classificação indisponível para sugestão automática.','Execute a migration de compatibilidade do plano de classificação.')", new { tenantId, documentId }, cancellationToken: ct));
             await Audit(tenantId, null, "DOCUMENT_QUALITY_ISSUE_CREATED", documentId, new { type = "CLASSIFICATION_PLAN_UNAVAILABLE" }, ct);
         }
-        if (extraction.Confidence < 55) await c.ExecuteAsync(new CommandDefinition("insert into ged.document_quality_issue(tenant_id,document_id,issue_type,severity,title,recommended_action) values(@tenantId,@documentId,'LOW_CONFIDENCE','MEDIUM','Análise com baixa confiança','Revise OCR e metadados do documento.')", new { tenantId, documentId }, cancellationToken: ct));
+
+        if (extraction.Confidence < 55)
+            await c.ExecuteAsync(new CommandDefinition("insert into ged.document_quality_issue(tenant_id,document_id,issue_type,severity,title,recommended_action) values(@tenantId,@documentId,'LOW_CONFIDENCE','MEDIUM','Análise com baixa confiança','Revise OCR e metadados do documento.')", new { tenantId, documentId }, cancellationToken: ct));
     }
 
     public async Task<DocumentIntelligenceDetails?> GetAnalysisAsync(Guid tenantId, Guid documentId, CancellationToken ct)
@@ -128,34 +198,56 @@ order by code limit 500
         await using var c = await _db.OpenAsync(ct);
         var a = await c.QuerySingleOrDefaultAsync<AnalysisRow>(new CommandDefinition("select id as Id,document_id as DocumentId,analysis_status as Status,extracted_summary as Summary,detected_document_type as DocumentType,detected_subject as Subject,detected_date as DetectedDate,detected_identifiers::text as IdentifiersJson,detected_sensitive_data::text as SensitiveJson,confidence as Confidence from ged.document_ai_analysis where tenant_id=@tenantId and document_id=@documentId and reg_status='A' order by created_at desc limit 1", new { tenantId, documentId }, cancellationToken: ct));
         if (a is null) return null;
-        var classification = (await ListClassifications(c, tenantId, "and analysis_id=@analysisId", new { tenantId, analysisId = a.Id }, ct)).FirstOrDefault();
-        var retention = (await ListRetentions(c, tenantId, "and analysis_id=@analysisId", new { tenantId, analysisId = a.Id }, ct)).FirstOrDefault();
+        var classification = (await ListClassifications(c, tenantId, "and s.analysis_id=@analysisId", new { tenantId, analysisId = a.Id }, ct)).FirstOrDefault();
+        var retention = (await ListRetentions(c, tenantId, "and s.analysis_id=@analysisId", new { tenantId, analysisId = a.Id }, ct)).FirstOrDefault();
         var issues = (await c.QueryAsync<IssueRow>(new CommandDefinition("select id as Id,document_id as DocumentId,issue_type as Type,severity as Severity,title as Title,recommended_action as RecommendedAction,status as Status from ged.document_quality_issue where tenant_id=@tenantId and document_id=@documentId and reg_status='A' order by created_at desc", new { tenantId, documentId }, cancellationToken: ct))).Select(Map).ToArray();
         return new(a.Id, a.DocumentId, a.Status, a.Summary, a.DocumentType, a.Subject, a.DetectedDate.HasValue ? DateOnly.FromDateTime(a.DetectedDate.Value) : null, DeserializeDictionary(a.IdentifiersJson), DeserializeList(a.SensitiveJson), a.Confidence, classification, retention, issues);
     }
 
-    public async Task<IReadOnlyList<DocumentClassificationSuggestionItem>> ListPendingAsync(Guid tenantId, CancellationToken ct) =>
-        await ListAsync(tenantId, "PENDING", ct);
+    public Task<IReadOnlyList<DocumentClassificationSuggestionItem>> ListPendingAsync(Guid tenantId, CancellationToken ct) =>
+        ListPendingAsync(tenantId, null, ct);
 
-    public async Task<IReadOnlyList<DocumentClassificationSuggestionItem>> ListAsync(Guid tenantId, string? status, CancellationToken ct)
+    public Task<IReadOnlyList<DocumentClassificationSuggestionItem>> ListPendingAsync(Guid tenantId, Guid? userId, CancellationToken ct) =>
+        ListAsync(tenantId, "PENDING", userId, ct);
+
+    public Task<IReadOnlyList<DocumentClassificationSuggestionItem>> ListAsync(Guid tenantId, string? status, CancellationToken ct) =>
+        ListAsync(tenantId, status, null, ct);
+
+    public async Task<IReadOnlyList<DocumentClassificationSuggestionItem>> ListAsync(Guid tenantId, string? status, Guid? userId, CancellationToken ct)
     {
         await using var c = await _db.OpenAsync(ct);
         var filter = string.IsNullOrWhiteSpace(status) || string.Equals(status, "ALL", StringComparison.OrdinalIgnoreCase)
             ? ""
             : "and s.status = @status";
-        return await ListClassifications(c, tenantId, filter, new { tenantId, status }, ct);
+        var items = await ListClassifications(c, tenantId, filter, new { tenantId, status }, ct);
+        if (!userId.HasValue || items.Count == 0) return items;
+
+        var docIds = items.Select(x => x.DocumentId).Distinct().ToArray();
+        var authorized = await _authorization.FilterDocumentsAsync(tenantId, userId.Value, docIds, "VIEW", ct);
+        return items.Where(x => authorized.Contains(x.DocumentId)).ToArray();
     }
 
-    async Task<IReadOnlyList<DocumentRetentionSuggestionItem>> IDocumentRetentionSuggestionService.ListPendingAsync(Guid tenantId, CancellationToken ct) =>
-        await ((IDocumentRetentionSuggestionService)this).ListAsync(tenantId, "PENDING", ct);
+    Task<IReadOnlyList<DocumentRetentionSuggestionItem>> IDocumentRetentionSuggestionService.ListPendingAsync(Guid tenantId, CancellationToken ct) =>
+        ((IDocumentRetentionSuggestionService)this).ListPendingAsync(tenantId, null, ct);
 
-    async Task<IReadOnlyList<DocumentRetentionSuggestionItem>> IDocumentRetentionSuggestionService.ListAsync(Guid tenantId, string? status, CancellationToken ct)
+    Task<IReadOnlyList<DocumentRetentionSuggestionItem>> IDocumentRetentionSuggestionService.ListPendingAsync(Guid tenantId, Guid? userId, CancellationToken ct) =>
+        ((IDocumentRetentionSuggestionService)this).ListAsync(tenantId, "PENDING", userId, ct);
+
+    Task<IReadOnlyList<DocumentRetentionSuggestionItem>> IDocumentRetentionSuggestionService.ListAsync(Guid tenantId, string? status, CancellationToken ct) =>
+        ((IDocumentRetentionSuggestionService)this).ListAsync(tenantId, status, null, ct);
+
+    async Task<IReadOnlyList<DocumentRetentionSuggestionItem>> IDocumentRetentionSuggestionService.ListAsync(Guid tenantId, string? status, Guid? userId, CancellationToken ct)
     {
         await using var c = await _db.OpenAsync(ct);
         var filter = string.IsNullOrWhiteSpace(status) || string.Equals(status, "ALL", StringComparison.OrdinalIgnoreCase)
             ? ""
             : "and s.status = @status";
-        return await ListRetentions(c, tenantId, filter, new { tenantId, status }, ct);
+        var items = await ListRetentions(c, tenantId, filter, new { tenantId, status }, ct);
+        if (!userId.HasValue || items.Count == 0) return items;
+
+        var docIds = items.Select(x => x.DocumentId).Distinct().ToArray();
+        var authorized = await _authorization.FilterDocumentsAsync(tenantId, userId.Value, docIds, "VIEW", ct);
+        return items.Where(x => authorized.Contains(x.DocumentId)).ToArray();
     }
 
     public Task AcceptAsync(Guid tenantId, Guid suggestionId, Guid userId, string? notes, CancellationToken ct) => ReviewClassification(tenantId, suggestionId, userId, "ACCEPTED", notes, ct);
@@ -166,11 +258,13 @@ order by code limit 500
     private async Task ReviewClassification(Guid tenantId, Guid id, Guid userId, string status, string? notes, CancellationToken ct)
     {
         await using var c = await _db.OpenAsync(ct);
+
         var existing = await c.QuerySingleOrDefaultAsync<ClassificationSuggestionDetailRow>(new CommandDefinition("""
-select id as Id, document_id as DocumentId, suggested_classification_id as ClassificationId,
-       confidence as Confidence, status as Status
-from ged.document_classification_suggestion
-where tenant_id = @tenantId and id = @id
+select s.id as Id, s.document_id as DocumentId, s.suggested_classification_id as ClassificationId,
+       s.confidence as Confidence, s.status as Status,
+       s.version_id as VersionId, s.plan_version_id as PlanVersionId
+from ged.document_classification_suggestion s
+where s.tenant_id = @tenantId and s.id = @id
 """, new { tenantId, id }, cancellationToken: ct));
 
         if (existing is null) throw new InvalidOperationException("Sugestão não encontrada.");
@@ -182,13 +276,21 @@ where tenant_id = @tenantId and id = @id
         if (!string.Equals(existing.Status, "PENDING", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException($"Sugestão já revisada anteriormente com situação '{existing.Status}'.");
 
+        // 1. Validar autorização documental no servidor tanto para ACEITAR quanto para REJEITAR
+        var allowed = await _authorization.CanAccessDocumentAsync(tenantId, userId, existing.DocumentId, "CLASSIFY", new Dictionary<string, string>(), ct);
+        if (!allowed)
+            throw new UnauthorizedAccessException("Usuário não possui autorização para classificar este documento.");
+
         if (status == "REJECTED")
         {
-            await c.ExecuteAsync(new CommandDefinition("""
+            var updated = await c.ExecuteAsync(new CommandDefinition("""
 update ged.document_classification_suggestion
 set status = 'REJECTED', reviewed_by = @userId, reviewed_at = now(), review_notes = @notes
 where tenant_id = @tenantId and id = @id and status = 'PENDING'
 """, new { tenantId, id, userId, notes }, cancellationToken: ct));
+
+            if (updated == 0)
+                throw new InvalidOperationException("Sugestão já revisada ou não pendente.");
 
             await Audit(tenantId, userId, "CLASSIFICATION_SUGGESTION_REJECTED", existing.DocumentId, new { id, notes }, ct);
             return;
@@ -198,11 +300,6 @@ where tenant_id = @tenantId and id = @id and status = 'PENDING'
         {
             if (!existing.ClassificationId.HasValue)
                 throw new InvalidOperationException("Sugestão sem classe associada não pode ser aceita.");
-
-            // 1. Validar autorização documental no servidor
-            var allowed = await _authorization.CanAccessDocumentAsync(tenantId, userId, existing.DocumentId, "CLASSIFY", new Dictionary<string, string>(), ct);
-            if (!allowed)
-                throw new UnauthorizedAccessException("Usuário não possui autorização para classificar este documento.");
 
             // 2. Proteger contra sugestão obsoleta e validar documento ativo
             var docState = await c.QuerySingleOrDefaultAsync<DocumentCurrentStateRow>(new CommandDefinition("""
@@ -214,6 +311,11 @@ where tenant_id = @tenantId and id = @DocumentId
 
             if (docState is null || docState.RegStatus != "A" || docState.DocStatus == "DELETED")
                 throw new InvalidOperationException("Documento não encontrado ou inativo.");
+
+            if (existing.VersionId.HasValue && docState.CurrentVersionId.HasValue && existing.VersionId.Value != docState.CurrentVersionId.Value)
+            {
+                throw new InvalidOperationException("A sugestão refere-se a uma versão documental anterior à atual. É necessária uma nova análise.");
+            }
 
             // 3. Validar classe e versão elegíveis
             var maxVersion = await c.ExecuteScalarAsync<int?>(new CommandDefinition(
@@ -261,16 +363,15 @@ select exists(
             if (!saveResult.Success)
                 throw new InvalidOperationException(saveResult.Message);
 
-            // 5. Atualizar status da sugestão e sugestão de retenção vinculada
-            await c.ExecuteAsync(new CommandDefinition("""
+            // 5. Atualizar EXCLUSIVAMENTE a sugestão revisada (não aprova temporalidade indiscriminadamente)
+            var rowsUpdated = await c.ExecuteAsync(new CommandDefinition("""
 update ged.document_classification_suggestion
 set status = 'ACCEPTED', reviewed_by = @userId, reviewed_at = now(), review_notes = @notes
-where tenant_id = @tenantId and id = @id;
+where tenant_id = @tenantId and id = @id and status = 'PENDING';
+""", new { tenantId, id, userId, notes }, cancellationToken: ct));
 
-update ged.document_retention_suggestion
-set status = 'ACCEPTED', reviewed_by = @userId, reviewed_at = now(), review_notes = 'Aceite automático derivado da classificação assistida'
-where tenant_id = @tenantId and document_id = @DocumentId and status = 'PENDING';
-""", new { tenantId, id, userId, notes, DocumentId = existing.DocumentId }, cancellationToken: ct));
+            if (rowsUpdated == 0)
+                throw new InvalidOperationException("Sugestão já revisada concorrentemente.");
 
             await Audit(tenantId, userId, "CLASSIFICATION_SUGGESTION_ACCEPTED", existing.DocumentId, new
             {
@@ -282,7 +383,76 @@ where tenant_id = @tenantId and document_id = @DocumentId and status = 'PENDING'
         }
     }
 
-    private async Task ReviewRetention(Guid tenantId, Guid id, Guid userId, string status, string? notes, CancellationToken ct) { await using var c = await _db.OpenAsync(ct); var doc = await c.ExecuteScalarAsync<Guid?>(new CommandDefinition("update ged.document_retention_suggestion set status=@status,reviewed_by=@userId,reviewed_at=now(),review_notes=@notes where tenant_id=@tenantId and id=@id and status='PENDING' returning document_id", new { tenantId, id, userId, status, notes }, cancellationToken: ct)); if (!doc.HasValue) throw new InvalidOperationException("Sugestão não encontrada ou já revisada."); await Audit(tenantId,userId,$"RETENTION_SUGGESTION_{status}",doc,new{id,notes},ct); }
+    private async Task ReviewRetention(Guid tenantId, Guid id, Guid userId, string status, string? notes, CancellationToken ct)
+    {
+        await using var c = await _db.OpenAsync(ct);
+        var existing = await c.QuerySingleOrDefaultAsync<RetentionSuggestionDetailRow>(new CommandDefinition("""
+select s.id as Id, s.document_id as DocumentId, s.suggested_rule_id as RuleId,
+       s.confidence as Confidence, s.status as Status, s.version_id as VersionId
+from ged.document_retention_suggestion s
+where s.tenant_id = @tenantId and s.id = @id
+""", new { tenantId, id }, cancellationToken: ct));
+
+        if (existing is null) throw new InvalidOperationException("Sugestão não encontrada.");
+
+        if (string.Equals(existing.Status, status, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (!string.Equals(existing.Status, "PENDING", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Sugestão já revisada anteriormente com situação '{existing.Status}'.");
+
+        var allowed = await _authorization.CanAccessDocumentAsync(tenantId, userId, existing.DocumentId, "CLASSIFY", new Dictionary<string, string>(), ct)
+                   || await _authorization.CanAccessDocumentAsync(tenantId, userId, existing.DocumentId, "RETENTION_REVIEW", new Dictionary<string, string>(), ct);
+        if (!allowed)
+            throw new UnauthorizedAccessException("Usuário não possui autorização para revisar temporalidade deste documento.");
+
+        var docState = await c.QuerySingleOrDefaultAsync<DocumentCurrentStateRow>(new CommandDefinition("""
+select id as Id, coalesce(status,'') as DocStatus, coalesce(reg_status,'A') as RegStatus,
+       classification_id as CurrentClassificationId, current_version_id as CurrentVersionId
+from ged.document
+where tenant_id = @tenantId and id = @DocumentId
+""", new { tenantId, DocumentId = existing.DocumentId }, cancellationToken: ct));
+
+        if (docState is null || docState.RegStatus != "A" || docState.DocStatus == "DELETED")
+            throw new InvalidOperationException("Documento não encontrado ou inativo.");
+
+        if (status == "REJECTED")
+        {
+            var updated = await c.ExecuteAsync(new CommandDefinition("""
+update ged.document_retention_suggestion
+set status = 'REJECTED', reviewed_by = @userId, reviewed_at = now(), review_notes = @notes
+where tenant_id = @tenantId and id = @id and status = 'PENDING'
+""", new { tenantId, id, userId, notes }, cancellationToken: ct));
+
+            if (updated == 0) throw new InvalidOperationException("Sugestão já revisada ou não pendente.");
+            await Audit(tenantId, userId, "RETENTION_SUGGESTION_REJECTED", existing.DocumentId, new { id, notes }, ct);
+            return;
+        }
+
+        if (status == "ACCEPTED")
+        {
+            if (existing.VersionId.HasValue && docState.CurrentVersionId.HasValue && existing.VersionId.Value != docState.CurrentVersionId.Value)
+                throw new InvalidOperationException("A recomendação de temporalidade refere-se a uma versão anterior do documento.");
+
+            // Recalcular temporalidade com a base canônica (BuildRetentionCte)
+            var recalcResult = await _retentionJobs.RecalculateOneAsync(tenantId, existing.DocumentId, 30, ct);
+
+            var updated = await c.ExecuteAsync(new CommandDefinition("""
+update ged.document_retention_suggestion
+set status = 'ACCEPTED', reviewed_by = @userId, reviewed_at = now(), review_notes = @notes
+where tenant_id = @tenantId and id = @id and status = 'PENDING'
+""", new { tenantId, id, userId, notes }, cancellationToken: ct));
+
+            if (updated == 0) throw new InvalidOperationException("Sugestão já revisada concorrentemente.");
+
+            await Audit(tenantId, userId, "RETENTION_SUGGESTION_ACCEPTED", existing.DocumentId, new
+            {
+                id,
+                recalculated = recalcResult > 0,
+                notes
+            }, ct);
+        }
+    }
 
     public async Task<SmartGedSearchResult> SearchAsync(SmartGedSearchQuery query, CancellationToken ct)
     {
@@ -293,14 +463,16 @@ where tenant_id = @tenantId and document_id = @DocumentId and status = 'PENDING'
             || query.CreatedAfter.HasValue || query.CreatedBefore.HasValue || !string.IsNullOrWhiteSpace(query.RetentionStatus);
 
         if (term.Length < 2 && !hasFilters)
-            return new(term, [], 0);
+            return new(term, [], 0, 0, query.Page, Math.Clamp(query.Limit, 1, 100));
 
         var createdAfter = query.CreatedAfter;
         var createdBefore = query.CreatedBefore;
         if (createdAfter.HasValue && createdBefore.HasValue && createdAfter.Value > createdBefore.Value)
         {
-            (createdAfter, createdBefore) = (createdBefore, createdAfter);
+            throw new ArgumentException("A data inicial não pode ser superior à data final.");
         }
+
+        var endOfDay = createdBefore.HasValue ? createdBefore.Value.Date.AddDays(1).AddTicks(-1) : (DateTime?)null;
 
         var sql = new System.Text.StringBuilder("""
 select d.id as DocumentId,
@@ -311,13 +483,24 @@ select d.id as DocumentId,
        case when exists(select 1 from ged.document_quality_issue qi where qi.tenant_id=d.tenant_id and qi.document_id=d.id and qi.status='OPEN') then 'ATENÇÃO' else 'OK' end as QualityStatus,
        v.version_number as VersionNumber,
        d.retention_status as RetentionStatus,
-       case when a.created_at is not null and d.updated_at is not null and a.created_at < d.updated_at then true else false end as IsAnalysisOutdated
+       case
+           when a.id is null then false
+           when a.version_id is not null and d.current_version_id is not null and a.version_id <> d.current_version_id then true
+           when coalesce(a.is_legacy_unproven, false) then true
+           when a.created_at is not null and d.updated_at is not null and a.created_at < d.updated_at then true
+           else false
+       end as IsAnalysisOutdated,
+       coalesce(a.is_legacy_unproven, a.version_id is null and a.id is not null) as IsLegacyUnproven,
+       a.version_id as AnalyzedVersionId,
+       d.current_version_id as CurrentVersionId
 from ged.document d
 left join lateral (
-    select id, analysis_status, extracted_summary, extracted_text, confidence, created_at
+    select id, analysis_status, extracted_summary, extracted_text, confidence, created_at,
+           version_id, is_legacy_unproven
     from ged.document_ai_analysis a
     where a.tenant_id = d.tenant_id and a.document_id = d.id and a.reg_status = 'A'
-    order by a.created_at desc limit 1
+    order by (a.version_id = d.current_version_id) desc nulls last, a.created_at desc
+    limit 1
 ) a on true
 left join ged.document_version v on v.id = d.current_version_id
 left join ged.classification_plan cp on cp.id = d.classification_id and cp.tenant_id = d.tenant_id
@@ -329,7 +512,6 @@ where d.tenant_id = @TenantId
 
         var dp = new DynamicParameters();
         dp.Add("TenantId", query.TenantId);
-        dp.Add("limit", Math.Clamp(query.Limit, 1, 100));
 
         if (!string.IsNullOrWhiteSpace(term))
         {
@@ -356,10 +538,10 @@ where d.tenant_id = @TenantId
             sql.Append(" and d.created_at >= @CreatedAfter");
             dp.Add("CreatedAfter", createdAfter.Value);
         }
-        if (createdBefore.HasValue)
+        if (endOfDay.HasValue)
         {
-            sql.Append(" and d.created_at <= @CreatedBefore");
-            dp.Add("CreatedBefore", createdBefore.Value);
+            sql.Append(" and d.created_at <= @EndOfDay");
+            dp.Add("EndOfDay", endOfDay.Value);
         }
         if (!string.IsNullOrWhiteSpace(query.RetentionStatus))
         {
@@ -367,17 +549,26 @@ where d.tenant_id = @TenantId
             dp.Add("RetentionStatus", query.RetentionStatus);
         }
 
-        sql.Append(" order by d.created_at desc, d.id desc limit @limit");
+        sql.Append(" order by d.created_at desc, d.id desc");
 
-        var rows = (await c.QueryAsync<SearchRow>(new CommandDefinition(sql.ToString(), dp, cancellationToken: ct))).ToList();
+        // Executa busca ordenada completa para autorização precisa (evita corte de LIMIT antes de autorização)
+        var allCandidateRows = (await c.QueryAsync<SearchRow>(new CommandDefinition(sql.ToString(), dp, cancellationToken: ct))).ToList();
 
-        var docIds = rows.Select(x => x.DocumentId).Distinct().ToArray();
+        var docIds = allCandidateRows.Select(x => x.DocumentId).Distinct().ToArray();
         var authorizedIds = query.UserId.HasValue
             ? await _authorization.FilterDocumentsAsync(query.TenantId, query.UserId.Value, docIds, "VIEW", ct)
             : docIds.ToHashSet();
 
-        var items = rows
+        var authorizedRows = allCandidateRows
             .Where(x => authorizedIds.Contains(x.DocumentId))
+            .ToList();
+
+        var pageSize = Math.Clamp(query.Limit, 1, 100);
+        var page = Math.Max(1, query.Page);
+        var totalCount = authorizedRows.Count;
+        var pagedRows = authorizedRows.Skip((page - 1) * pageSize).Take(pageSize);
+
+        var items = pagedRows
             .Select(x => new SmartGedSearchItem(
                 x.DocumentId,
                 x.Document,
@@ -388,14 +579,17 @@ where d.tenant_id = @TenantId
                 BuildMatchingExcerpt(x.ExtractedText, x.Summary, term),
                 x.VersionNumber,
                 x.RetentionStatus,
-                x.IsAnalysisOutdated))
+                x.IsAnalysisOutdated,
+                x.IsLegacyUnproven,
+                x.AnalyzedVersionId,
+                x.CurrentVersionId))
             .ToArray();
 
         clock.Stop();
 
-        await c.ExecuteAsync(new CommandDefinition("insert into ged.smart_search_query_log(tenant_id,user_id,query_text,normalized_query,result_count,execution_ms,payload_json) values(@TenantId,@UserId,@Text,@normalized,@count,@ms,cast(@payload as jsonb))", new { query.TenantId, query.UserId, query.Text, normalized = term.ToLowerInvariant(), count = items.Length, ms = (int)clock.ElapsedMilliseconds, payload = JsonSerializer.Serialize(new { limit = query.Limit, query.FolderId, query.ClassificationId, query.TypeId, query.RetentionStatus }) }, cancellationToken: ct));
-        await Audit(query.TenantId, query.UserId, "SMART_SEARCH_EXECUTED", null, new { query = term, resultCount = items.Length }, ct);
-        return new(term, items, (int)clock.ElapsedMilliseconds);
+        await c.ExecuteAsync(new CommandDefinition("insert into ged.smart_search_query_log(tenant_id,user_id,query_text,normalized_query,result_count,execution_ms,payload_json) values(@TenantId,@UserId,@Text,@normalized,@count,@ms,cast(@payload as jsonb))", new { query.TenantId, query.UserId, query.Text, normalized = term.ToLowerInvariant(), count = totalCount, ms = (int)clock.ElapsedMilliseconds, payload = JsonSerializer.Serialize(new { limit = pageSize, page, query.FolderId, query.ClassificationId, query.TypeId, query.RetentionStatus }) }, cancellationToken: ct));
+        await Audit(query.TenantId, query.UserId, "SMART_SEARCH_EXECUTED", null, new { query = term, resultCount = totalCount }, ct);
+        return new(term, items, (int)clock.ElapsedMilliseconds, totalCount, page, pageSize);
     }
 
     private static string BuildMatchingExcerpt(string? fullText, string? summary, string term)
@@ -432,8 +626,15 @@ select s.id as Id,
        v.version_number as VersionNumber,
        coalesce(pvi.code || ' - ' || coalesce(pvi.name, pvi.title), cp.code || ' - ' || cp.name, 'Não classificado') as CurrentClassification,
        s.created_at as CreatedAt,
-       case when s.created_at < d.updated_at then true else false end as IsObsolete,
-       s.review_notes as ReviewNotes
+       case
+           when s.version_id is not null and d.current_version_id is not null and s.version_id <> d.current_version_id then true
+           when s.version_id is null and s.created_at < d.updated_at then true
+           else false
+       end as IsObsolete,
+       s.review_notes as ReviewNotes,
+       s.version_id as VersionId,
+       s.plan_version_id as PlanVersionId,
+       coalesce(s.is_legacy_unproven, s.version_id is null) as IsLegacyUnproven
 from ged.document_classification_suggestion s
 left join ged.document d on d.id = s.document_id and d.tenant_id = s.tenant_id
 left join ged.document_version v on v.id = d.current_version_id
@@ -445,7 +646,8 @@ order by s.confidence desc, s.created_at desc
         var rows = await c.QueryAsync<ClassificationRow>(new CommandDefinition(sql, args, cancellationToken: ct));
         return rows.Select(x => new DocumentClassificationSuggestionItem(
             x.Id, x.DocumentId, x.Code, x.Title, x.Reason, x.Confidence, x.Status,
-            x.DocumentTitle, x.VersionNumber, x.CurrentClassification, x.CreatedAt, x.IsObsolete, x.ReviewNotes)).ToArray();
+            x.DocumentTitle, x.VersionNumber, x.CurrentClassification, x.CreatedAt, x.IsObsolete, x.ReviewNotes,
+            x.VersionId, x.PlanVersionId, x.IsLegacyUnproven)).ToArray();
     }
 
     private static async Task<IReadOnlyList<DocumentRetentionSuggestionItem>> ListRetentions(Npgsql.NpgsqlConnection c, Guid tenantId, string filter, object args, CancellationToken ct)
@@ -464,8 +666,15 @@ select s.id as Id,
        v.version_number as VersionNumber,
        d.retention_status as CurrentRetention,
        s.created_at as CreatedAt,
-       case when s.created_at < d.updated_at then true else false end as IsObsolete,
-       s.review_notes as ReviewNotes
+       case
+           when s.version_id is not null and d.current_version_id is not null and s.version_id <> d.current_version_id then true
+           when s.version_id is null and s.created_at < d.updated_at then true
+           else false
+       end as IsObsolete,
+       s.review_notes as ReviewNotes,
+       s.version_id as VersionId,
+       s.plan_version_id as PlanVersionId,
+       coalesce(s.is_legacy_unproven, s.version_id is null) as IsLegacyUnproven
 from ged.document_retention_suggestion s
 left join ged.document d on d.id = s.document_id and d.tenant_id = s.tenant_id
 left join ged.document_version v on v.id = d.current_version_id
@@ -477,20 +686,31 @@ order by s.confidence desc, s.created_at desc
             x.Id, x.DocumentId, x.Phase, x.FinalDestination, x.TriggerEvent,
             x.RetentionUntil.HasValue ? DateOnly.FromDateTime(x.RetentionUntil.Value) : null,
             x.Reason, x.Confidence, x.Status,
-            x.DocumentTitle, x.VersionNumber, x.CurrentRetention, x.CreatedAt, x.IsObsolete, x.ReviewNotes)).ToArray();
+            x.DocumentTitle, x.VersionNumber, x.CurrentRetention, x.CreatedAt, x.IsObsolete, x.ReviewNotes,
+            x.VersionId, x.PlanVersionId, x.IsLegacyUnproven)).ToArray();
     }
 
-    private Task Audit(Guid tenantId, Guid? userId,string action,Guid? documentId,object data,CancellationToken ct)=>_audit.WriteAsync(tenantId,userId,action,"SMART_GED",documentId,"Ação de inteligência documental",null,null,data,ct);
-    private static IReadOnlyDictionary<string,IReadOnlyList<string>> DeserializeDictionary(string? json)=>string.IsNullOrWhiteSpace(json)?new Dictionary<string,IReadOnlyList<string>>():JsonSerializer.Deserialize<Dictionary<string,IReadOnlyList<string>>>(json)??new();
-    private static IReadOnlyList<string> DeserializeList(string? json)=>string.IsNullOrWhiteSpace(json)?[]:JsonSerializer.Deserialize<string[]>(json)??[];
-    private static DocumentQualityIssueItem Map(IssueRow x)=>new(x.Id,x.DocumentId,x.Type,x.Severity,x.Title,x.RecommendedAction,x.Status);
-    private sealed class DocumentTextRow { public Guid Id {get;set;} public string Title {get;set;}=""; }
-    private sealed class PlanRow { public Guid Id {get;set;} public string? Code {get;set;} public string? Title {get;set;} public string? Description {get;set;} public string? FinalDestination {get;set;} }
-    private sealed class AnalysisRow { public Guid Id {get;set;} public Guid DocumentId {get;set;} public string Status {get;set;}=""; public string? Summary {get;set;} public string? DocumentType {get;set;} public string? Subject {get;set;} public DateTime? DetectedDate {get;set;} public string? IdentifiersJson {get;set;} public string? SensitiveJson {get;set;} public decimal Confidence {get;set;} }
-    private sealed class ClassificationSuggestionDetailRow { public Guid Id {get;set;} public Guid DocumentId {get;set;} public Guid? ClassificationId {get;set;} public decimal Confidence {get;set;} public string Status {get;set;}=""; }
-    private sealed class DocumentCurrentStateRow { public Guid Id {get;set;} public string DocStatus {get;set;}=""; public string RegStatus {get;set;}=""; public Guid? CurrentClassificationId {get;set;} public Guid? CurrentVersionId {get;set;} }
-    private sealed class ClassificationRow { public Guid Id {get;set;} public Guid DocumentId {get;set;} public string? Code {get;set;} public string? Title {get;set;} public string? Reason {get;set;} public decimal Confidence {get;set;} public string Status {get;set;}=""; public string? DocumentTitle {get;set;} public int? VersionNumber {get;set;} public string? CurrentClassification {get;set;} public DateTimeOffset? CreatedAt {get;set;} public bool IsObsolete {get;set;} public string? ReviewNotes {get;set;} }
-    private sealed class RetentionRow { public Guid Id {get;set;} public Guid DocumentId {get;set;} public string? Phase {get;set;} public string? FinalDestination {get;set;} public string? TriggerEvent {get;set;} public DateTime? RetentionUntil {get;set;} public string? Reason {get;set;} public decimal Confidence {get;set;} public string Status {get;set;}=""; public string? DocumentTitle {get;set;} public int? VersionNumber {get;set;} public string? CurrentRetention {get;set;} public DateTimeOffset? CreatedAt {get;set;} public bool IsObsolete {get;set;} public string? ReviewNotes {get;set;} }
-    private sealed class IssueRow { public Guid Id {get;set;} public Guid DocumentId {get;set;} public string Type {get;set;}=""; public string Severity {get;set;}=""; public string Title {get;set;}=""; public string? RecommendedAction {get;set;} public string Status {get;set;}=""; }
-    private sealed class SearchRow { public Guid DocumentId {get;set;} public string Document {get;set;}=""; public string? Summary {get;set;} public string? ExtractedText {get;set;} public string? Classification {get;set;} public string QualityStatus {get;set;}=""; public int? VersionNumber {get;set;} public string? RetentionStatus {get;set;} public bool IsAnalysisOutdated {get;set;} }
+    private Task Audit(Guid tenantId, Guid? userId, string action, Guid? documentId, object data, CancellationToken ct) =>
+        _audit.WriteAsync(tenantId, userId, action, "SMART_GED", documentId, "Ação de inteligência documental", null, null, data, ct);
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<string>> DeserializeDictionary(string? json) =>
+        string.IsNullOrWhiteSpace(json) ? new Dictionary<string, IReadOnlyList<string>>() : JsonSerializer.Deserialize<Dictionary<string, IReadOnlyList<string>>>(json) ?? new();
+
+    private static IReadOnlyList<string> DeserializeList(string? json) =>
+        string.IsNullOrWhiteSpace(json) ? [] : JsonSerializer.Deserialize<string[]>(json) ?? [];
+
+    private static DocumentQualityIssueItem Map(IssueRow x) =>
+        new(x.Id, x.DocumentId, x.Type, x.Severity, x.Title, x.RecommendedAction, x.Status);
+
+    private sealed class DocumentHeaderRow { public Guid Id { get; set; } public string Title { get; set; } = ""; public Guid? CurrentVersionId { get; set; } }
+    private sealed class PlanVersionInfoRow { public Guid Id { get; set; } public int VersionNo { get; set; } }
+    private sealed class PlanRow { public Guid Id { get; set; } public string? Code { get; set; } public string? Title { get; set; } public string? Description { get; set; } public string? FinalDestination { get; set; } }
+    private sealed class AnalysisRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public string Status { get; set; } = ""; public string? Summary { get; set; } public string? DocumentType { get; set; } public string? Subject { get; set; } public DateTime? DetectedDate { get; set; } public string? IdentifiersJson { get; set; } public string? SensitiveJson { get; set; } public decimal Confidence { get; set; } }
+    private sealed class ClassificationSuggestionDetailRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public Guid? ClassificationId { get; set; } public decimal Confidence { get; set; } public string Status { get; set; } = ""; public Guid? VersionId { get; set; } public Guid? PlanVersionId { get; set; } }
+    private sealed class RetentionSuggestionDetailRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public Guid? RuleId { get; set; } public decimal Confidence { get; set; } public string Status { get; set; } = ""; public Guid? VersionId { get; set; } }
+    private sealed class DocumentCurrentStateRow { public Guid Id { get; set; } public string DocStatus { get; set; } = ""; public string RegStatus { get; set; } = ""; public Guid? CurrentClassificationId { get; set; } public Guid? CurrentVersionId { get; set; } }
+    private sealed class ClassificationRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public string? Code { get; set; } public string? Title { get; set; } public string? Reason { get; set; } public decimal Confidence { get; set; } public string Status { get; set; } = ""; public string? DocumentTitle { get; set; } public int? VersionNumber { get; set; } public string? CurrentClassification { get; set; } public DateTimeOffset? CreatedAt { get; set; } public bool IsObsolete { get; set; } public string? ReviewNotes { get; set; } public Guid? VersionId { get; set; } public Guid? PlanVersionId { get; set; } public bool IsLegacyUnproven { get; set; } }
+    private sealed class RetentionRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public string? Phase { get; set; } public string? FinalDestination { get; set; } public string? TriggerEvent { get; set; } public DateTime? RetentionUntil { get; set; } public string? Reason { get; set; } public decimal Confidence { get; set; } public string Status { get; set; } = ""; public string? DocumentTitle { get; set; } public int? VersionNumber { get; set; } public string? CurrentRetention { get; set; } public DateTimeOffset? CreatedAt { get; set; } public bool IsObsolete { get; set; } public string? ReviewNotes { get; set; } public Guid? VersionId { get; set; } public Guid? PlanVersionId { get; set; } public bool IsLegacyUnproven { get; set; } }
+    private sealed class IssueRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public string Type { get; set; } = ""; public string Severity { get; set; } = ""; public string Title { get; set; } = ""; public string? RecommendedAction { get; set; } public string Status { get; set; } = ""; }
+    private sealed class SearchRow { public Guid DocumentId { get; set; } public string Document { get; set; } = ""; public string? Summary { get; set; } public string? ExtractedText { get; set; } public string? Classification { get; set; } public string QualityStatus { get; set; } = ""; public int? VersionNumber { get; set; } public string? RetentionStatus { get; set; } public bool IsAnalysisOutdated { get; set; } public bool IsLegacyUnproven { get; set; } public Guid? AnalyzedVersionId { get; set; } public Guid? CurrentVersionId { get; set; } }
 }

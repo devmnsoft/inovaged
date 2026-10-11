@@ -52,7 +52,7 @@ and (
         var permissionCode = action.Trim().ToUpperInvariant() switch
         {
             "VIEW" or "DOCUMENTS.VIEW" => "Documents.View",
-            "EDIT" or "UPDATE" or "MANAGE" => "GED.DOCUMENTS",
+            "EDIT" or "UPDATE" or "MANAGE" or "CLASSIFY" or "RETENTION_REVIEW" => "GED.DOCUMENTS",
             _ => action.Trim()
         };
         string? sector = null;

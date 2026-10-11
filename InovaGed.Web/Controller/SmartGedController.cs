@@ -46,8 +46,8 @@ public sealed class SmartGedController : Controller
     public async Task<IActionResult> ReviewQueue([FromQuery] string? status = "PENDING", CancellationToken ct = default)
     {
         var st = string.IsNullOrWhiteSpace(status) ? "PENDING" : status.Trim().ToUpperInvariant();
-        var classifications = await _classifications.ListAsync(_user.TenantId, st, ct);
-        var retentions = await _retentions.ListAsync(_user.TenantId, st, ct);
+        var classifications = await _classifications.ListAsync(_user.TenantId, st, _user.UserId, ct);
+        var retentions = await _retentions.ListAsync(_user.TenantId, st, _user.UserId, ct);
         return View(new SmartGedReviewQueue(classifications, retentions, st));
     }
 
@@ -107,41 +107,117 @@ where d.tenant_id = @tenantId and d.id = @documentId and coalesce(d.reg_status, 
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Analyze(Guid documentId, CancellationToken ct)
     {
-        await _intelligence.AnalyzeDocumentAsync(_user.TenantId, documentId, _user.UserId, ct);
-        TempData["Success"] = "Análise local concluída e encaminhada para revisão humana.";
+        var canAnalyze = await _authorization.CanAccessDocumentAsync(_user.TenantId, _user.UserId, documentId, "CLASSIFY", new Dictionary<string, string>(), ct)
+                      || await _authorization.CanAccessDocumentAsync(_user.TenantId, _user.UserId, documentId, "EDIT", new Dictionary<string, string>(), ct);
+        if (!canAnalyze) return Forbid();
+
+        try
+        {
+            await _intelligence.AnalyzeDocumentAsync(_user.TenantId, documentId, _user.UserId, ct);
+            TempData["Success"] = "Análise local concluída e encaminhada para revisão humana.";
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
         return RedirectToAction(nameof(Document), new { documentId });
     }
 
     [HttpPost("ClassificationSuggestion/{id:guid}/Accept")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> AcceptClassification(Guid id, string? notes, CancellationToken ct)
+    public async Task<IActionResult> AcceptClassification(Guid id, [FromForm] string? notes, [FromForm] string? status, [FromForm] string? returnUrl, CancellationToken ct)
     {
-        await _classifications.AcceptAsync(_user.TenantId, id, _user.UserId, notes, ct);
-        return RedirectToAction(nameof(ReviewQueue));
+        try
+        {
+            var reviewerNotes = string.IsNullOrWhiteSpace(notes) ? "Classificação confirmada na revisão assistida" : notes.Trim();
+            await _classifications.AcceptAsync(_user.TenantId, id, _user.UserId, reviewerNotes, ct);
+            TempData["Success"] = "Classificação assistida confirmada e aplicada com sucesso.";
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        if (!string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl)) return LocalRedirect(returnUrl);
+        return RedirectToAction(nameof(ReviewQueue), new { status = status ?? "PENDING" });
     }
 
     [HttpPost("ClassificationSuggestion/{id:guid}/Reject")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> RejectClassification(Guid id, string reason, CancellationToken ct)
+    public async Task<IActionResult> RejectClassification(Guid id, [FromForm] string? reason, [FromForm] string? status, [FromForm] string? returnUrl, CancellationToken ct)
     {
-        await _classifications.RejectAsync(_user.TenantId, id, _user.UserId, reason, ct);
-        return RedirectToAction(nameof(ReviewQueue));
+        try
+        {
+            var reviewerReason = string.IsNullOrWhiteSpace(reason) ? "Rejeitada pelo revisor humano" : reason.Trim();
+            await _classifications.RejectAsync(_user.TenantId, id, _user.UserId, reviewerReason, ct);
+            TempData["Success"] = "Classificação assistida rejeitada com sucesso.";
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        if (!string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl)) return LocalRedirect(returnUrl);
+        return RedirectToAction(nameof(ReviewQueue), new { status = status ?? "PENDING" });
     }
 
     [HttpPost("RetentionSuggestion/{id:guid}/Accept")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> AcceptRetention(Guid id, string? notes, CancellationToken ct)
+    public async Task<IActionResult> AcceptRetention(Guid id, [FromForm] string? notes, [FromForm] string? status, [FromForm] string? returnUrl, CancellationToken ct)
     {
-        await _retentions.AcceptAsync(_user.TenantId, id, _user.UserId, notes, ct);
-        return RedirectToAction(nameof(ReviewQueue));
+        try
+        {
+            var reviewerNotes = string.IsNullOrWhiteSpace(notes) ? "Recomendação de temporalidade aprovada e recalculada na base canônica" : notes.Trim();
+            await _retentions.AcceptAsync(_user.TenantId, id, _user.UserId, reviewerNotes, ct);
+            TempData["Success"] = "Recomendação de temporalidade confirmada e cálculo canônico atualizado.";
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        if (!string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl)) return LocalRedirect(returnUrl);
+        return RedirectToAction(nameof(ReviewQueue), new { status = status ?? "PENDING" });
     }
 
     [HttpPost("RetentionSuggestion/{id:guid}/Reject")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> RejectRetention(Guid id, string reason, CancellationToken ct)
+    public async Task<IActionResult> RejectRetention(Guid id, [FromForm] string? reason, [FromForm] string? status, [FromForm] string? returnUrl, CancellationToken ct)
     {
-        await _retentions.RejectAsync(_user.TenantId, id, _user.UserId, reason, ct);
-        return RedirectToAction(nameof(ReviewQueue));
+        try
+        {
+            var reviewerReason = string.IsNullOrWhiteSpace(reason) ? "Recomendação de temporalidade rejeitada pelo revisor humano" : reason.Trim();
+            await _retentions.RejectAsync(_user.TenantId, id, _user.UserId, reviewerReason, ct);
+            TempData["Success"] = "Recomendação de temporalidade rejeitada com sucesso.";
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+
+        if (!string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl)) return LocalRedirect(returnUrl);
+        return RedirectToAction(nameof(ReviewQueue), new { status = status ?? "PENDING" });
     }
 
     [HttpGet("Quality")]
@@ -170,6 +246,12 @@ where d.tenant_id = @tenantId and d.id = @documentId and coalesce(d.reg_status, 
         };
         await PopulateCombosAsync(vm, ct);
 
+        if (createdAfter.HasValue && createdBefore.HasValue && createdAfter.Value > createdBefore.Value)
+        {
+            ModelState.AddModelError("CreatedAfter", "A data inicial não pode ser superior à data final.");
+            return View(vm);
+        }
+
         if (!string.IsNullOrWhiteSpace(query) || folderId.HasValue || classificationId.HasValue || typeId.HasValue || createdAfter.HasValue || createdBefore.HasValue || !string.IsNullOrWhiteSpace(retentionStatus))
         {
             var q = new SmartGedSearchQuery(
@@ -195,6 +277,13 @@ where d.tenant_id = @tenantId and d.id = @documentId and coalesce(d.reg_status, 
     public async Task<IActionResult> Search(SmartGedSearchPageVM vm, CancellationToken ct)
     {
         await PopulateCombosAsync(vm, ct);
+
+        if (vm.CreatedAfter.HasValue && vm.CreatedBefore.HasValue && vm.CreatedAfter.Value > vm.CreatedBefore.Value)
+        {
+            ModelState.AddModelError("CreatedAfter", "A data inicial não pode ser superior à data final.");
+            return View(vm);
+        }
+
         var q = new SmartGedSearchQuery(
             TenantId: _user.TenantId,
             UserId: _user.UserId,
@@ -238,7 +327,7 @@ order by i.code;
     }
 
     private async Task<SmartGedReviewQueue> BuildQueue(CancellationToken ct) =>
-        new(await _classifications.ListPendingAsync(_user.TenantId, ct), await _retentions.ListPendingAsync(_user.TenantId, ct));
+        new(await _classifications.ListPendingAsync(_user.TenantId, _user.UserId, ct), await _retentions.ListPendingAsync(_user.TenantId, _user.UserId, ct));
 
     private sealed class DocumentDetailsRow
     {
