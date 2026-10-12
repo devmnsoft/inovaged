@@ -120,6 +120,30 @@ public sealed class SmartGedController : Controller
         return RedirectToAction(nameof(ReviewQueue), new { status = status ?? "PENDING", kind = kind ?? "classification", page, pageSize });
     }
 
+    [HttpPost("ReviewQueue/ReconcileAdministrativeAudit")]
+    [Authorize(Policy = AppPolicies.FullAdminOnly)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ReconcileAdministrativeAudit([FromForm] string? status, [FromForm] string? kind, [FromForm] int page = 1, [FromForm] int pageSize = 20, CancellationToken ct = default)
+    {
+        try
+        {
+            var count = await _reviewRecovery.ReconcileAdministrativeAuditAsync(_user.TenantId, _user.UserId, ct);
+            TempData[count > 0 ? "Success" : "Info"] = count > 0
+                ? $"{count} auditoria(s) administrativa(s) reconciliada(s)."
+                : "Nenhuma auditoria administrativa pendente para reconciliar.";
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = SafeReviewMessage(ex);
+        }
+
+        return RedirectToAction(nameof(ReviewQueue), new { status = status ?? "ADMIN_RESOLVED", kind = kind ?? "classification", page, pageSize });
+    }
+
     [HttpGet("Document/{documentId:guid}")]
     public async Task<IActionResult> Document(Guid documentId, CancellationToken ct)
     {
@@ -406,7 +430,12 @@ where d.tenant_id = @tenantId and d.id = @documentId and coalesce(d.reg_status, 
             "A recomendação de temporalidade refere-se",
             "Nenhum documento foi atualizado pelo recálculo",
             "A sugestão possui falha sem evidência",
-            "Pendência administrativa não encontrada"
+            "Pendência administrativa não encontrada",
+            "Sugestão legada ou sem origem",
+            "Recomendação legada ou sem origem",
+            "Documento sem versão vigente",
+            "Falha legada sem operação",
+            "Recomendação de temporalidade sem regra"
         };
         return known.Any(x => message.Contains(x, StringComparison.OrdinalIgnoreCase));
     }

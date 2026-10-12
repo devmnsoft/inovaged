@@ -61,7 +61,7 @@
     <div class="small text-muted">
         <i class="bi bi-clock-history me-1"></i>
         Exibindo situação: <span class="badge bg-secondary">@currentStatus</span>
-        <span class="ms-2">Itens @Model.FirstItem-@Model.LastItem de @Model.TotalCount</span>
+        <span class="ms-2">Itens @Model.FirstItem-@Model.LastItem de @Model.ActiveTotal nesta aba</span>
     </div>
 
     @if (canRecoverExpired)
@@ -74,6 +74,16 @@
             <input type="hidden" name="pageSize" value="@Model.PageSize" />
             <button type="submit" class="btn btn-outline-secondary">
                 <i class="bi bi-life-preserver me-1"></i> Recuperar expiradas
+            </button>
+        </form>
+        <form method="post" asp-action="ReconcileAdministrativeAudit" class="d-inline-flex">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="status" value="@currentStatus" />
+            <input type="hidden" name="kind" value="@currentKind" />
+            <input type="hidden" name="page" value="@Model.Page" />
+            <input type="hidden" name="pageSize" value="@Model.PageSize" />
+            <button type="submit" class="btn btn-outline-secondary">
+                <i class="bi bi-journal-check me-1"></i> Reconciliar auditorias
             </button>
         </form>
     }
@@ -243,6 +253,17 @@
                             {
                                 <div class="small text-muted mt-1">@x.RecoveryNotes</div>
                             }
+                            @if (x.AdminResolutionAt.HasValue)
+                            {
+                                <div class="small text-muted mt-2">
+                                    <strong>Resolução administrativa:</strong><br />
+                                    Responsável: @x.AdminResolutionBy<br />
+                                    Data: @x.AdminResolutionAt.Value.ToString("dd/MM/yyyy HH:mm")<br />
+                                    Justificativa: @x.AdminResolutionReason<br />
+                                    Evidência: @x.AdminResolutionEvidence<br />
+                                    Auditoria: @(string.IsNullOrWhiteSpace(x.AdminResolutionAuditStatus) ? "PENDENTE" : x.AdminResolutionAuditStatus)
+                                </div>
+                            }
                         </td>
                         <td>
                             @if (x.Status == "PENDING")
@@ -405,7 +426,7 @@
                             </div>
                             <div class="small text-muted">Recomendada:</div>
                             <div class="fw-bold text-primary">
-                                Fase: @(x.Phase ?? "Corrente") · Destino: @(x.FinalDestination ?? "Guarda Permanente")
+                                Fase: @(string.IsNullOrWhiteSpace(x.Phase) ? "Requer revisão" : x.Phase) · Destino: @(string.IsNullOrWhiteSpace(x.FinalDestination) ? "Não definida" : x.FinalDestination)
                             </div>
                             @if (!string.IsNullOrWhiteSpace(x.TriggerEvent))
                             {
@@ -474,6 +495,17 @@
                             @if (!string.IsNullOrWhiteSpace(x.RecoveryNotes))
                             {
                                 <div class="small text-muted mt-1">@x.RecoveryNotes</div>
+                            }
+                            @if (x.AdminResolutionAt.HasValue)
+                            {
+                                <div class="small text-muted mt-2">
+                                    <strong>Resolução administrativa:</strong><br />
+                                    Responsável: @x.AdminResolutionBy<br />
+                                    Data: @x.AdminResolutionAt.Value.ToString("dd/MM/yyyy HH:mm")<br />
+                                    Justificativa: @x.AdminResolutionReason<br />
+                                    Evidência: @x.AdminResolutionEvidence<br />
+                                    Auditoria: @(string.IsNullOrWhiteSpace(x.AdminResolutionAuditStatus) ? "PENDENTE" : x.AdminResolutionAuditStatus)
+                                </div>
                             }
                         </td>
                         <td>

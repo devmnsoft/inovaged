@@ -32,6 +32,7 @@ public interface ISmartGedReviewRecoveryService
 {
     Task<SmartGedReviewRecoveryResult> RecoverExpiredAsync(Guid tenantId, Guid performedBy, CancellationToken ct);
     Task ResolveAdministrativeAsync(Guid tenantId, Guid suggestionId, string suggestionKind, Guid performedBy, string reason, string evidence, CancellationToken ct);
+    Task<int> ReconcileAdministrativeAuditAsync(Guid tenantId, Guid performedBy, CancellationToken ct);
 }
 public interface ISmartGedSearchService { Task<SmartGedSearchResult> SearchAsync(SmartGedSearchQuery query, CancellationToken ct); }
 
@@ -69,7 +70,12 @@ public sealed record DocumentClassificationSuggestionItem(
     DateTimeOffset? ProcessingStartedAt = null,
     string? PublicFailureMessage = null,
     DateTimeOffset? RecoveredAt = null,
-    string? RecoveryNotes = null);
+    string? RecoveryNotes = null,
+    Guid? AdminResolutionBy = null,
+    DateTimeOffset? AdminResolutionAt = null,
+    string? AdminResolutionReason = null,
+    string? AdminResolutionEvidence = null,
+    string? AdminResolutionAuditStatus = null);
 
 public sealed record DocumentRetentionSuggestionItem(
     Guid Id,
@@ -94,7 +100,12 @@ public sealed record DocumentRetentionSuggestionItem(
     DateTimeOffset? ProcessingStartedAt = null,
     string? PublicFailureMessage = null,
     DateTimeOffset? RecoveredAt = null,
-    string? RecoveryNotes = null);
+    string? RecoveryNotes = null,
+    Guid? AdminResolutionBy = null,
+    DateTimeOffset? AdminResolutionAt = null,
+    string? AdminResolutionReason = null,
+    string? AdminResolutionEvidence = null,
+    string? AdminResolutionAuditStatus = null);
 
 public sealed record DocumentQualityIssueItem(Guid Id, Guid DocumentId, string Type, string Severity, string Title, string? RecommendedAction, string Status);
 public sealed record DocumentIntelligenceDetails(Guid AnalysisId, Guid DocumentId, string Status, string? Summary, string? DocumentType, string? Subject, DateOnly? DetectedDate, IReadOnlyDictionary<string, IReadOnlyList<string>> MaskedIdentifiers, IReadOnlyList<string> SensitiveIndicators, decimal Confidence, DocumentClassificationSuggestionItem? Classification, DocumentRetentionSuggestionItem? Retention, IReadOnlyList<DocumentQualityIssueItem> Issues);

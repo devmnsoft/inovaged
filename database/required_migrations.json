@@ -957,5 +957,12 @@
     "area": "SmartGed",
     "required": true,
     "description": "Adiciona resolução administrativa auditável para revisões aplicadas com pendência ou efeito indeterminado."
+  },
+  {
+    "name": "2026_10_21_smart_ged_review_admin_audit_reconciliation",
+    "path": "database/migrations/2026_10_21_smart_ged_review_admin_audit_reconciliation.sql",
+    "area": "SmartGed",
+    "required": true,
+    "description": "Separa decisão administrativa de auditoria registrada e permite reconciliação idempotente."
   }
 ]

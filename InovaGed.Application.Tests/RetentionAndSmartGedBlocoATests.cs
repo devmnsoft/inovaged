@@ -254,7 +254,10 @@ public sealed class RetentionAndSmartGedBlocoATests
 
         Assert.Contains("EnsureReviewableAsync", reviewRegion);
         Assert.Contains("effect_status", reviewRegion);
+        Assert.Contains("suggestion_id = @suggestionId", reviewRegion);
+        Assert.Contains("document_id = @documentId", reviewRegion);
         Assert.Contains("NO_EFFECT", reviewRegion);
+        Assert.Contains("Falha legada sem operação rastreável", reviewRegion);
         Assert.Contains("falha sem evidência de ausência de efeito", reviewRegion);
     }
 
@@ -291,11 +294,40 @@ public sealed class RetentionAndSmartGedBlocoATests
 
         Assert.Contains("ResolveAdministrativeAsync", service);
         Assert.Contains("status = 'ADMIN_RESOLVED'", service);
-        Assert.Contains("result_status = 'FINALIZED'", service);
+        Assert.Contains("admin_resolution_audit_status = 'PENDING'", service);
+        Assert.Contains("MarkAdministrativeAuditRecordedAsync", service);
+        Assert.Contains("ReconcileAdministrativeAuditAsync", service);
         Assert.Contains("[Authorize(Policy = AppPolicies.FullAdminOnly)]", controller);
         Assert.Contains("ResolveAdministrativeReview", view);
+        Assert.Contains("ReconcileAdministrativeAudit", view);
         Assert.Contains("admin_resolution_reason", migration);
         Assert.Contains("admin_resolution_evidence", migration);
+    }
+
+    [Fact]
+    public void SmartGed_review_blocks_legacy_or_unversioned_suggestions_before_application()
+    {
+        var source = File.ReadAllText(RepoPath("InovaGed.Infrastructure", "SmartGed", "SmartGedService.cs"));
+        var reviewRegion = source[source.IndexOf("private async Task ReviewClassification", StringComparison.Ordinal)..source.IndexOf("private static Task UpsertReviewOperationResultAsync", StringComparison.Ordinal)];
+
+        Assert.Contains("Sugestão legada ou sem origem/versionamento comprovado", reviewRegion);
+        Assert.Contains("Recomendação legada ou sem origem/versionamento comprovado", reviewRegion);
+        Assert.Contains("Documento sem versão vigente", reviewRegion);
+        Assert.Contains("Recomendação de temporalidade sem regra comprovada", reviewRegion);
+    }
+
+    [Fact]
+    public void SmartGed_review_queue_does_not_show_fictional_retention_defaults()
+    {
+        var view = File.ReadAllText(RepoPath("InovaGed.Web", "Views", "SmartGed", "ReviewQueue.cshtml"));
+
+        Assert.Contains("Model.ActiveTotal nesta aba", view);
+        Assert.Contains("Requer revisão", view);
+        Assert.Contains("Não definida", view);
+        Assert.DoesNotContain("x.Phase ?? \"Corrente\"", view);
+        Assert.DoesNotContain("x.FinalDestination ?? \"Guarda Permanente\"", view);
+        Assert.Contains("AdminResolutionReason", view);
+        Assert.Contains("AdminResolutionEvidence", view);
     }
 
     [Fact]
