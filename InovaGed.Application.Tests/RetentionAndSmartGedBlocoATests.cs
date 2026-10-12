@@ -503,6 +503,40 @@ public sealed class RetentionAndSmartGedBlocoATests
         Assert.Equal(new DateTime(2026, 6, 25, 0, 0, 0, DateTimeKind.Utc), finalDate);
     }
 
+    [Fact]
+    public void SmartGed_retention_generation_persists_rule_and_does_not_invent_destination()
+    {
+        var source = File.ReadAllText(RepoPath("InovaGed.Infrastructure", "SmartGed", "SmartGedService.cs"));
+
+        Assert.Contains("suggested_rule_id", source);
+        Assert.Contains("var ruleId = retentionIsActionable ? best.Plan.Id : (Guid?)null", source);
+        Assert.Contains("var destination = best.Plan.FinalDestination", source);
+        Assert.DoesNotContain("best.Plan.FinalDestination ?? \"REQUER_REVISAO\"", source);
+        Assert.Contains("Pendência: a temporalidade não possui regra/versionamento comprovado", source);
+    }
+
+    [Fact]
+    public void SmartGed_administrative_audit_reconciliation_preserves_decision_author_and_claims_once()
+    {
+        var source = File.ReadAllText(RepoPath("InovaGed.Infrastructure", "SmartGed", "SmartGedService.cs"));
+
+        Assert.DoesNotContain("coalesce(admin_resolution_by, @performedBy)", source);
+        Assert.Contains("admin_resolution_by as DecisionBy", source);
+        Assert.Contains("TryClaimAdministrativeAuditAsync", source);
+        Assert.Contains("admin_resolution_audit_status = 'RECORDING'", source);
+        Assert.Contains("decisionAuthorMissing = !decisionBy.HasValue", source);
+    }
+
+    [Fact]
+    public void SmartGed_review_queue_translates_administrative_audit_statuses()
+    {
+        var source = File.ReadAllText(RepoPath("InovaGed.Web", "Views", "SmartGed", "ReviewQueue.cshtml"));
+
+        Assert.Contains("\"RECORDING\" => \"Registro em confirmação\"", source);
+        Assert.Contains("AuditStatusLabel(x.AdminResolutionAuditStatus)", source);
+        Assert.DoesNotContain("x.AdminResolutionAuditStatus) ? \"PENDENTE\"", source);
+    }
+
     private static string RepoPath(params string[] segments)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

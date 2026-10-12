@@ -11,6 +11,18 @@
     var canRecoverExpired = InovaGed.Web.Security.RolePolicyHelper.IsFullAdmin(User);
 }
 
+@functions {
+    private static string AuditStatusLabel(string? status) => status switch
+    {
+        "RECORDED" => "Registrada",
+        "PENDING" => "Pendente",
+        "FAILED" => "Falha na reconciliação",
+        "RECORDING" => "Registro em confirmação",
+        "NOT_REQUIRED" => "Não requerida",
+        _ => "Pendente"
+    };
+}
+
 <partial name="Atlas/_AtlasPageHero" />
 
 <!-- Guia de Uso e Governança Arquivística -->
@@ -261,7 +273,7 @@
                                     Data: @x.AdminResolutionAt.Value.ToString("dd/MM/yyyy HH:mm")<br />
                                     Justificativa: @x.AdminResolutionReason<br />
                                     Evidência: @x.AdminResolutionEvidence<br />
-                                    Auditoria: @(string.IsNullOrWhiteSpace(x.AdminResolutionAuditStatus) ? "PENDENTE" : x.AdminResolutionAuditStatus)
+                                    Auditoria: @AuditStatusLabel(x.AdminResolutionAuditStatus)
                                 </div>
                             }
                         </td>
@@ -504,7 +516,7 @@
                                     Data: @x.AdminResolutionAt.Value.ToString("dd/MM/yyyy HH:mm")<br />
                                     Justificativa: @x.AdminResolutionReason<br />
                                     Evidência: @x.AdminResolutionEvidence<br />
-                                    Auditoria: @(string.IsNullOrWhiteSpace(x.AdminResolutionAuditStatus) ? "PENDENTE" : x.AdminResolutionAuditStatus)
+                                    Auditoria: @AuditStatusLabel(x.AdminResolutionAuditStatus)
                                 </div>
                             }
                         </td>
