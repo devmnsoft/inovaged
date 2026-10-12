@@ -44,6 +44,9 @@
         <a asp-action="ReviewQueue" asp-route-status="RECOVERY_INDETERMINATE" asp-route-kind="@currentKind" class="btn @(currentStatus == "RECOVERY_INDETERMINATE" ? "btn-primary" : "btn-outline-secondary")">
             Indeterminadas
         </a>
+        <a asp-action="ReviewQueue" asp-route-status="ADMIN_RESOLVED" asp-route-kind="@currentKind" class="btn @(currentStatus == "ADMIN_RESOLVED" ? "btn-primary" : "btn-outline-secondary")">
+            Resolvidas
+        </a>
         <a asp-action="ReviewQueue" asp-route-status="ACCEPTED" asp-route-kind="@currentKind" class="btn @(currentStatus == "ACCEPTED" ? "btn-primary" : "btn-outline-secondary")">
             Aceitas
         </a>
@@ -220,6 +223,10 @@
                             {
                                 <span class="badge bg-secondary">Efeito indeterminado</span>
                             }
+                            else if (x.Status == "ADMIN_RESOLVED")
+                            {
+                                <span class="badge bg-info text-dark">Resolvida administrativamente</span>
+                            }
                             else
                             {
                                 <span class="badge bg-primary">Pendente</span>
@@ -287,6 +294,33 @@
                                 <div class="small text-muted mb-2">Operação em andamento desde @(x.ProcessingStartedAt?.ToString("dd/MM/yyyy HH:mm") ?? "instante não registrado"). Aguarde a conclusão ou use a recuperação administrativa após expirar.</div>
                                 <a asp-action="Document" asp-route-documentId="@x.DocumentId" class="btn btn-sm btn-outline-secondary">
                                     <i class="bi bi-eye me-1"></i> Acompanhar
+                                </a>
+                            }
+                            else if (canRecoverExpired && (x.Status == "FAILED_APPLIED" || x.Status == "RECOVERY_INDETERMINATE"))
+                            {
+                                <details class="border rounded p-2 bg-light">
+                                    <summary class="btn btn-sm btn-outline-primary w-100 text-start d-flex justify-content-between align-items-center">
+                                        <span><i class="bi bi-shield-check me-1"></i> Resolver pendência</span>
+                                        <i class="bi bi-chevron-down small"></i>
+                                    </summary>
+                                    <form method="post" asp-action="ResolveAdministrativeReview" class="mt-2">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="suggestionId" value="@x.Id" />
+                                        <input type="hidden" name="suggestionKind" value="classification" />
+                                        <input type="hidden" name="status" value="@currentStatus" />
+                                        <input type="hidden" name="kind" value="@currentKind" />
+                                        <input type="hidden" name="page" value="@Model.Page" />
+                                        <input type="hidden" name="pageSize" value="@Model.PageSize" />
+                                        <div class="small text-muted mb-2">Informe a evidência conferida. Esta ação finaliza a pendência sem reaplicar a sugestão.</div>
+                                        <label class="form-label small fw-semibold" for="admin-reason-cls-@x.Id">Justificativa</label>
+                                        <textarea id="admin-reason-cls-@x.Id" name="reason" class="form-control form-control-sm mb-2" rows="2" required></textarea>
+                                        <label class="form-label small fw-semibold" for="admin-evidence-cls-@x.Id">Evidência verificada</label>
+                                        <textarea id="admin-evidence-cls-@x.Id" name="evidence" class="form-control form-control-sm mb-2" rows="2" required></textarea>
+                                        <button class="btn btn-sm btn-primary w-100" type="submit">Finalizar pendência</button>
+                                    </form>
+                                </details>
+                                <a asp-action="Document" asp-route-documentId="@x.DocumentId" class="btn btn-sm btn-outline-secondary mt-2">
+                                    <i class="bi bi-eye me-1"></i> Ver Detalhes
                                 </a>
                             }
                             else
@@ -421,6 +455,10 @@
                             {
                                 <span class="badge bg-secondary">Efeito indeterminado</span>
                             }
+                            else if (x.Status == "ADMIN_RESOLVED")
+                            {
+                                <span class="badge bg-info text-dark">Resolvida administrativamente</span>
+                            }
                             else
                             {
                                 <span class="badge bg-primary">Pendente</span>
@@ -491,6 +529,33 @@
                                 <div class="small text-muted mb-2">Recálculo em andamento desde @(x.ProcessingStartedAt?.ToString("dd/MM/yyyy HH:mm") ?? "instante não registrado"). Aguarde a conclusão ou use a recuperação administrativa após expirar.</div>
                                 <a asp-action="Document" asp-route-documentId="@x.DocumentId" class="btn btn-sm btn-outline-secondary">
                                     <i class="bi bi-eye me-1"></i> Acompanhar
+                                </a>
+                            }
+                            else if (canRecoverExpired && (x.Status == "FAILED_APPLIED" || x.Status == "RECOVERY_INDETERMINATE"))
+                            {
+                                <details class="border rounded p-2 bg-light">
+                                    <summary class="btn btn-sm btn-outline-primary w-100 text-start d-flex justify-content-between align-items-center">
+                                        <span><i class="bi bi-shield-check me-1"></i> Resolver pendência</span>
+                                        <i class="bi bi-chevron-down small"></i>
+                                    </summary>
+                                    <form method="post" asp-action="ResolveAdministrativeReview" class="mt-2">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="suggestionId" value="@x.Id" />
+                                        <input type="hidden" name="suggestionKind" value="retention" />
+                                        <input type="hidden" name="status" value="@currentStatus" />
+                                        <input type="hidden" name="kind" value="@currentKind" />
+                                        <input type="hidden" name="page" value="@Model.Page" />
+                                        <input type="hidden" name="pageSize" value="@Model.PageSize" />
+                                        <div class="small text-muted mb-2">Informe a memória/evidência conferida. Esta ação finaliza a pendência sem executar novo recálculo.</div>
+                                        <label class="form-label small fw-semibold" for="admin-reason-ret-@x.Id">Justificativa</label>
+                                        <textarea id="admin-reason-ret-@x.Id" name="reason" class="form-control form-control-sm mb-2" rows="2" required></textarea>
+                                        <label class="form-label small fw-semibold" for="admin-evidence-ret-@x.Id">Evidência verificada</label>
+                                        <textarea id="admin-evidence-ret-@x.Id" name="evidence" class="form-control form-control-sm mb-2" rows="2" required></textarea>
+                                        <button class="btn btn-sm btn-primary w-100" type="submit">Finalizar pendência</button>
+                                    </form>
+                                </details>
+                                <a asp-action="Document" asp-route-documentId="@x.DocumentId" class="btn btn-sm btn-outline-secondary mt-2">
+                                    <i class="bi bi-eye me-1"></i> Ver Detalhes
                                 </a>
                             }
                             else

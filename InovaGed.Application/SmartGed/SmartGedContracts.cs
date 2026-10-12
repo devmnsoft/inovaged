@@ -31,6 +31,7 @@ public interface IDocumentRetentionSuggestionService
 public interface ISmartGedReviewRecoveryService
 {
     Task<SmartGedReviewRecoveryResult> RecoverExpiredAsync(Guid tenantId, Guid performedBy, CancellationToken ct);
+    Task ResolveAdministrativeAsync(Guid tenantId, Guid suggestionId, string suggestionKind, Guid performedBy, string reason, string evidence, CancellationToken ct);
 }
 public interface ISmartGedSearchService { Task<SmartGedSearchResult> SearchAsync(SmartGedSearchQuery query, CancellationToken ct); }
 

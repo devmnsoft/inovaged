@@ -3174,3 +3174,7 @@ COMMIT;
 \ir migrations/2026_10_14_preview_status_upsert_contract.sql
 \ir migrations/2026_10_15_protocol_ged_links_view.sql
 \ir migrations/2026_10_16_protocol_ged_links_view_required.sql
+\ir migrations/2026_10_17_smart_ged_review_operations.sql
+\ir migrations/2026_10_18_smart_ged_review_recovery.sql
+\ir migrations/2026_10_19_smart_ged_review_operation_results.sql
+\ir migrations/2026_10_20_smart_ged_review_admin_resolution.sql

@@ -1290,6 +1290,14 @@
       "transactional": true,
       "deploymentSafety": "Additive",
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_10_20_smart_ged_review_admin_resolution",
+      "path": "database/migrations/2026_10_20_smart_ged_review_admin_resolution.sql",
+      "module": "SmartGed",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
     }
   ]
 }

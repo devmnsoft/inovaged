@@ -950,5 +950,12 @@
     "area": "SmartGed",
     "required": true,
     "description": "Registra resultado persistente por operação de revisão assistida para recuperação baseada em evidência transacional."
+  },
+  {
+    "name": "2026_10_20_smart_ged_review_admin_resolution",
+    "path": "database/migrations/2026_10_20_smart_ged_review_admin_resolution.sql",
+    "area": "SmartGed",
+    "required": true,
+    "description": "Adiciona resolução administrativa auditável para revisões aplicadas com pendência ou efeito indeterminado."
   }
 ]

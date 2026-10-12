@@ -240,8 +240,22 @@ public sealed class RetentionAndSmartGedBlocoATests
 
         Assert.DoesNotContain("applicationCompleted ? \"EFFECT_CONFIRMED\" : \"NO_EFFECT\"", reviewRegion);
         Assert.DoesNotContain("applicationCompleted ? \"FAILED_AFTER_EFFECT\" : \"FAILED_BEFORE_EFFECT\"", reviewRegion);
+        Assert.DoesNotContain("status = applicationCompleted ? \"FAILED_APPLIED\" : \"FAILED\"", reviewRegion);
         Assert.Contains("applicationCompleted ? \"EFFECT_CONFIRMED\" : \"INDETERMINATE\"", reviewRegion);
+        Assert.Contains("status = applicationCompleted ? \"FAILED_APPLIED\" : \"RECOVERY_INDETERMINATE\"", reviewRegion);
         Assert.Contains("effectConfirmation = applicationCompleted ? \"CONFIRMED\" : \"UNKNOWN\"", reviewRegion);
+    }
+
+    [Fact]
+    public void SmartGed_failed_retry_requires_no_effect_evidence()
+    {
+        var source = File.ReadAllText(RepoPath("InovaGed.Infrastructure", "SmartGed", "SmartGedService.cs"));
+        var reviewRegion = source[source.IndexOf("private async Task ReviewClassification", StringComparison.Ordinal)..source.IndexOf("private static string PublicReviewFailure", StringComparison.Ordinal)];
+
+        Assert.Contains("EnsureReviewableAsync", reviewRegion);
+        Assert.Contains("effect_status", reviewRegion);
+        Assert.Contains("NO_EFFECT", reviewRegion);
+        Assert.Contains("falha sem evidência de ausência de efeito", reviewRegion);
     }
 
     [Fact]
@@ -265,6 +279,23 @@ public sealed class RetentionAndSmartGedBlocoATests
         Assert.Contains("[Authorize(Policy = AppPolicies.FullAdminOnly)]", controller);
         Assert.Contains("_accessPolicy.IsAdminAsync", recoveryServiceRegion);
         Assert.DoesNotContain("GED.DOCUMENTS", recoveryServiceRegion);
+    }
+
+    [Fact]
+    public void SmartGed_admin_resolution_is_explicit_and_does_not_reapply()
+    {
+        var service = File.ReadAllText(RepoPath("InovaGed.Infrastructure", "SmartGed", "SmartGedService.cs"));
+        var controller = File.ReadAllText(RepoPath("InovaGed.Web", "Controller", "SmartGedController.cs"));
+        var view = File.ReadAllText(RepoPath("InovaGed.Web", "Views", "SmartGed", "ReviewQueue.cshtml"));
+        var migration = File.ReadAllText(RepoPath("database", "migrations", "2026_10_20_smart_ged_review_admin_resolution.sql"));
+
+        Assert.Contains("ResolveAdministrativeAsync", service);
+        Assert.Contains("status = 'ADMIN_RESOLVED'", service);
+        Assert.Contains("result_status = 'FINALIZED'", service);
+        Assert.Contains("[Authorize(Policy = AppPolicies.FullAdminOnly)]", controller);
+        Assert.Contains("ResolveAdministrativeReview", view);
+        Assert.Contains("admin_resolution_reason", migration);
+        Assert.Contains("admin_resolution_evidence", migration);
     }
 
     [Fact]

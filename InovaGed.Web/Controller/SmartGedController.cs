@@ -89,6 +89,37 @@ public sealed class SmartGedController : Controller
         return RedirectToAction(nameof(ReviewQueue), new { status = status ?? "PENDING", kind = kind ?? "classification", page, pageSize });
     }
 
+    [HttpPost("ReviewQueue/ResolveAdministrative")]
+    [Authorize(Policy = AppPolicies.FullAdminOnly)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ResolveAdministrativeReview(
+        [FromForm] Guid suggestionId,
+        [FromForm] string suggestionKind,
+        [FromForm] string reason,
+        [FromForm] string evidence,
+        [FromForm] string? status,
+        [FromForm] string? kind,
+        [FromForm] int page = 1,
+        [FromForm] int pageSize = 20,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            await _reviewRecovery.ResolveAdministrativeAsync(_user.TenantId, suggestionId, suggestionKind, _user.UserId, reason, evidence, ct);
+            TempData["Success"] = "Pendência administrativa resolvida com justificativa e evidência registradas.";
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = SafeReviewMessage(ex);
+        }
+
+        return RedirectToAction(nameof(ReviewQueue), new { status = status ?? "PENDING", kind = kind ?? "classification", page, pageSize });
+    }
+
     [HttpGet("Document/{documentId:guid}")]
     public async Task<IActionResult> Document(Guid documentId, CancellationToken ct)
     {
@@ -373,7 +404,9 @@ where d.tenant_id = @tenantId and d.id = @documentId and coalesce(d.reg_status, 
             "A sugestão refere-se a uma versão documental anterior",
             "A classe sugerida não pertence",
             "A recomendação de temporalidade refere-se",
-            "Nenhum documento foi atualizado pelo recálculo"
+            "Nenhum documento foi atualizado pelo recálculo",
+            "A sugestão possui falha sem evidência",
+            "Pendência administrativa não encontrada"
         };
         return known.Any(x => message.Contains(x, StringComparison.OrdinalIgnoreCase));
     }

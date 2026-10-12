@@ -308,7 +308,8 @@ values(@tenantId,@documentId,@analysisId,'CORRENTE',@destination,'Derivada da cl
         var existing = await c.QuerySingleOrDefaultAsync<ClassificationSuggestionDetailRow>(new CommandDefinition("""
 select s.id as Id, s.document_id as DocumentId, s.suggested_classification_id as ClassificationId,
        s.confidence as Confidence, s.status as Status,
-       s.version_id as VersionId, s.plan_version_id as PlanVersionId
+       s.version_id as VersionId, s.plan_version_id as PlanVersionId,
+       s.review_operation_id as ReviewOperationId
 from ged.document_classification_suggestion s
 where s.tenant_id = @tenantId and s.id = @id
 """, new { tenantId, id }, cancellationToken: ct));
@@ -324,8 +325,7 @@ where s.tenant_id = @tenantId and s.id = @id
         if (string.Equals(existing.Status, status, StringComparison.OrdinalIgnoreCase))
             return;
 
-        if (!IsReviewableStatus(existing.Status))
-            throw new InvalidOperationException($"Sugestão já revisada anteriormente com situação '{existing.Status}'.");
+        await EnsureReviewableAsync(c, tenantId, existing.Status, existing.ReviewOperationId, "CLASSIFICATION", ct);
 
         if (status == "REJECTED")
         {
@@ -524,7 +524,8 @@ where tenant_id = @tenantId and id = @id and status = 'PROCESSING' and review_op
         await using var c = await _db.OpenAsync(ct);
         var existing = await c.QuerySingleOrDefaultAsync<RetentionSuggestionDetailRow>(new CommandDefinition("""
 select s.id as Id, s.document_id as DocumentId, s.suggested_rule_id as RuleId,
-       s.confidence as Confidence, s.status as Status, s.version_id as VersionId
+       s.confidence as Confidence, s.status as Status, s.version_id as VersionId,
+       s.review_operation_id as ReviewOperationId
 from ged.document_retention_suggestion s
 where s.tenant_id = @tenantId and s.id = @id
 """, new { tenantId, id }, cancellationToken: ct));
@@ -539,8 +540,7 @@ where s.tenant_id = @tenantId and s.id = @id
         if (string.Equals(existing.Status, status, StringComparison.OrdinalIgnoreCase))
             return;
 
-        if (!IsReviewableStatus(existing.Status))
-            throw new InvalidOperationException($"Sugestão já revisada anteriormente com situação '{existing.Status}'.");
+        await EnsureReviewableAsync(c, tenantId, existing.Status, existing.ReviewOperationId, "RETENTION", ct);
 
         var docState = await c.QuerySingleOrDefaultAsync<DocumentCurrentStateRow>(new CommandDefinition("""
 select id as Id, coalesce(status,'') as DocStatus, coalesce(reg_status,'A') as RegStatus,
@@ -699,6 +699,37 @@ where tenant_id = @tenantId and id = @id and status = 'PROCESSING' and review_op
     private static bool IsReviewableStatus(string? status) =>
         status is not null && (status.Equals("PENDING", StringComparison.OrdinalIgnoreCase) || status.Equals("FAILED", StringComparison.OrdinalIgnoreCase));
 
+    private static async Task EnsureReviewableAsync(
+        Npgsql.NpgsqlConnection connection,
+        Guid tenantId,
+        string? status,
+        Guid? operationId,
+        string suggestionKind,
+        CancellationToken ct)
+    {
+        if (!IsReviewableStatus(status))
+            throw new InvalidOperationException($"Sugestão já revisada anteriormente com situação '{status}'.");
+
+        if (!status!.Equals("FAILED", StringComparison.OrdinalIgnoreCase) || !operationId.HasValue)
+            return;
+
+        var effectStatus = await connection.ExecuteScalarAsync<string?>(new CommandDefinition("""
+select effect_status
+from ged.smart_ged_review_operation_result
+where tenant_id = @tenantId
+  and operation_id = @operationId
+  and suggestion_kind = @suggestionKind
+  and coalesce(reg_status,'A') = 'A'
+order by updated_at desc
+limit 1
+""", new { tenantId, operationId, suggestionKind }, cancellationToken: ct));
+
+        if (string.Equals(effectStatus, "NO_EFFECT", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        throw new InvalidOperationException("A sugestão possui falha sem evidência de ausência de efeito. Resolva a pendência administrativa antes de nova decisão.");
+    }
+
     private static string PublicReviewFailure(Exception ex)
     {
         if (ex is ArgumentException)
@@ -823,7 +854,7 @@ where tenant_id = @tenantId and id = @id and status = 'PROCESSING' and review_op
             tenantId,
             id,
             operationId,
-            status = applicationCompleted ? "FAILED_APPLIED" : "FAILED",
+            status = applicationCompleted ? "FAILED_APPLIED" : "RECOVERY_INDETERMINATE",
             failureCode = ex.GetType().Name,
             message = PublicReviewFailure(ex),
             applicationCompleted
@@ -853,7 +884,7 @@ where tenant_id = @tenantId and id = @id and status = 'PROCESSING' and review_op
             tenantId,
             id,
             operationId,
-            status = applicationCompleted ? "FAILED_APPLIED" : "FAILED",
+            status = applicationCompleted ? "FAILED_APPLIED" : "RECOVERY_INDETERMINATE",
             failureCode = ex.GetType().Name,
             message = PublicReviewFailure(ex),
             applicationCompleted
@@ -870,6 +901,121 @@ where tenant_id = @tenantId and id = @id and status = 'PROCESSING' and review_op
         var result = await RecoverExpiredReviewOperationsAsync(connection, tenantId, ct);
         await Audit(tenantId, performedBy, "SMART_GED_REVIEW_RECOVERY_EXECUTED", null, result, ct);
         return result;
+    }
+
+    public async Task ResolveAdministrativeAsync(Guid tenantId, Guid suggestionId, string suggestionKind, Guid performedBy, string reason, string evidence, CancellationToken ct)
+    {
+        reason = NormalizeReviewText(reason) ?? throw new ArgumentException("Informe a justificativa da resolução administrativa.");
+        evidence = NormalizeReviewText(evidence) ?? throw new ArgumentException("Informe a evidência verificada para a resolução administrativa.");
+
+        var isAdmin = await _accessPolicy.IsAdminAsync(tenantId, performedBy, null, ct);
+        if (!isAdmin)
+            throw new UnauthorizedAccessException("Resolução administrativa de revisões assistidas exige perfil FullAdmin.");
+
+        var normalizedKind = NormalizeSuggestionKind(suggestionKind);
+        await using var connection = await _db.OpenAsync(ct);
+        await using var tx = await connection.BeginTransactionAsync(ct);
+
+        var resolved = normalizedKind == "CLASSIFICATION"
+            ? await ResolveClassificationAdministrativeAsync(connection, tx, tenantId, suggestionId, performedBy, reason, evidence, ct)
+            : await ResolveRetentionAdministrativeAsync(connection, tx, tenantId, suggestionId, performedBy, reason, evidence, ct);
+
+        if (resolved is null)
+            throw new InvalidOperationException("Pendência administrativa não encontrada ou já resolvida.");
+
+        if (resolved.OperationId.HasValue)
+        {
+            await connection.ExecuteAsync(new CommandDefinition("""
+update ged.smart_ged_review_operation_result
+set result_status = 'FINALIZED',
+    audit_event = @auditEvent,
+    audit_recorded_at = now(),
+    result_payload_json = coalesce(result_payload_json, '{}'::jsonb) || cast(@payload as jsonb),
+    updated_at = now()
+where tenant_id = @tenantId and operation_id = @operationId and reg_status = 'A'
+""", new
+            {
+                tenantId,
+                operationId = resolved.OperationId.Value,
+                auditEvent = $"SMART_GED_{normalizedKind}_ADMIN_RESOLVED",
+                payload = JsonSerializer.Serialize(new { adminResolution = true, resolvedBy = performedBy, reason, evidence, previousStatus = resolved.PreviousStatus })
+            }, tx, cancellationToken: ct));
+        }
+
+        await tx.CommitAsync(ct);
+        await Audit(tenantId, performedBy, $"SMART_GED_{normalizedKind}_ADMIN_RESOLVED", resolved.DocumentId, new
+        {
+            suggestionId,
+            operationId = resolved.OperationId,
+            previousStatus = resolved.PreviousStatus,
+            reason,
+            evidence
+        }, ct);
+    }
+
+    private static async Task<AdminResolutionRow?> ResolveClassificationAdministrativeAsync(
+        Npgsql.NpgsqlConnection connection,
+        Npgsql.NpgsqlTransaction tx,
+        Guid tenantId,
+        Guid suggestionId,
+        Guid performedBy,
+        string reason,
+        string evidence,
+        CancellationToken ct)
+    {
+        return await connection.QuerySingleOrDefaultAsync<AdminResolutionRow>(new CommandDefinition("""
+update ged.document_classification_suggestion
+set admin_resolution_previous_status = status,
+    status = 'ADMIN_RESOLVED',
+    admin_resolution_by = @performedBy,
+    admin_resolution_at = now(),
+    admin_resolution_reason = @reason,
+    admin_resolution_evidence = @evidence,
+    recovery_notes = concat_ws(E'\n', recovery_notes, 'Resolução administrativa: ' || @reason),
+    processing_expires_at = null
+where tenant_id = @tenantId
+  and id = @suggestionId
+  and status in ('FAILED_APPLIED','RECOVERY_INDETERMINATE')
+  and coalesce(reg_status,'A') = 'A'
+returning document_id as DocumentId, review_operation_id as OperationId, admin_resolution_previous_status as PreviousStatus
+""", new { tenantId, suggestionId, performedBy, reason, evidence }, tx, cancellationToken: ct));
+    }
+
+    private static async Task<AdminResolutionRow?> ResolveRetentionAdministrativeAsync(
+        Npgsql.NpgsqlConnection connection,
+        Npgsql.NpgsqlTransaction tx,
+        Guid tenantId,
+        Guid suggestionId,
+        Guid performedBy,
+        string reason,
+        string evidence,
+        CancellationToken ct)
+    {
+        return await connection.QuerySingleOrDefaultAsync<AdminResolutionRow>(new CommandDefinition("""
+update ged.document_retention_suggestion
+set admin_resolution_previous_status = status,
+    status = 'ADMIN_RESOLVED',
+    admin_resolution_by = @performedBy,
+    admin_resolution_at = now(),
+    admin_resolution_reason = @reason,
+    admin_resolution_evidence = @evidence,
+    recovery_notes = concat_ws(E'\n', recovery_notes, 'Resolução administrativa: ' || @reason),
+    processing_expires_at = null
+where tenant_id = @tenantId
+  and id = @suggestionId
+  and status in ('FAILED_APPLIED','RECOVERY_INDETERMINATE')
+  and coalesce(reg_status,'A') = 'A'
+returning document_id as DocumentId, review_operation_id as OperationId, admin_resolution_previous_status as PreviousStatus
+""", new { tenantId, suggestionId, performedBy, reason, evidence }, tx, cancellationToken: ct));
+    }
+
+    private static string NormalizeSuggestionKind(string suggestionKind)
+    {
+        if (suggestionKind.Equals("classification", StringComparison.OrdinalIgnoreCase) || suggestionKind.Equals("CLASSIFICATION", StringComparison.OrdinalIgnoreCase))
+            return "CLASSIFICATION";
+        if (suggestionKind.Equals("retention", StringComparison.OrdinalIgnoreCase) || suggestionKind.Equals("RETENTION", StringComparison.OrdinalIgnoreCase))
+            return "RETENTION";
+        throw new ArgumentException("Tipo de sugestão inválido para resolução administrativa.");
     }
 
     private static async Task<SmartGedReviewRecoveryResult> RecoverExpiredReviewOperationsAsync(Npgsql.NpgsqlConnection connection, Guid tenantId, CancellationToken ct)
@@ -1396,8 +1542,9 @@ order by {orderBy}
     private sealed class PlanVersionInfoRow { public Guid Id { get; set; } public int VersionNo { get; set; } }
     private sealed class PlanRow { public Guid Id { get; set; } public string? Code { get; set; } public string? Title { get; set; } public string? Description { get; set; } public string? FinalDestination { get; set; } }
     private sealed class AnalysisRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public string Status { get; set; } = ""; public string? Summary { get; set; } public string? DocumentType { get; set; } public string? Subject { get; set; } public DateTime? DetectedDate { get; set; } public string? IdentifiersJson { get; set; } public string? SensitiveJson { get; set; } public decimal Confidence { get; set; } }
-    private sealed class ClassificationSuggestionDetailRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public Guid? ClassificationId { get; set; } public decimal Confidence { get; set; } public string Status { get; set; } = ""; public Guid? VersionId { get; set; } public Guid? PlanVersionId { get; set; } }
-    private sealed class RetentionSuggestionDetailRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public Guid? RuleId { get; set; } public decimal Confidence { get; set; } public string Status { get; set; } = ""; public Guid? VersionId { get; set; } }
+    private sealed class ClassificationSuggestionDetailRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public Guid? ClassificationId { get; set; } public decimal Confidence { get; set; } public string Status { get; set; } = ""; public Guid? VersionId { get; set; } public Guid? PlanVersionId { get; set; } public Guid? ReviewOperationId { get; set; } }
+    private sealed class RetentionSuggestionDetailRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public Guid? RuleId { get; set; } public decimal Confidence { get; set; } public string Status { get; set; } = ""; public Guid? VersionId { get; set; } public Guid? ReviewOperationId { get; set; } }
+    private sealed class AdminResolutionRow { public Guid DocumentId { get; set; } public Guid? OperationId { get; set; } public string PreviousStatus { get; set; } = ""; }
     private sealed class DocumentCurrentStateRow { public Guid Id { get; set; } public string DocStatus { get; set; } = ""; public string RegStatus { get; set; } = ""; public Guid? CurrentClassificationId { get; set; } public Guid? CurrentVersionId { get; set; } }
     private sealed class ClassificationRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public string? Code { get; set; } public string? Title { get; set; } public string? Reason { get; set; } public decimal Confidence { get; set; } public string Status { get; set; } = ""; public string? DocumentTitle { get; set; } public int? VersionNumber { get; set; } public string? CurrentClassification { get; set; } public DateTimeOffset? CreatedAt { get; set; } public bool IsObsolete { get; set; } public string? ReviewNotes { get; set; } public Guid? VersionId { get; set; } public Guid? PlanVersionId { get; set; } public bool IsLegacyUnproven { get; set; } public Guid? ReviewOperationId { get; set; } public DateTimeOffset? ProcessingStartedAt { get; set; } public string? PublicFailureMessage { get; set; } public DateTimeOffset? RecoveredAt { get; set; } public string? RecoveryNotes { get; set; } }
     private sealed class RetentionRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public string? Phase { get; set; } public string? FinalDestination { get; set; } public string? TriggerEvent { get; set; } public DateTime? RetentionUntil { get; set; } public string? Reason { get; set; } public decimal Confidence { get; set; } public string Status { get; set; } = ""; public string? DocumentTitle { get; set; } public int? VersionNumber { get; set; } public string? CurrentRetention { get; set; } public DateTimeOffset? CreatedAt { get; set; } public bool IsObsolete { get; set; } public string? ReviewNotes { get; set; } public Guid? VersionId { get; set; } public Guid? PlanVersionId { get; set; } public bool IsLegacyUnproven { get; set; } public Guid? ReviewOperationId { get; set; } public DateTimeOffset? ProcessingStartedAt { get; set; } public string? PublicFailureMessage { get; set; } public DateTimeOffset? RecoveredAt { get; set; } public string? RecoveryNotes { get; set; } }
