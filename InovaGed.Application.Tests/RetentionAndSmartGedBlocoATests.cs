@@ -509,7 +509,8 @@ public sealed class RetentionAndSmartGedBlocoATests
         var source = File.ReadAllText(RepoPath("InovaGed.Infrastructure", "SmartGed", "SmartGedService.cs"));
 
         Assert.Contains("suggested_rule_id", source);
-        Assert.Contains("var ruleId = retentionIsActionable ? best.Plan.Id : (Guid?)null", source);
+        Assert.Contains("i.id as ItemId", source);
+        Assert.Contains("var ruleId = retentionIsActionable ? best.Plan.ItemId : (Guid?)null", source);
         Assert.Contains("var destination = best.Plan.FinalDestination", source);
         Assert.DoesNotContain("best.Plan.FinalDestination ?? \"REQUER_REVISAO\"", source);
         Assert.Contains("Pendência: a temporalidade não possui regra/versionamento comprovado", source);
@@ -524,7 +525,22 @@ public sealed class RetentionAndSmartGedBlocoATests
         Assert.Contains("admin_resolution_by as DecisionBy", source);
         Assert.Contains("TryClaimAdministrativeAuditAsync", source);
         Assert.Contains("admin_resolution_audit_status = 'RECORDING'", source);
+        Assert.Contains("admin_resolution_audit_claim_expires_at", source);
+        Assert.Contains("AdministrativeAuditAlreadyRecordedAsync", source);
+        Assert.Contains("eventIdentity", source);
         Assert.Contains("decisionAuthorMissing = !decisionBy.HasValue", source);
+    }
+
+    [Fact]
+    public void SmartGed_retention_acceptance_revalidates_current_classification_plan_and_item()
+    {
+        var source = File.ReadAllText(RepoPath("InovaGed.Infrastructure", "SmartGed", "SmartGedService.cs"));
+
+        Assert.Contains("pvi.id = s.suggested_rule_id", source);
+        Assert.Contains("docState.CurrentClassificationId != existing.SuggestedClassificationId", source);
+        Assert.Contains("d.classification_id = @classificationId", source);
+        Assert.Contains("d.classification_version_id = @planVersionId", source);
+        Assert.Contains("A recomendação de temporalidade depende da classificação sugerida", source);
     }
 
     [Fact]

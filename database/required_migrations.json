@@ -964,5 +964,12 @@
     "area": "SmartGed",
     "required": true,
     "description": "Separa decisão administrativa de auditoria registrada e permite reconciliação idempotente."
+  },
+  {
+    "name": "2026_10_22_smart_ged_admin_audit_claims",
+    "path": "database/migrations/2026_10_22_smart_ged_admin_audit_claims.sql",
+    "area": "SmartGed",
+    "required": true,
+    "description": "Adiciona identidade estável, expiração e recuperação de reservas RECORDING da auditoria administrativa."
   }
 ]

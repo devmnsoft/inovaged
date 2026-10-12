@@ -1306,6 +1306,14 @@
       "transactional": true,
       "deploymentSafety": "Additive",
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_10_22_smart_ged_admin_audit_claims",
+      "path": "database/migrations/2026_10_22_smart_ged_admin_audit_claims.sql",
+      "module": "SmartGed",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
     }
   ]
 }

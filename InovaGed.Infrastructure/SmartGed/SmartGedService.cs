@@ -120,6 +120,7 @@ order by version_no desc limit 1
                 // Versão vigente do plano de classificação
                 plans = (await c.QueryAsync<PlanRow>(new CommandDefinition("""
 select coalesce(i.classification_id, cp.id) as Id,
+       i.id as ItemId,
        coalesce(i.code, cp.code) as Code,
        coalesce(i.name, cp.name, i.title) as Title,
        coalesce(cp.description, '') as Description,
@@ -180,14 +181,14 @@ values(@tenantId,@documentId,@analysisId,@Id,@Code,@Title,@reason,@confidence)
                 await Audit(tenantId, null, "CLASSIFICATION_SUGGESTION_CREATED", documentId, new { analysisId, versionId, best.Plan.Id, confidence }, ct);
 
                 var retCols = (await c.QueryAsync<string>(new CommandDefinition("select column_name from information_schema.columns where table_schema='ged' and table_name='document_retention_suggestion'", cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                var retentionIsActionable = versionId.HasValue && planVersionId.HasValue && best.Plan.HasRetentionDefinition();
+                var retentionIsActionable = versionId.HasValue && planVersionId.HasValue && best.Plan.HasCanonicalRetentionRule();
                 var retentionReason = retentionIsActionable
-                    ? "Derivada da regra canônica vinculada à classificação sugerida; exige confirmação humana antes do recálculo."
+                    ? "Derivada do item versionado do plano de classificação; exige confirmação humana antes do recálculo canônico."
                     : "Pendência: a temporalidade não possui regra/versionamento comprovado para aplicação automática. Confirme a classificação e reanalise o documento.";
                 var retentionStatus = "PENDING";
                 var destination = best.Plan.FinalDestination;
                 var phase = retentionIsActionable ? "CORRENTE" : null;
-                var ruleId = retentionIsActionable ? best.Plan.Id : (Guid?)null;
+                var ruleId = retentionIsActionable ? best.Plan.ItemId : (Guid?)null;
                 var triggerEvent = retentionIsActionable ? best.Plan.TriggerEvent : null;
                 if (retCols.Contains("version_id"))
                 {
@@ -548,9 +549,23 @@ where tenant_id = @tenantId and id = @id and status = 'PROCESSING' and review_op
 select s.id as Id, s.document_id as DocumentId, s.suggested_rule_id as RuleId,
        s.confidence as Confidence, s.status as Status, s.version_id as VersionId,
        s.plan_version_id as PlanVersionId,
+       pvi.classification_id as SuggestedClassificationId,
+       pvi.retention_start_event::text as TriggerEvent,
+       pvi.final_destination::text as FinalDestination,
+       pvi.retention_active_days as ActiveDays,
+       pvi.retention_active_months as ActiveMonths,
+       pvi.retention_active_years as ActiveYears,
+       pvi.retention_archive_days as ArchiveDays,
+       pvi.retention_archive_months as ArchiveMonths,
+       pvi.retention_archive_years as ArchiveYears,
        coalesce(s.is_legacy_unproven, s.version_id is null) as IsLegacyUnproven,
        s.review_operation_id as ReviewOperationId
 from ged.document_retention_suggestion s
+left join ged.classification_plan_version_item pvi
+  on pvi.tenant_id = s.tenant_id
+ and pvi.version_id = s.plan_version_id
+ and pvi.id = s.suggested_rule_id
+ and coalesce(pvi.reg_status,'A') = 'A'
 where s.tenant_id = @tenantId and s.id = @id
 """, new { tenantId, id }, cancellationToken: ct));
 
@@ -599,6 +614,10 @@ where tenant_id = @tenantId and id = @id and status in ('PENDING','FAILED')
                 throw new InvalidOperationException("A recomendação de temporalidade refere-se a uma versão anterior do documento.");
             if (!existing.RuleId.HasValue)
                 throw new InvalidOperationException("Recomendação de temporalidade sem regra comprovada deve ser revisada antes da aplicação.");
+            if (!existing.PlanVersionId.HasValue || !existing.SuggestedClassificationId.HasValue || !existing.HasCanonicalRetentionRule())
+                throw new InvalidOperationException("Recomendação de temporalidade sem item versionado completo deve ser reanalisada antes da aplicação.");
+            if (docState.CurrentClassificationId != existing.SuggestedClassificationId)
+                throw new InvalidOperationException("A recomendação de temporalidade depende da classificação sugerida. Aplique a classificação e reanalise antes de aprovar a temporalidade.");
 
             var operationId = Guid.NewGuid();
             var applicationCompleted = false;
@@ -622,8 +641,10 @@ where s.tenant_id = @tenantId
   and d.id = s.document_id
   and coalesce(d.reg_status,'A') = 'A'
   and coalesce(d.status,'') <> 'DELETED'
-  and (s.version_id is null or d.current_version_id is null or s.version_id = d.current_version_id)
-""", new { tenantId, id, userId, notes, operationId }, cancellationToken: ct));
+  and s.version_id = d.current_version_id
+  and d.classification_id = @classificationId
+  and d.classification_version_id = @planVersionId
+""", new { tenantId, id, userId, notes, operationId, classificationId = existing.SuggestedClassificationId.Value, planVersionId = existing.PlanVersionId.Value }, cancellationToken: ct));
 
             if (claimed == 0) throw new InvalidOperationException("Sugestão já revisada concorrentemente.");
 
@@ -798,7 +819,9 @@ limit 1
             "Documento sem versão vigente",
             "Falha legada sem operação",
             "A sugestão possui falha sem evidência",
-            "Recomendação de temporalidade sem regra"
+            "Recomendação de temporalidade sem regra",
+            "Recomendação de temporalidade sem item versionado",
+            "A recomendação de temporalidade depende da classificação"
         };
         return known.Any(x => message.Contains(x, StringComparison.OrdinalIgnoreCase));
     }
@@ -1002,7 +1025,8 @@ select 'CLASSIFICATION' as SuggestionKind, id as SuggestionId, document_id as Do
 from ged.document_classification_suggestion
 where tenant_id = @tenantId
   and status = 'ADMIN_RESOLVED'
-  and admin_resolution_audit_status in ('PENDING','FAILED')
+  and (admin_resolution_audit_status in ('PENDING','FAILED')
+       or (admin_resolution_audit_status = 'RECORDING' and coalesce(admin_resolution_audit_claim_expires_at, admin_resolution_at) < now()))
   and coalesce(reg_status,'A') = 'A'
 union all
 select 'RETENTION' as SuggestionKind, id as SuggestionId, document_id as DocumentId, review_operation_id as OperationId,
@@ -1013,7 +1037,8 @@ select 'RETENTION' as SuggestionKind, id as SuggestionId, document_id as Documen
 from ged.document_retention_suggestion
 where tenant_id = @tenantId
   and status = 'ADMIN_RESOLVED'
-  and admin_resolution_audit_status in ('PENDING','FAILED')
+  and (admin_resolution_audit_status in ('PENDING','FAILED')
+       or (admin_resolution_audit_status = 'RECORDING' and coalesce(admin_resolution_audit_claim_expires_at, admin_resolution_at) < now()))
   and coalesce(reg_status,'A') = 'A'
 order by SuggestionKind, SuggestionId
 limit 100
@@ -1044,7 +1069,15 @@ limit 100
         CancellationToken ct)
     {
         var auditEvent = $"SMART_GED_{normalizedKind}_ADMIN_RESOLVED";
-        var claimed = await TryClaimAdministrativeAuditAsync(connection, tenantId, suggestionId, normalizedKind, auditEvent, ct);
+        var eventIdentity = $"smart-ged-admin-resolution:{tenantId:N}:{normalizedKind.ToLowerInvariant()}:{suggestionId:N}";
+
+        if (await AdministrativeAuditAlreadyRecordedAsync(connection, tenantId, auditEvent, documentId, eventIdentity, ct))
+        {
+            await MarkAdministrativeAuditRecordedAsync(connection, tenantId, suggestionId, normalizedKind, operationId, auditEvent, eventIdentity, ct);
+            return true;
+        }
+
+        var claimed = await TryClaimAdministrativeAuditAsync(connection, tenantId, suggestionId, normalizedKind, auditEvent, eventIdentity, ct);
         if (!claimed)
             return false;
 
@@ -1057,12 +1090,13 @@ limit 100
                 previousStatus,
                 reason,
                 evidence,
+                eventIdentity,
                 decisionBy,
                 reconciledBy,
                 decisionAuthorMissing = !decisionBy.HasValue
-            }, ct);
+            }, ct, eventIdentity);
 
-            await MarkAdministrativeAuditRecordedAsync(connection, tenantId, suggestionId, normalizedKind, operationId, auditEvent, ct);
+            await MarkAdministrativeAuditRecordedAsync(connection, tenantId, suggestionId, normalizedKind, operationId, auditEvent, eventIdentity, ct);
             return true;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -1073,34 +1107,76 @@ limit 100
         }
     }
 
-    private static async Task<bool> TryClaimAdministrativeAuditAsync(Npgsql.NpgsqlConnection connection, Guid tenantId, Guid suggestionId, string normalizedKind, string auditEvent, CancellationToken ct)
+    private static async Task<bool> AdministrativeAuditAlreadyRecordedAsync(Npgsql.NpgsqlConnection connection, Guid tenantId, string auditEvent, Guid documentId, string eventIdentity, CancellationToken ct)
+    {
+        var hasAppAudit = await connection.ExecuteScalarAsync<bool>(new CommandDefinition("select to_regclass('ged.app_audit_log') is not null", cancellationToken: ct));
+        if (hasAppAudit)
+        {
+            return await connection.ExecuteScalarAsync<bool>(new CommandDefinition("""
+select exists (
+    select 1
+    from ged.app_audit_log
+    where tenant_id = @tenantId
+      and action in (@auditEvent, 'VIEW')
+      and entity_name = 'SMART_GED'
+      and entity_id = @documentId::text
+      and correlation_id = @eventIdentity
+      and coalesce(reg_status,'A') = 'A'
+)
+""", new { tenantId, auditEvent, documentId, eventIdentity }, cancellationToken: ct));
+        }
+
+        var hasLegacyAudit = await connection.ExecuteScalarAsync<bool>(new CommandDefinition("select to_regclass('ged.audit_log') is not null", cancellationToken: ct));
+        if (!hasLegacyAudit)
+            return false;
+
+        return await connection.ExecuteScalarAsync<bool>(new CommandDefinition("""
+select exists (
+    select 1
+    from ged.audit_log
+    where tenant_id = @tenantId
+      and action::text in (@auditEvent, 'VIEW')
+      and entity_name = 'SMART_GED'
+      and entity_id = @documentId
+      and data::text like '%' || @eventIdentity || '%'
+)
+""", new { tenantId, auditEvent, documentId, eventIdentity }, cancellationToken: ct));
+    }
+
+    private static async Task<bool> TryClaimAdministrativeAuditAsync(Npgsql.NpgsqlConnection connection, Guid tenantId, Guid suggestionId, string normalizedKind, string auditEvent, string eventIdentity, CancellationToken ct)
     {
         var table = normalizedKind == "CLASSIFICATION" ? "ged.document_classification_suggestion" : "ged.document_retention_suggestion";
         var changed = await connection.ExecuteAsync(new CommandDefinition($"""
 update {table}
 set admin_resolution_audit_status = 'RECORDING',
     admin_resolution_audit_event = @auditEvent,
+    admin_resolution_audit_event_identity = @eventIdentity,
+    admin_resolution_audit_claimed_at = now(),
+    admin_resolution_audit_claim_expires_at = now() + interval '10 minutes',
     admin_resolution_audit_error = null
 where tenant_id = @tenantId
   and id = @suggestionId
   and status = 'ADMIN_RESOLVED'
-  and admin_resolution_audit_status in ('PENDING','FAILED')
+  and (admin_resolution_audit_status in ('PENDING','FAILED')
+       or (admin_resolution_audit_status = 'RECORDING' and coalesce(admin_resolution_audit_claim_expires_at, admin_resolution_at) < now()))
   and coalesce(reg_status,'A') = 'A'
-""", new { tenantId, suggestionId, auditEvent }, cancellationToken: ct));
+""", new { tenantId, suggestionId, auditEvent, eventIdentity }, cancellationToken: ct));
         return changed > 0;
     }
 
-    private static async Task MarkAdministrativeAuditRecordedAsync(Npgsql.NpgsqlConnection connection, Guid tenantId, Guid suggestionId, string normalizedKind, Guid? operationId, string auditEvent, CancellationToken ct)
+    private static async Task MarkAdministrativeAuditRecordedAsync(Npgsql.NpgsqlConnection connection, Guid tenantId, Guid suggestionId, string normalizedKind, Guid? operationId, string auditEvent, string eventIdentity, CancellationToken ct)
     {
         var table = normalizedKind == "CLASSIFICATION" ? "ged.document_classification_suggestion" : "ged.document_retention_suggestion";
         await connection.ExecuteAsync(new CommandDefinition($"""
 update {table}
 set admin_resolution_audit_status = 'RECORDED',
     admin_resolution_audit_event = @auditEvent,
+    admin_resolution_audit_event_identity = @eventIdentity,
     admin_resolution_audit_recorded_at = now(),
+    admin_resolution_audit_claim_expires_at = null,
     admin_resolution_audit_error = null
 where tenant_id = @tenantId and id = @suggestionId and status = 'ADMIN_RESOLVED' and coalesce(reg_status,'A') = 'A'
-""", new { tenantId, suggestionId, auditEvent }, cancellationToken: ct));
+""", new { tenantId, suggestionId, auditEvent, eventIdentity }, cancellationToken: ct));
 
         if (operationId.HasValue)
         {
@@ -1719,8 +1795,38 @@ order by {orderBy}
             x.AdminResolutionAuditStatus)).ToArray();
     }
 
-    private Task Audit(Guid tenantId, Guid? userId, string action, Guid? documentId, object data, CancellationToken ct) =>
-        _audit.WriteAsync(tenantId, userId, action, "SMART_GED", documentId, "Ação de inteligência documental", null, null, data, ct);
+    private Task Audit(Guid tenantId, Guid? userId, string action, Guid? documentId, object data, CancellationToken ct, string? correlationId = null) =>
+        _audit.WriteAsync(new AuditWriteCommand(
+            tenantId,
+            userId,
+            action,
+            "SMART_GED",
+            documentId,
+            "Ação de inteligência documental",
+            null,
+            null,
+            correlationId,
+            data), ct);
+
+    private static class RetentionRuleShape
+    {
+        public static bool IsComplete(
+            string? finalDestination,
+            string? triggerEvent,
+            int? activeDays,
+            int? activeMonths,
+            int? activeYears,
+            int? archiveDays,
+            int? archiveMonths,
+            int? archiveYears)
+        {
+            if (string.Equals(finalDestination, "GUARDA_PERMANENTE", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            var hasAnyPeriod = activeDays.HasValue || activeMonths.HasValue || activeYears.HasValue || archiveDays.HasValue || archiveMonths.HasValue || archiveYears.HasValue;
+            return hasAnyPeriod && !string.IsNullOrWhiteSpace(triggerEvent);
+        }
+    }
 
     private static IReadOnlyDictionary<string, IReadOnlyList<string>> DeserializeDictionary(string? json) =>
         string.IsNullOrWhiteSpace(json) ? new Dictionary<string, IReadOnlyList<string>>() : JsonSerializer.Deserialize<Dictionary<string, IReadOnlyList<string>>>(json) ?? new();
@@ -1736,6 +1842,7 @@ order by {orderBy}
     private sealed class PlanRow
     {
         public Guid Id { get; set; }
+        public Guid? ItemId { get; set; }
         public string? Code { get; set; }
         public string? Title { get; set; }
         public string? Description { get; set; }
@@ -1748,18 +1855,35 @@ order by {orderBy}
         public int? ArchiveMonths { get; set; }
         public int? ArchiveYears { get; set; }
 
-        public bool HasRetentionDefinition() =>
-            !string.IsNullOrWhiteSpace(FinalDestination)
-            || ActiveDays.HasValue
-            || ActiveMonths.HasValue
-            || ActiveYears.HasValue
-            || ArchiveDays.HasValue
-            || ArchiveMonths.HasValue
-            || ArchiveYears.HasValue;
+        public bool HasCanonicalRetentionRule() =>
+            ItemId.HasValue && RetentionRuleShape.IsComplete(FinalDestination, TriggerEvent, ActiveDays, ActiveMonths, ActiveYears, ArchiveDays, ArchiveMonths, ArchiveYears);
     }
     private sealed class AnalysisRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public string Status { get; set; } = ""; public string? Summary { get; set; } public string? DocumentType { get; set; } public string? Subject { get; set; } public DateTime? DetectedDate { get; set; } public string? IdentifiersJson { get; set; } public string? SensitiveJson { get; set; } public decimal Confidence { get; set; } }
     private sealed class ClassificationSuggestionDetailRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public Guid? ClassificationId { get; set; } public decimal Confidence { get; set; } public string Status { get; set; } = ""; public Guid? VersionId { get; set; } public Guid? PlanVersionId { get; set; } public bool IsLegacyUnproven { get; set; } public Guid? ReviewOperationId { get; set; } }
-    private sealed class RetentionSuggestionDetailRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public Guid? RuleId { get; set; } public decimal Confidence { get; set; } public string Status { get; set; } = ""; public Guid? VersionId { get; set; } public Guid? PlanVersionId { get; set; } public bool IsLegacyUnproven { get; set; } public Guid? ReviewOperationId { get; set; } }
+    private sealed class RetentionSuggestionDetailRow
+    {
+        public Guid Id { get; set; }
+        public Guid DocumentId { get; set; }
+        public Guid? RuleId { get; set; }
+        public decimal Confidence { get; set; }
+        public string Status { get; set; } = "";
+        public Guid? VersionId { get; set; }
+        public Guid? PlanVersionId { get; set; }
+        public Guid? SuggestedClassificationId { get; set; }
+        public string? TriggerEvent { get; set; }
+        public string? FinalDestination { get; set; }
+        public int? ActiveDays { get; set; }
+        public int? ActiveMonths { get; set; }
+        public int? ActiveYears { get; set; }
+        public int? ArchiveDays { get; set; }
+        public int? ArchiveMonths { get; set; }
+        public int? ArchiveYears { get; set; }
+        public bool IsLegacyUnproven { get; set; }
+        public Guid? ReviewOperationId { get; set; }
+
+        public bool HasCanonicalRetentionRule() =>
+            RuleId.HasValue && RetentionRuleShape.IsComplete(FinalDestination, TriggerEvent, ActiveDays, ActiveMonths, ActiveYears, ArchiveDays, ArchiveMonths, ArchiveYears);
+    }
     private sealed class AdminResolutionRow { public Guid DocumentId { get; set; } public Guid? OperationId { get; set; } public string PreviousStatus { get; set; } = ""; }
     private sealed class AdminAuditPendingRow { public string SuggestionKind { get; set; } = ""; public Guid SuggestionId { get; set; } public Guid DocumentId { get; set; } public Guid? OperationId { get; set; } public string PreviousStatus { get; set; } = ""; public string Reason { get; set; } = ""; public string Evidence { get; set; } = ""; public Guid? DecisionBy { get; set; } }
     private sealed class DocumentCurrentStateRow { public Guid Id { get; set; } public string DocStatus { get; set; } = ""; public string RegStatus { get; set; } = ""; public Guid? CurrentClassificationId { get; set; } public Guid? CurrentVersionId { get; set; } }
