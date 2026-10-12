@@ -39,7 +39,7 @@ with base as (
       else c.code
     end as classification_code,
     case
-      when d.classification_version_id is not null then coalesce(pvi.name, pvi.title)
+      when d.classification_version_id is not null then coalesce(nullif(pvi.name, ''), pvi.code)
       else c.name
     end as classification_name,
     pv.version_no as plan_version_no,

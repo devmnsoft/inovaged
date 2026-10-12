@@ -3180,3 +3180,4 @@ COMMIT;
 \ir migrations/2026_10_20_smart_ged_review_admin_resolution.sql
 \ir migrations/2026_10_21_smart_ged_review_admin_audit_reconciliation.sql
 \ir migrations/2026_10_22_smart_ged_admin_audit_claims.sql
+\ir migrations/2026_10_23_preview_status_requested_at_contract.sql

@@ -38,6 +38,8 @@ WHERE c.table_schema = 'ged'
             var attemptsColumn = new[] { "attempts", "preview_attempts" }.FirstOrDefault(c => map.ContainsKey(c));
             var lastUpdatedColumn = new[] { "finished_at", "updated_at", "last_attempt_at", "preview_generated_at", "requested_at" }.FirstOrDefault(c => map.ContainsKey(c));
             var lastAttemptColumn = map.ContainsKey("last_attempt_at") ? "last_attempt_at" : null;
+            var requestedAtColumn = map.ContainsKey("requested_at") ? "requested_at" : null;
+            var finishedAtColumn = map.ContainsKey("finished_at") ? "finished_at" : null;
 
             var sql = $@"
 SELECT
@@ -48,8 +50,8 @@ SELECT
     {(errorColumn is null ? "NULL::text" : errorColumn)} AS ""ErrorMessage"",
     {(attemptsColumn is null ? "0" : attemptsColumn)}::int AS ""Attempts"",
     {(lastUpdatedColumn is null ? "NULL::timestamptz" : lastUpdatedColumn)} AS ""LastUpdatedAt"",
-    requested_at AS ""RequestedAt"",
-    finished_at AS ""FinishedAt"",
+    {(requestedAtColumn is null ? "NULL::timestamptz" : requestedAtColumn)} AS ""RequestedAt"",
+    {(finishedAtColumn is null ? "NULL::timestamptz" : finishedAtColumn)} AS ""FinishedAt"",
     {(lastAttemptColumn is null ? "NULL::timestamptz" : lastAttemptColumn)} AS ""LastAttemptAt""
 FROM ged.preview_status
 WHERE tenant_id = @tenantId AND document_version_id = @versionId
@@ -87,15 +89,32 @@ LIMIT 1;";
     {
         try
         {
+            var observedAt = DateTimeOffset.UtcNow;
+            var effectiveRequestedAt = requestedAt ?? observedAt;
+            var terminalStatus = status is PreviewProcessingStatus.Ready or PreviewProcessingStatus.Error or PreviewProcessingStatus.Canceled;
+            DateTimeOffset? effectiveFinishedAt = terminalStatus ? finishedAt ?? observedAt : null;
+            var effectivePreviewPath = status == PreviewProcessingStatus.Ready ? previewPath : null;
+            var effectiveErrorMessage = status == PreviewProcessingStatus.Ready ? null : errorMessage;
             const string sql = """
                 INSERT INTO ged.preview_status (tenant_id, document_version_id, status, preview_path, error_message, requested_at, finished_at)
                 VALUES (@tenantId, @versionId, @status::ged.preview_processing_status, @previewPath, @errorMessage, @requestedAt, @finishedAt)
                 ON CONFLICT (tenant_id, document_version_id)
                 DO UPDATE SET status = EXCLUDED.status,
-                              preview_path = COALESCE(EXCLUDED.preview_path, ged.preview_status.preview_path),
+                              preview_path = CASE
+                                  WHEN EXCLUDED.status = 'READY'::ged.preview_processing_status THEN EXCLUDED.preview_path
+                                  ELSE NULL
+                              END,
                               error_message = EXCLUDED.error_message,
-                              requested_at = COALESCE(EXCLUDED.requested_at, ged.preview_status.requested_at),
-                              finished_at = EXCLUDED.finished_at
+                              requested_at = COALESCE(ged.preview_status.requested_at, EXCLUDED.requested_at, now()),
+                              finished_at = CASE
+                                  WHEN EXCLUDED.status IN ('READY'::ged.preview_processing_status, 'FAILED'::ged.preview_processing_status, 'CANCELED'::ged.preview_processing_status) THEN COALESCE(EXCLUDED.finished_at, now())
+                                  ELSE NULL
+                              END,
+                              attempts = COALESCE(ged.preview_status.attempts, 0) + CASE
+                                  WHEN EXCLUDED.status IN ('PROCESSING'::ged.preview_processing_status, 'FAILED'::ged.preview_processing_status) THEN 1
+                                  ELSE 0
+                              END,
+                              last_attempt_at = now()
                 """;
             await using var conn = await _db.OpenAsync(ct);
             await conn.ExecuteAsync(new CommandDefinition(sql, new
@@ -103,10 +122,10 @@ LIMIT 1;";
                 tenantId,
                 versionId,
                 status = ToDatabaseStatus(status),
-                previewPath,
-                errorMessage,
-                requestedAt,
-                finishedAt
+                previewPath = effectivePreviewPath,
+                errorMessage = effectiveErrorMessage,
+                requestedAt = effectiveRequestedAt,
+                finishedAt = effectiveFinishedAt
             }, cancellationToken: ct));
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

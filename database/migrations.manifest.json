@@ -1314,6 +1314,14 @@
       "transactional": true,
       "deploymentSafety": "Additive",
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_10_23_preview_status_requested_at_contract",
+      "path": "database/migrations/2026_10_23_preview_status_requested_at_contract.sql",
+      "module": "Preview",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
     }
   ]
 }

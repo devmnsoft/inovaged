@@ -971,5 +971,12 @@
     "area": "SmartGed",
     "required": true,
     "description": "Adiciona identidade estável, expiração e recuperação de reservas RECORDING da auditoria administrativa."
+  },
+  {
+    "name": "2026_10_23_preview_status_requested_at_contract",
+    "path": "database/migrations/2026_10_23_preview_status_requested_at_contract.sql",
+    "area": "Preview",
+    "required": true,
+    "description": "Fecha o contrato de requested_at obrigatório no preview, preservando a primeira observação e estados canônicos."
   }
 ]

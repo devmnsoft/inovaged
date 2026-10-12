@@ -11,7 +11,7 @@
         new AtlasMetricVm("Consultas hoje", Model.Statistics.SearchesToday.ToString(), "Volume auditado", "info", "search"),
         new AtlasMetricVm("Sem resultado", Model.Statistics.SearchesWithoutResult.ToString(), "Oportunidades de melhoria", Model.Statistics.SearchesWithoutResult > 0 ? "warning" : "success", "warning"),
         new AtlasMetricVm("Cobertura OCR", $"{Model.Statistics.OcrAvailablePercent:0.#}%", "Fontes pesquisáveis", "success", "document"),
-        new AtlasMetricVm("Tempo médio", $"{Model.Statistics.AverageDurationMs} ms", "Últimos 30 dias", "info", "clock") };
+        new AtlasMetricVm("Tempo médio", $"{Model.Statistics.AverageDurationMs} ms", "Últimos 30 dias", "info", "history") };
 }
 @section Styles { <link rel="stylesheet" href="~/css/pages/smart-search-admin.css" asp-append-version="true" /> }
 <div class="atlas-prime-page smart-admin">

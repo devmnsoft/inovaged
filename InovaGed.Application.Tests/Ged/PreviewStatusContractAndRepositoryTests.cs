@@ -28,6 +28,8 @@ public sealed class PreviewStatusContractAndRepositoryTests
             Assert.Contains("AS \"Status\"", content);
             Assert.Contains("AS \"Attempts\"", content);
             Assert.Contains("AS \"LastUpdatedAt\"", content);
+            Assert.Contains("effectiveRequestedAt", content);
+            Assert.Contains("requested_at = COALESCE(ged.preview_status.requested_at, EXCLUDED.requested_at, now())", content);
         }
     }
 
@@ -113,6 +115,52 @@ public sealed class PreviewStatusContractAndRepositoryTests
             Assert.Contains("ux_preview_status_tenant_version", sql, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("attempts", sql, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("last_attempt_at", sql, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public void PreviewStatusRequestedAtContract_IsRequiredMigration()
+    {
+        var migrationPath = Path.Combine(AppContext.BaseDirectory, "../../../../../database/migrations/2026_10_23_preview_status_requested_at_contract.sql");
+        Assert.True(File.Exists(migrationPath));
+
+        var sql = File.ReadAllText(migrationPath);
+        Assert.Contains("ALTER COLUMN requested_at SET DEFAULT now()", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ALTER COLUMN requested_at SET NOT NULL", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ux_preview_status_tenant_version", sql, StringComparison.OrdinalIgnoreCase);
+
+        var requiredPath = Path.Combine(AppContext.BaseDirectory, "../../../../../database/required_migrations.json");
+        var required = File.ReadAllText(requiredPath);
+        Assert.Contains("2026_10_23_preview_status_requested_at_contract", required, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RuntimeSql_DoesNotReferenceLegacyClassificationVersionItemTitle()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var files = Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
+            .Where(path => path.Contains($"{Path.DirectorySeparatorChar}InovaGed.", StringComparison.OrdinalIgnoreCase))
+            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
+            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase));
+
+        foreach (var file in files)
+        {
+            var content = File.ReadAllText(file);
+            Assert.DoesNotContain("pvi.title", content, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public void AtlasViews_DoNotUseMissingClockIcon()
+    {
+        var viewsRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../InovaGed.Web/Views"));
+        var files = Directory.EnumerateFiles(viewsRoot, "*.cshtml", SearchOption.AllDirectories);
+
+        foreach (var file in files)
+        {
+            var content = File.ReadAllText(file);
+            Assert.DoesNotContain("name=\"clock\"", content, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("\"clock\"", content, StringComparison.OrdinalIgnoreCase);
         }
     }
 }

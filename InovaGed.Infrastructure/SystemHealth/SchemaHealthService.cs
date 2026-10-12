@@ -109,6 +109,13 @@ public sealed class SchemaHealthService : ISchemaHealthService
         ("preview_status", "status", "Preview"), ("preview_status", "preview_path", "Preview"),
         ("preview_status", "error_message", "Preview"), ("preview_status", "requested_at", "Preview"),
         ("preview_status", "finished_at", "Preview"),
+        ("classification_plan_version_item", "tenant_id", "Classificação"),
+        ("classification_plan_version_item", "version_id", "Classificação"),
+        ("classification_plan_version_item", "classification_id", "Classificação"),
+        ("classification_plan_version_item", "code", "Classificação"),
+        ("classification_plan_version_item", "name", "Classificação"),
+        ("classification_plan_version_item", "retention_start_event", "Classificação"),
+        ("classification_plan_version_item", "final_destination", "Classificação"),
         ("ocr_auto_schedule_run", "tenant_id", "OCR Auto Schedule"), ("ocr_auto_schedule_run", "started_at_utc", "OCR Auto Schedule"),
         ("ocr_auto_schedule_run", "status", "OCR Auto Schedule"), ("ocr_auto_schedule_run_item", "run_id", "OCR Auto Schedule"),
         ("ocr_auto_schedule_run_item", "status", "OCR Auto Schedule"),
@@ -386,6 +393,16 @@ select table_name || '.' || column_name
 from information_schema.columns
 where table_schema = 'ged';", cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+            var columnContracts = (await conn.QueryAsync<PgColumnContractInfo>(new CommandDefinition(@"
+select table_name as ""TableName"",
+       column_name as ""ColumnName"",
+       is_nullable as ""IsNullable"",
+       column_default as ""ColumnDefault"",
+       udt_name as ""UdtName""
+from information_schema.columns
+where table_schema = 'ged';", cancellationToken: ct)))
+                .ToDictionary(x => $"{x.TableName}.{x.ColumnName}", StringComparer.OrdinalIgnoreCase);
+
             var labelTemplateCodeColumn = existingColumns.Contains("label_template.code") ? "code"
                 : existingColumns.Contains("label_template.template_code") ? "template_code" : null;
             var databaseLabelTemplates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -466,7 +483,7 @@ where schemaname = 'ged';", cancellationToken: ct))).ToList();
             var existingIndexes = existingIndexRows.Select(i => i.IndexName).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             AddDocumentSearchTenantVersionIndexCheck(report, existingColumns, existingIndexRows);
-            AddPreviewStatusUpsertContractCheck(report, existingTables, existingColumns, existingIndexRows);
+            AddPreviewStatusUpsertContractCheck(report, existingTables, existingColumns, columnContracts, existingIndexRows);
             AddCheck(report, "SMART_SEARCH_CONTEXT_TERM", "SmartSearch", "ged.search_context_term", "Tabela", "Warning", existingTables.Contains("ged.search_context_term"), "Dicionário de contexto da busca inteligente disponível.", "Execute database/migrations/2026_06_finalize_loans_secure_document_sharing.sql.");
             AddCheck(report, "LOANS_SECURE_DOCUMENT_LINK", "Loans", "ged.secure_document_link", "Tabela", "Warning", existingTables.Contains("ged.secure_document_link"), "Links seguros de entrega digital disponíveis.", "Execute database/migrations/2026_06_fix_secure_document_link_sharing.sql.");
             AddCheck(report, "LOANS_SECURE_DOCUMENT_LINK_ACCESS", "Loans", "ged.secure_document_link_access", "Tabela", "Warning", existingTables.Contains("ged.secure_document_link_access"), "Auditoria de acessos a links seguros disponível.", "Execute database/migrations/2026_06_fix_secure_document_link_sharing.sql.");
@@ -771,29 +788,49 @@ limit 1;", cancellationToken: ct));
             && index.IndexDef.Contains(expectedColumns, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static void AddPreviewStatusUpsertContractCheck(SchemaHealthReportDto report, HashSet<string> existingTables, HashSet<string> existingColumns, IReadOnlyList<PgIndexInfo> existingIndexes)
+    private static void AddPreviewStatusUpsertContractCheck(SchemaHealthReportDto report, HashSet<string> existingTables, HashSet<string> existingColumns, IReadOnlyDictionary<string, PgColumnContractInfo> columnContracts, IReadOnlyList<PgIndexInfo> existingIndexes)
     {
         const string checkId = "GED_PREVIEW_STATUS_UPSERT_CONTRACT";
         const string objectName = "ged.preview_status(tenant_id, document_version_id)";
         var hasTable = existingTables.Contains("ged.preview_status");
-        var hasColumns = HasColumn(existingColumns, "preview_status", "tenant_id")
-            && HasColumn(existingColumns, "preview_status", "document_version_id");
-        var hasUniqueContract = hasTable && hasColumns && existingIndexes.Any(index =>
+        var hasRequiredColumns = HasColumn(existingColumns, "preview_status", "tenant_id")
+            && HasColumn(existingColumns, "preview_status", "document_version_id")
+            && HasColumn(existingColumns, "preview_status", "status")
+            && HasColumn(existingColumns, "preview_status", "requested_at")
+            && HasColumn(existingColumns, "preview_status", "finished_at")
+            && HasColumn(existingColumns, "preview_status", "attempts")
+            && HasColumn(existingColumns, "preview_status", "last_attempt_at");
+        var requestedAtOk = columnContracts.TryGetValue("preview_status.requested_at", out var requestedAt)
+            && string.Equals(requestedAt.IsNullable, "NO", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(requestedAt.ColumnDefault);
+        var statusOk = columnContracts.TryGetValue("preview_status.status", out var status)
+            && string.Equals(status.UdtName, "preview_processing_status", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(status.ColumnDefault);
+        var hasUniqueContract = hasTable && hasRequiredColumns && requestedAtOk && statusOk && existingIndexes.Any(index =>
             index.IndexDef.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase)
             && index.IndexDef.Contains("ON ged.preview_status", StringComparison.OrdinalIgnoreCase)
             && index.IndexDef.Contains("(tenant_id, document_version_id)", StringComparison.OrdinalIgnoreCase));
 
         AddCheck(report, checkId, "Preview", objectName, "Contrato de upsert", "Critical", hasUniqueContract,
             hasUniqueContract
-                ? "Contrato único do preview por tenant/versão OK."
-                : "Contrato único do preview ausente; PreviewVersion pode falhar com PostgreSQL 42P10 ao enfileirar preview.",
-            "Execute database/migrations/2026_10_14_preview_status_upsert_contract.sql pelo migrador oficial. Se houver duplicidades, reconcilie os registros antes de reaplicar.");
+                ? "Contrato do preview por tenant/versão OK: chave única, enum, requested_at obrigatório com default e colunas de tentativa disponíveis."
+                : "Contrato do preview incompatível; PreviewVersion pode falhar por conflito sem índice, requested_at nulo/sem default ou enum/colunas de estado incompletos.",
+            "Execute database/migrations/2026_10_14_preview_status_upsert_contract.sql e database/migrations/2026_10_23_preview_status_requested_at_contract.sql pelo migrador oficial. Se houver duplicidades, reconcilie os registros antes de reaplicar.");
     }
 
     private sealed class PgIndexInfo
     {
         public string IndexName { get; set; } = string.Empty;
         public string IndexDef { get; set; } = string.Empty;
+    }
+
+    private sealed class PgColumnContractInfo
+    {
+        public string TableName { get; set; } = string.Empty;
+        public string ColumnName { get; set; } = string.Empty;
+        public string IsNullable { get; set; } = string.Empty;
+        public string? ColumnDefault { get; set; }
+        public string UdtName { get; set; } = string.Empty;
     }
 
     private sealed class DocumentSearchColumnInfo

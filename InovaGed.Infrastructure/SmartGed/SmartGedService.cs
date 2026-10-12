@@ -1438,7 +1438,7 @@ select d.id as DocumentId,
        coalesce(d.title, 'Documento') as Document,
        a.extracted_summary as Summary,
        a.extracted_text as ExtractedText,
-       coalesce(pvi.code || ' - ' || coalesce(pvi.name, pvi.title), cp.code || ' - ' || cp.name, 'Não classificado') as Classification,
+       coalesce(nullif(concat_ws(' - ', pvi.code, nullif(pvi.name, '')), ''), cp.code || ' - ' || cp.name, 'Não classificado') as Classification,
        case when exists(select 1 from ged.document_quality_issue qi where qi.tenant_id=d.tenant_id and qi.document_id=d.id and qi.status='OPEN') then 'ATENÇÃO' else 'OK' end as QualityStatus,
        v.version_number as VersionNumber,
        d.retention_status as RetentionStatus,
@@ -1474,7 +1474,7 @@ where d.tenant_id = @TenantId
 
         if (!string.IsNullOrWhiteSpace(term))
         {
-            sql.Append(" and (coalesce(d.title, '') ilike @pattern or coalesce(a.extracted_text, '') ilike @pattern or coalesce(a.extracted_summary, '') ilike @pattern or coalesce(pvi.code, cp.code, '') ilike @pattern or coalesce(pvi.name, pvi.title, cp.name, '') ilike @pattern)");
+            sql.Append(" and (coalesce(d.title, '') ilike @pattern or coalesce(a.extracted_text, '') ilike @pattern or coalesce(a.extracted_summary, '') ilike @pattern or coalesce(pvi.code, cp.code, '') ilike @pattern or coalesce(pvi.name, cp.name, '') ilike @pattern)");
             dp.Add("pattern", $"%{term}%");
         }
         if (query.FolderId.HasValue)
@@ -1538,7 +1538,7 @@ select d.id as DocumentId,
        coalesce(d.title, 'Documento') as Document,
        a.extracted_summary as Summary,
        a.extracted_text as ExtractedText,
-       coalesce(pvi.code || ' - ' || coalesce(pvi.name, pvi.title), cp.code || ' - ' || cp.name, 'Não classificado') as Classification,
+       coalesce(nullif(concat_ws(' - ', pvi.code, nullif(pvi.name, '')), ''), cp.code || ' - ' || cp.name, 'Não classificado') as Classification,
        case when exists(select 1 from ged.document_quality_issue qi where qi.tenant_id=d.tenant_id and qi.document_id=d.id and qi.status='OPEN') then 'ATENÇÃO' else 'OK' end as QualityStatus,
        v.version_number as VersionNumber,
        d.retention_status as RetentionStatus,
@@ -1643,7 +1643,7 @@ select s.id as Id,
        s.status as Status,
        d.title as DocumentTitle,
        v.version_number as VersionNumber,
-       coalesce(pvi.code || ' - ' || coalesce(pvi.name, pvi.title), cp.code || ' - ' || cp.name, 'Não classificado') as CurrentClassification,
+       coalesce(nullif(concat_ws(' - ', pvi.code, nullif(pvi.name, '')), ''), cp.code || ' - ' || cp.name, 'Não classificado') as CurrentClassification,
        s.created_at as CreatedAt,
        case
            when s.version_id is not null and d.current_version_id is not null and s.version_id <> d.current_version_id then true
