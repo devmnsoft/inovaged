@@ -1,18 +1,19 @@
 @{
     ViewData["Title"] = "Cadastrar documentos";
-    var codes = (System.Collections.Generic.IReadOnlyList<string>)(ViewBag.Codes ?? Array.Empty<string>());
+    var types = (System.Collections.Generic.IReadOnlyList<InovaGed.Web.Controllers.SectorCatalogChoice>)(ViewBag.Types ?? Array.Empty<InovaGed.Web.Controllers.SectorCatalogChoice>());
 }
 <link rel="stylesheet" href="~/css/demais-setores.css" asp-append-version="true" />
-<main class="ds-page" data-ds-register data-find-url="@Url.Action("BuscarPaciente")" data-send-url="@Url.Action("Enviar")" data-link-url="@Url.Action("VincularExistente")" data-retry-url="@Url.Action("Reenfileirar")" data-open-url="@Url.Action("Consultar")">
+<main class="ds-page" data-ds-register data-find-url="@Url.Action("BuscarPaciente")" data-start-url="@Url.Action("IniciarEnvio")" data-part-url="@Url.Action("ParteEnvio")" data-status-url="@Url.Action("SituacaoEnvio")" data-cancel-url="@Url.Action("CancelarEnvio")" data-complete-url="@Url.Action("ConcluirEnvio")" data-link-url="@Url.Action("VincularExistente")" data-retry-url="@Url.Action("Reenfileirar")" data-open-url="@Url.Action("Consultar")">
     @Html.AntiForgeryToken()
     <h1>Cadastrar documentos</h1>
-    <p class="ds-help">O arquivo entra no GED já existente. O nome padronizado vem do catálogo. A integração não é substituída por dados simulados.</p>
+    <p class="ds-help">Confirme o paciente e o atendimento, escolha o nome do catálogo e grave os arquivos. O envio grande segue em partes, até @ViewBag.MaxMb MB quando esse limite estiver configurado. Leitura e extração acontecem depois da gravação.</p>
     <ol class="ds-steps"><li>1. Paciente e atendimento</li><li>2. Documentos</li><li>3. Confirmação</li></ol>
     <section class="ds-card">
         <h2>Paciente e atendimento</h2>
         <form data-ds-patient-form class="ds-grid">
             @Html.AntiForgeryToken()
-            <label>Código do paciente / ID do paciente<input name="externalCode" autocomplete="off" required /></label>
+            <label>Tipo do identificador<select name="identifierKind"><option value="ID">ID do paciente</option><option value="CPF">CPF</option></select></label>
+            <label>Identificador do paciente<input name="externalCode" autocomplete="off" required /></label>
             <label>Sistema de origem<input name="sourceSystem" value="MV" /></label>
             <label>Unidade de origem<input name="sourceUnit" /></label>
             <div class="ds-actions"><button type="button" data-ds-find>Consultar</button></div>
@@ -26,13 +27,9 @@
         <label>Nome padronizado
             <select data-ds-catalog>
                 <option value="">Escolha no catálogo</option>
-                @foreach (var code in codes)
+                @foreach (var item in types)
                 {
-                    var item = InovaGed.Application.Sectors.SectorCatalog.Find(code);
-                    if (item is not null)
-                    {
-                        <option value="@item.Code">@item.Order.ToString("00") — @item.Name</option>
-                    }
+                    <option value="@item.Code">@item.Order.ToString("00") — @item.Name</option>
                 }
             </select>
         </label>
@@ -46,7 +43,7 @@
         <label>Arquivos<input type="file" data-ds-files multiple accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" /></label>
         <div class="ds-actions"><button type="button" data-ds-apply>Aplicar valores comuns aos arquivos</button></div>
         <ul data-ds-file-list></ul>
-        <p class="ds-note">Arquivos acima de 20 MB devem usar o upload em partes do GED e depois o vínculo do documento confirmado. Office fica sujeito à conversão existente; o OCR não é um segundo pipeline.</p>
+        <p class="ds-note">Cada arquivo mostra a transferência, a gravação e, em separado, a pré-visualização e a leitura. Se a gravação falhar depois do arquivo já estar no GED, repita só o vínculo.</p>
     </section>
     <section class="ds-card">
         <h2>Confirmação</h2>

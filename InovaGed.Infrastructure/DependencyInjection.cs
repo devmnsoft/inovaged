@@ -112,8 +112,11 @@ public static class InfrastructureServiceCollectionExtensions
         if (configuration.GetValue<ClusterMode>("Cluster:Mode") != ClusterMode.SingleNode)
             services.AddHostedService<ClusterHeartbeatWorker>();
 
-        services.AddScoped<InovaGed.Application.Sectors.IClinicalSource, InovaGed.Infrastructure.Sectors.UnconfiguredClinicalSource>();
+        services.AddOptions<InovaGed.Application.Sectors.ClinicalSourceOptions>()
+            .Bind(configuration.GetSection(InovaGed.Application.Sectors.ClinicalSourceOptions.SectionName));
+        services.AddHttpClient<InovaGed.Application.Sectors.IClinicalSource, InovaGed.Infrastructure.Sectors.ConfigurableClinicalSource>();
         services.AddScoped<InovaGed.Application.Sectors.IDemaisSetoresService, InovaGed.Infrastructure.Sectors.DemaisSetoresService>();
+        services.AddScoped<InovaGed.Application.Sectors.ISectorOpeningService, InovaGed.Infrastructure.Sectors.SectorOpeningService>();
 
         return services;
     }

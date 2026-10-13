@@ -2,12 +2,15 @@ using System.Text;
 using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Common.Storage;
+using InovaGed.Application.Ged.Documents;
 using InovaGed.Application.Identity;
 using InovaGed.Application.Security;
 using InovaGed.Application.Sectors;
+using InovaGed.Infrastructure.Sectors;
 using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace InovaGed.Web.Controllers;
 
@@ -15,14 +18,20 @@ namespace InovaGed.Web.Controllers;
 public sealed class DemaisSetoresController : Controller
 {
     private readonly IDemaisSetoresService _sectors;
+    private readonly ISectorOpeningService _opening;
+    private readonly IUploadChunkService _chunks;
+    private readonly IOptions<DocumentUploadOptions> _uploadOptions;
     private readonly ICurrentUser _currentUser;
     private readonly IDbConnectionFactory _db;
     private readonly IFileStorage _storage;
     private readonly IAbacAuthorizationService _authorization;
 
-    public DemaisSetoresController(IDemaisSetoresService sectors, ICurrentUser currentUser, IDbConnectionFactory db, IFileStorage storage, IAbacAuthorizationService authorization)
+    public DemaisSetoresController(IDemaisSetoresService sectors, ISectorOpeningService opening, IUploadChunkService chunks, IOptions<DocumentUploadOptions> uploadOptions, ICurrentUser currentUser, IDbConnectionFactory db, IFileStorage storage, IAbacAuthorizationService authorization)
     {
         _sectors = sectors;
+        _opening = opening;
+        _chunks = chunks;
+        _uploadOptions = uploadOptions;
         _currentUser = currentUser;
         _db = db;
         _storage = storage;
@@ -35,13 +44,16 @@ public sealed class DemaisSetoresController : Controller
     public async Task<IActionResult> Cadastrar(CancellationToken ct)
     {
         await _sectors.EnsureTenantAsync(_currentUser.TenantId, ct);
-        ViewBag.Codes = await _sectors.VisibleCatalogCodesAsync(_currentUser.TenantId, _currentUser.UserId, Admin, ct);
+        var codes = await _sectors.VisibleCatalogCodesAsync(_currentUser.TenantId, _currentUser.UserId, Admin, ct);
+        ViewBag.Codes = codes;
+        ViewBag.Types = await CatalogTypesAsync(codes, ct);
         ViewBag.CanCreate = await _sectors.HasPermissionAsync(_currentUser.TenantId, _currentUser.UserId, Admin, SectorPermissions.Cadastrar, ct);
+        ViewBag.MaxMb = _uploadOptions.Value.MaxFileSizeMb;
         return View();
     }
 
     [HttpGet]
-    public async Task<IActionResult> Consultar(Guid? patientId, Guid? encounterId, CancellationToken ct)
+    public async Task<IActionResult> Consultar(Guid? patientId, Guid? encounterId, string? catalogCode, Guid? documentoId, Guid? versaoId, CancellationToken ct)
     {
         await _sectors.EnsureTenantAsync(_currentUser.TenantId, ct);
         ViewBag.CanReview = await _sectors.HasPermissionAsync(_currentUser.TenantId, _currentUser.UserId, Admin, SectorPermissions.Conferir, ct);
@@ -51,14 +63,22 @@ public sealed class DemaisSetoresController : Controller
         ViewBag.CanExtract = await _sectors.HasPermissionAsync(_currentUser.TenantId, _currentUser.UserId, Admin, SectorPermissions.RevisarExtracao, ct);
         if (encounterId.HasValue)
             await _sectors.RefreshExtractionAsync(_currentUser.TenantId, encounterId.Value, ct);
+        var context = encounterId.HasValue ? await ContextAsync(encounterId.Value, ct) : null;
+        if (patientId.HasValue && context is not null && context.PatientId != patientId.Value)
+            context = null;
         ViewBag.PatientId = patientId;
-        ViewBag.EncounterId = encounterId;
-        ViewBag.Context = encounterId.HasValue ? await ContextAsync(encounterId.Value, ct) : null;
-        ViewBag.Siblings = encounterId.HasValue ? await SiblingsAsync(encounterId.Value, ct) : Array.Empty<SectorEncounterOption>();
-        ViewBag.Documents = encounterId.HasValue ? await DocumentsAsync(encounterId.Value, ct) : Array.Empty<SectorDocumentRow>();
-        ViewBag.Fields = encounterId.HasValue ? await FieldsAsync(encounterId.Value, ct) : Array.Empty<SectorFieldRow>();
-        ViewBag.Findings = encounterId.HasValue ? await FindingsAsync(encounterId.Value, ct) : Array.Empty<SectorFindingRow>();
-        ViewBag.Checklist = encounterId.HasValue ? await ChecklistAsync(encounterId.Value, ct) : Array.Empty<SectorChecklistRow>();
+        ViewBag.EncounterId = context is null ? null : encounterId;
+        ViewBag.Context = context;
+        ViewBag.CatalogCode = catalogCode;
+        ViewBag.Siblings = context is null ? Array.Empty<SectorEncounterOption>() : await SiblingsAsync(encounterId!.Value, ct);
+        var documents = context is null ? Array.Empty<SectorDocumentRow>() : await DocumentsAsync(encounterId!.Value, catalogCode, documentoId, versaoId, ct);
+        ViewBag.Documents = documents;
+        ViewBag.Fields = context is null ? Array.Empty<SectorFieldRow>() : await FieldsAsync(encounterId!.Value, ct);
+        ViewBag.Findings = context is null ? Array.Empty<SectorFindingRow>() : await FindingsAsync(encounterId!.Value, ct);
+        ViewBag.Checklist = context is null ? Array.Empty<SectorChecklistRow>() : await ChecklistAsync(encounterId!.Value, ct);
+        ViewBag.AutoVersion = documents.Length == 1 ? documents[0].VersionId : versaoId;
+        ViewBag.Embedded = false;
+        ViewBag.FileAction = "Arquivo";
         return View();
     }
 
@@ -78,17 +98,18 @@ public sealed class DemaisSetoresController : Controller
     }
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> BuscarPaciente(string? externalCode, string? sourceSystem, string? sourceUnit, CancellationToken ct)
+    public async Task<IActionResult> BuscarPaciente(string? externalCode, string? sourceSystem, string? sourceUnit, string? identifierKind, CancellationToken ct)
     {
-        var result = await _sectors.FindPatientAsync(_currentUser.TenantId, externalCode, sourceSystem, sourceUnit, ct);
+        var kind = string.Equals(identifierKind, "CPF", StringComparison.OrdinalIgnoreCase) ? "CPF" : "ID";
+        var result = await _sectors.FindPatientAsync(_currentUser.TenantId, externalCode, sourceSystem, sourceUnit, kind, ct);
         if (result.Status != ClinicalSourceStatus.Found || result.Patient is null)
             return Json(new { status = result.Status.ToString(), message = result.Message, patient = (object?)null, encounters = Array.Empty<object>() });
         await using var conn = await _db.OpenAsync(ct);
         var patient = await conn.QuerySingleOrDefaultAsync("""
 select id, external_code, display_name, source_system, source_unit
 from ged.sector_patient
-where tenant_id=@tenantId and source_system=@system and source_unit=@unit and external_code=@code
-""", new { tenantId = _currentUser.TenantId, system = result.Patient.SourceSystem, unit = result.Patient.SourceUnit ?? "", code = result.Patient.ExternalCode });
+where tenant_id=@tenantId and source_system=@system and source_unit=@unit and external_code=@code and identifier_kind=@kind
+""", new { tenantId = _currentUser.TenantId, system = result.Patient.SourceSystem, unit = result.Patient.SourceUnit ?? "", code = result.Patient.ExternalCode, kind });
         var encounters = await conn.QueryAsync("""
 select e.id, e.external_code, e.raw_kind, e.kind, e.admitted_at, e.discharged_at, e.status
 from ged.sector_encounter e
@@ -111,6 +132,79 @@ order by e.admitted_at desc nulls last
             patientId, encounterId, catalogCode, sectorCode, documentDate, notes, issuerName, informationOwner,
             arquivo.FileName, arquivo.ContentType, buffer.ToArray(), confirmAnotherOccurrence), ct);
         return Json(new { stored = result.Stored, stage = result.Stage, message = result.Message, linkId = result.LinkId, documentId = result.DocumentId, versionId = result.VersionId });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> IniciarEnvio(Guid patientId, Guid encounterId, string catalogCode, string fileName, string? contentType, long totalBytes, CancellationToken ct)
+    {
+        var ticket = await _sectors.PrepareUploadAsync(_currentUser.TenantId, _currentUser.UserId, Admin, patientId, encounterId, catalogCode, fileName, totalBytes, ct);
+        if (!ticket.Allowed || ticket.FolderId is null)
+            return Json(new { stored = false, stage = "AUTORIZACAO", message = ticket.Message, maxBytes = ticket.MaxBytes });
+        var extension = Path.GetExtension(fileName);
+        var ocrApplicable = extension.Equals(".pdf", StringComparison.OrdinalIgnoreCase) || extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase) || extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase) || extension.Equals(".png", StringComparison.OrdinalIgnoreCase) || extension.Equals(".tif", StringComparison.OrdinalIgnoreCase) || extension.Equals(".tiff", StringComparison.OrdinalIgnoreCase);
+        var configured = Math.Max(1, _uploadOptions.Value.ChunkSizeMb) * 1024 * 1024;
+        var chunk = Math.Min(8 * 1024 * 1024, configured);
+        var started = await _chunks.StartAsync(_currentUser.TenantId, _currentUser.UserId, false, User.Identity?.Name, new StartUploadChunkRequestDto
+        {
+            FolderId = ticket.FolderId,
+            OriginalFileName = fileName,
+            ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType,
+            TotalSizeBytes = totalBytes,
+            ChunkSizeBytes = chunk,
+            RunOcr = ocrApplicable,
+            GeneratePreview = true
+        }, ct);
+        if (!started.Success || started.Value is null)
+            return Json(new { stored = false, stage = "TRANSFERENCIA", message = started.Error?.Message ?? "A transferência em partes não começou." });
+        return Json(new { stored = false, stage = "TRANSFERENCIA", message = "Envio em partes iniciado. O documento ainda não foi vinculado.", uploadId = started.Value.UploadId, chunkSize = started.Value.ChunkSizeBytes, totalChunks = started.Value.TotalChunks, ocrApplicable, maxBytes = ticket.MaxBytes });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    [RequestFormLimits(MultipartBodyLengthLimit = 20_971_520)]
+    [RequestSizeLimit(20_971_520)]
+    public async Task<IActionResult> ParteEnvio(Guid uploadId, int chunkIndex, IFormFile? parte, CancellationToken ct)
+    {
+        if (parte is null || parte.Length <= 0 || parte.Length > 20 * 1024 * 1024)
+            return Json(new { stored = false, stage = "TRANSFERENCIA", message = "A parte precisa ter até 20 MB." });
+        await using var stream = parte.OpenReadStream();
+        var saved = await _chunks.SavePartAsync(_currentUser.TenantId, _currentUser.UserId, new UploadChunkPartRequestDto { UploadId = uploadId, ChunkIndex = chunkIndex, Content = stream, SizeBytes = parte.Length }, ct);
+        if (!saved.Success || saved.Value is null)
+            return Json(new { stored = false, stage = "TRANSFERENCIA", message = saved.Error?.Message ?? "A parte não foi aceita." });
+        return Json(new { stored = false, stage = "TRANSFERENCIA", message = "Parte recebida.", percent = saved.Value.Percent, received = saved.Value.ReceivedChunksCount, total = saved.Value.TotalChunks, missing = saved.Value.MissingChunks });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> SituacaoEnvio(Guid uploadId, CancellationToken ct)
+    {
+        var status = await _chunks.GetStatusAsync(_currentUser.TenantId, _currentUser.UserId, uploadId, ct);
+        if (!status.Success || status.Value is null)
+            return Json(new { stored = false, stage = "TRANSFERENCIA", message = status.Error?.Message ?? "O envio não foi encontrado." });
+        return Json(new { stored = status.Value.Status == "COMPLETED", stage = "TRANSFERENCIA", message = "Situação da transferência.", status = status.Value.Status, percent = status.Value.Percent, missing = status.Value.MissingChunks, documentId = status.Value.DocumentId, versionId = status.Value.VersionId });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> CancelarEnvio(Guid uploadId, CancellationToken ct)
+    {
+        var cancelled = await _chunks.CancelAsync(_currentUser.TenantId, _currentUser.UserId, uploadId, ct);
+        return Json(new { stored = false, stage = "CANCELADO", message = cancelled.Success ? "A transferência foi cancelada. Nenhum vínculo foi criado." : cancelled.Error?.Message ?? "O cancelamento não foi confirmado." });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> ConcluirEnvio(Guid patientId, Guid encounterId, string catalogCode, Guid uploadId, bool confirmAnotherOccurrence, CancellationToken ct)
+    {
+        var completed = await _chunks.CompleteAsync(_currentUser.TenantId, _currentUser.UserId, uploadId, ct);
+        if (!completed.Success || completed.Value?.DocumentId is null || completed.Value.VersionId is null)
+            return Json(new { stored = false, stage = "TRANSFERENCIA", message = completed.Error?.Message ?? "A transferência não foi concluída. O vínculo não foi criado." });
+        var extension = Path.GetExtension(completed.Value.FileName ?? "");
+        var ocrApplicable = extension.Equals(".pdf", StringComparison.OrdinalIgnoreCase) || extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase) || extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase) || extension.Equals(".png", StringComparison.OrdinalIgnoreCase) || extension.Equals(".tif", StringComparison.OrdinalIgnoreCase) || extension.Equals(".tiff", StringComparison.OrdinalIgnoreCase);
+        var attached = await _sectors.AttachCompletedUploadAsync(new SectorAttachUploadRequest(
+            _currentUser.TenantId, _currentUser.UserId, Admin, Ip(), Ua(), patientId, encounterId, catalogCode, uploadId,
+            completed.Value.DocumentId.Value, completed.Value.VersionId.Value, confirmAnotherOccurrence,
+            completed.Value.PreviewQueued, completed.Value.OcrQueued, ocrApplicable), ct);
+        var detail = attached.Stored
+            ? "Documento gravado. Pré-visualização: " + (completed.Value.PreviewQueued ? "na fila" : "não enfileirada") + ". Leitura: " + (!ocrApplicable ? "não se aplica" : completed.Value.OcrQueued ? "na fila" : "não enfileirada") + ". Extração: aguardando o texto."
+            : attached.Message;
+        return Json(new { stored = attached.Stored, stage = attached.Stage, message = detail, linkId = attached.LinkId, documentId = attached.DocumentId, versionId = attached.VersionId, previewQueued = completed.Value.PreviewQueued, ocrQueued = completed.Value.OcrQueued });
     }
 
     [HttpPost, ValidateAntiForgeryToken]
@@ -165,22 +259,18 @@ where l.tenant_id=@tenantId and l.version_id=@versionId and l.reg_status='A'
     public async Task<IActionResult> Incorporar(string token, Guid versionId, CancellationToken ct)
     {
         Response.Headers["Referrer-Policy"] = "no-referrer";
-        if (!await _sectors.GrantIsActiveAsync(token, versionId, ct))
-            return Html(401, "A concessão expirou ou foi revogada. Abra um novo link pelo InovaGed.");
-        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
-        await using var conn = await _db.OpenAsync(ct);
-        var tenantId = await conn.ExecuteScalarAsync<Guid>(new CommandDefinition(
-            "select tenant_id from ged.sector_embed_grant where token_hash=@hash and version_id=@versionId and revoked_at is null and expires_at>now()",
-            new { hash, versionId }, cancellationToken: ct));
-        if (tenantId == Guid.Empty) return Html(401, "A concessão expirou ou foi revogada. Abra um novo link pelo InovaGed.");
-        var origins = (await conn.QueryAsync<string>(new CommandDefinition(
-            "select origin from ged.sector_embed_origin where tenant_id=@tenantId and reg_status='A'",
-            new { tenantId }, cancellationToken: ct))).ToArray();
-        Response.Headers.ContentSecurityPolicy = origins.Length == 0 ? "frame-ancestors 'none'" : "frame-ancestors " + string.Join(' ', origins);
-        var referer = Request.Headers.Referer.ToString();
-        if (!Uri.TryCreate(referer, UriKind.Absolute, out var refererUri) || origins.All(origin => !string.Equals(origin, refererUri.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase)))
-            return Html(403, "A origem da incorporação não está autorizada.");
-        return await StreamVersionAsync(tenantId, versionId, requireGrant: true, ct);
+        Response.Headers.CacheControl = "private, no-store";
+        if (versionId == Guid.Empty)
+            return Html(400, "O link de incorporação está incompleto. Peça um novo link.");
+        var grant = await _sectors.ReadGrantAsync(token, versionId, ct);
+        if (grant is null || !grant.Active || grant.DocumentId == Guid.Empty)
+            return Html(401, "A concessão expirou, foi revogada ou não corresponde a esta versão.");
+        var presented = Request.Headers.Origin.ToString();
+        if (string.IsNullOrWhiteSpace(presented)) presented = Request.Headers.Referer.ToString();
+        if (!SectorEmbedLink.OriginMatches(grant.Origin, presented))
+            return Html(403, "A origem da incorporação não corresponde à concessão.");
+        Response.Headers.ContentSecurityPolicy = "frame-ancestors " + (string.IsNullOrWhiteSpace(grant.Origin) ? "'none'" : grant.Origin);
+        return await StreamVersionAsync(grant.TenantId, versionId, requireGrant: true, ct);
     }
 
     [HttpPost, ValidateAntiForgeryToken]
@@ -276,6 +366,121 @@ on conflict (tenant_id, user_id, sector_code, permission_code) do update set reg
     }
 
     [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> RevogarAcesso(Guid userId, string sectorCode, CancellationToken ct)
+    {
+        var error = await _sectors.RevokeAccessAsync(_currentUser.TenantId, _currentUser.UserId, Admin, userId, sectorCode, ct);
+        return Page(error is null ? 200 : 400, error ?? "Acesso do setor revogado. Autorizações antigas desse setor deixam de valer.");
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Parceiro(CancellationToken ct)
+    {
+        if (!await _sectors.HasPermissionAsync(_currentUser.TenantId, _currentUser.UserId, Admin, SectorPermissions.Administrar, ct))
+            return Forbid();
+        return View();
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Parceiro(string clientId, string secret, string identifierKind, string identifier, string? sourceSystem, string? sourceUnit, string encounterCode, string? documentName, string? documentCode, string mode, string origin, CancellationToken ct)
+    {
+        if (!await _sectors.HasPermissionAsync(_currentUser.TenantId, _currentUser.UserId, Admin, SectorPermissions.Administrar, ct))
+            return Forbid();
+        var opened = await _opening.OpenAsync(new SectorOpeningRequest(clientId, secret, identifierKind, identifier, sourceSystem, sourceUnit, encounterCode, documentName, documentCode, null, null, mode, origin), ct);
+        ViewBag.Code = opened.Code;
+        ViewBag.Message = opened.Message;
+        ViewBag.PageUrl = opened.PageUrl;
+        ViewBag.FrameUrl = opened.FrameUrl;
+        ViewBag.Scope = opened.Scope;
+        ViewBag.Correlation = opened.CorrelationId;
+        ViewBag.Expires = opened.ExpiresAt;
+        return View();
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> CadastrarIntegracao(string clientId, string secret, string sourceSystem, string? sourceUnit, string origins, string? catalogCodes, bool allowEncounterList, int maxMinutes, CancellationToken ct)
+    {
+        if (!await _sectors.HasPermissionAsync(_currentUser.TenantId, _currentUser.UserId, Admin, SectorPermissions.Administrar, ct))
+            return Forbid();
+        var error = await _opening.RegisterIntegrationAsync(new SectorIntegrationRegistration(
+            _currentUser.TenantId, _currentUser.UserId, clientId, secret, sourceSystem, sourceUnit,
+            SplitList(origins), SplitList(catalogCodes), allowEncounterList, maxMinutes), ct);
+        return Page(error is null ? 200 : 400, error ?? "Integração gravada. A chave ficou só no cadastro protegido e não volta a ser exibida.");
+    }
+
+    [HttpGet("/DemaisSetores/Abrir/{code}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> Abrir(string code, CancellationToken ct)
+    {
+        var consumed = await _opening.ConsumeAsync(code, ct);
+        if (consumed is null)
+            return Html(401, "A abertura expirou, já foi usada ou foi revogada. Solicite um novo link ao sistema de origem.");
+        Response.Cookies.Append(SectorOpeningService.CookieName, consumed.CookieValue, new CookieOptions
+        {
+            HttpOnly = true,
+            IsEssential = true,
+            Secure = Request.IsHttps,
+            SameSite = Request.IsHttps ? SameSiteMode.None : SameSiteMode.Lax,
+            MaxAge = consumed.ExpiresAt - DateTimeOffset.UtcNow
+        });
+        return RedirectToAction(nameof(ConsultaIntegrada));
+    }
+
+    [HttpGet]
+    [AllowAnonymous]
+    public async Task<IActionResult> ConsultaIntegrada(CancellationToken ct)
+    {
+        var session = await _opening.ReadSessionAsync(Request.Cookies[SectorOpeningService.CookieName], ct);
+        if (session is null)
+            return Html(401, "A sessão da consulta expirou. Abra novamente pelo sistema de origem.");
+        Response.Headers.ContentSecurityPolicy = "frame-ancestors " + session.Origin;
+        Response.Headers["Referrer-Policy"] = "no-referrer";
+        Response.Headers.CacheControl = "private, no-store";
+        var documents = await SessionDocumentsAsync(session, ct);
+        ViewBag.Embedded = true;
+        ViewBag.PartnerOrigin = session.Origin;
+        ViewBag.CanReview = false;
+        ViewBag.CanPrint = false;
+        ViewBag.CanShare = false;
+        ViewBag.CanCorrect = false;
+        ViewBag.CanExtract = false;
+        ViewBag.PatientId = session.PatientId;
+        ViewBag.EncounterId = session.EncounterId;
+        ViewBag.Context = await SessionContextAsync(session, ct);
+        ViewBag.Siblings = Array.Empty<SectorEncounterOption>();
+        ViewBag.Documents = documents;
+        ViewBag.Fields = Array.Empty<SectorFieldRow>();
+        ViewBag.Findings = Array.Empty<SectorFindingRow>();
+        ViewBag.Checklist = Array.Empty<SectorChecklistRow>();
+        ViewBag.AutoVersion = session.VersionId ?? (documents.Length == 1 ? documents[0].VersionId : (Guid?)null);
+        ViewBag.FileAction = "ArquivoIntegrado";
+        ViewBag.CatalogCode = session.CatalogCode;
+        return View("Consultar");
+    }
+
+    [HttpGet]
+    [AllowAnonymous]
+    public async Task<IActionResult> ArquivoIntegrado(Guid versionId, CancellationToken ct)
+    {
+        var session = await _opening.ReadSessionAsync(Request.Cookies[SectorOpeningService.CookieName], ct);
+        if (session is null)
+            return Html(401, "A sessão da consulta expirou. Abra novamente pelo sistema de origem.");
+        Response.Headers.ContentSecurityPolicy = "frame-ancestors " + session.Origin;
+        Response.Headers.CacheControl = "private, no-store";
+        if (!await SessionAllowsVersionAsync(session, versionId, ct))
+            return Html(403, "Esta sessão não inclui o documento pedido.");
+        return await StreamVersionAsync(session.TenantId, versionId, requireGrant: true, ct);
+    }
+
+    [HttpPost, AllowAnonymous, IgnoreAntiforgeryToken]
+    public async Task<IActionResult> TrocarAtendimento(string encounterCode, CancellationToken ct)
+    {
+        var cookie = Request.Cookies[SectorOpeningService.CookieName];
+        var changed = await _opening.SwitchEncounterAsync(cookie, encounterCode, ct);
+        if (!changed) return Html(403, "A troca de atendimento não foi autorizada.");
+        return RedirectToAction(nameof(ConsultaIntegrada));
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> HabilitarAnexoIi(bool enabled, CancellationToken ct)
     {
         if (!await _sectors.HasPermissionAsync(_currentUser.TenantId, _currentUser.UserId, Admin, SectorPermissions.Parametrizar, ct)) return Forbid();
@@ -309,6 +514,7 @@ on conflict (tenant_id, origin) do update set reg_status='A'
         var row = await conn.QuerySingleOrDefaultAsync<(Guid DocumentId, string Path, string ContentType, string Catalog)>(new CommandDefinition("""
 select l.document_id as DocumentId, v.storage_path as Path, coalesce(v.content_type,'application/octet-stream') as ContentType, l.catalog_code as Catalog
 from ged.sector_document_link l
+join ged.document d on d.tenant_id=l.tenant_id and d.id=l.document_id and coalesce(d.reg_status,'A')='A'
 join ged.document_version v on v.tenant_id=l.tenant_id and v.id=l.version_id
 where l.tenant_id=@tenantId and l.version_id=@versionId and l.reg_status='A'
 """, new { tenantId, versionId }, cancellationToken: ct));
@@ -329,7 +535,7 @@ where l.tenant_id=@tenantId and l.version_id=@versionId and l.reg_status='A'
         return File(stream, row.ContentType, enableRangeProcessing: true);
     }
 
-    private async Task<IReadOnlyList<SectorDocumentRow>> DocumentsAsync(Guid encounterId, CancellationToken ct)
+    private async Task<SectorDocumentRow[]> DocumentsAsync(Guid encounterId, string? catalogCode, Guid? documentId, Guid? versionId, CancellationToken ct)
     {
         var codes = await _sectors.VisibleCatalogCodesAsync(_currentUser.TenantId, _currentUser.UserId, Admin, ct);
         await using var conn = await _db.OpenAsync(ct);
@@ -343,9 +549,24 @@ from ged.sector_document_link l
 join ged.sector_document_type t on t.tenant_id=l.tenant_id and t.catalog_code=l.catalog_code
 join ged.document d on d.tenant_id=l.tenant_id and d.id=l.document_id
 where l.tenant_id=@tenantId and l.encounter_id=@encounterId and l.reg_status='A' and t.catalog_code = any(@codes)
+  and (@catalogCode is null or l.catalog_code=@catalogCode)
+  and (@documentId is null or l.document_id=@documentId)
+  and (@versionId is null or l.version_id=@versionId)
   and {InovaGed.Infrastructure.Security.AbacAuthorizationService.DocumentAccessPredicate("d")}
 order by t.catalog_order, l.document_date nulls last, l.created_at
-""", new { tenantId = _currentUser.TenantId, userId = _currentUser.UserId, permissionCode = "Documents.View", write = false, hour = DateTime.UtcNow.Hour, encounterId, codes = codes.ToArray() }, cancellationToken: ct))).ToArray();
+""", new { tenantId = _currentUser.TenantId, userId = _currentUser.UserId, permissionCode = "Documents.View", write = false, hour = DateTime.UtcNow.Hour, encounterId, codes = codes.ToArray(), catalogCode = string.IsNullOrWhiteSpace(catalogCode) ? null : catalogCode, documentId, versionId }, cancellationToken: ct))).ToArray();
+    }
+
+    private async Task<IReadOnlyList<SectorCatalogChoice>> CatalogTypesAsync(IReadOnlyList<string> codes, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        var rows = await conn.QueryAsync<SectorCatalogChoice>(new CommandDefinition("""
+select catalog_code as Code, name as Name, catalog_order as Order
+from ged.sector_document_type
+where tenant_id=@tenantId and active and catalog_code = any(@codes)
+order by catalog_order
+""", new { tenantId = _currentUser.TenantId, codes = codes.ToArray() }, cancellationToken: ct));
+        return rows.ToArray();
     }
 
     private async Task<IReadOnlyList<SectorFieldRow>> FieldsAsync(Guid encounterId, CancellationToken ct)
@@ -440,9 +661,61 @@ order by s.admitted_at desc nulls last
         return Content($"<!doctype html><html lang=\"pt-BR\"><meta charset=\"utf-8\"><title>Documento</title><body style=\"font-family:system-ui;background:#f6f7f4;color:#1f2933;padding:24px\"><p>{text}</p></body></html>", "text/html", Encoding.UTF8);
     }
 
+    private async Task<SectorDocumentRow[]> SessionDocumentsAsync(SectorSessionAccess session, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        return (await conn.QueryAsync<SectorDocumentRow>(new CommandDefinition("""
+select l.id as LinkId, l.document_id as DocumentId, l.version_id as VersionId, t.name as Name, t.catalog_code as CatalogCode,
+       l.origin as Origin, l.original_file_name as OriginalFileName, l.document_date as DocumentDate, l.review_status as ReviewStatus,
+       l.preview_status as PreviewStatus, l.ocr_status as OcrStatus, l.extraction_status as ExtractionStatus, l.issuer_name as IssuerName,
+       l.information_owner as InformationOwner, l.physical_evidence as PhysicalEvidence, l.sector_code as SectorCode,
+       t.physical_original as RequiresPhysical
+from ged.sector_document_link l
+join ged.sector_document_type t on t.tenant_id=l.tenant_id and t.catalog_code=l.catalog_code
+join ged.document d on d.tenant_id=l.tenant_id and d.id=l.document_id and coalesce(d.reg_status,'A')='A'
+where l.tenant_id=@tenantId and l.encounter_id=@encounterId and l.patient_id=@patientId and l.reg_status='A'
+  and (@catalog is null or l.catalog_code=@catalog)
+  and (@documentId is null or l.document_id=@documentId)
+  and (@versionId is null or l.version_id=@versionId)
+order by t.catalog_order, l.created_at
+""", new { tenantId = session.TenantId, encounterId = session.EncounterId, patientId = session.PatientId, catalog = session.CatalogCode, documentId = session.DocumentId, versionId = session.Mode == "documento" ? session.VersionId : null }, cancellationToken: ct))).ToArray();
+    }
+
+    private async Task<bool> SessionAllowsVersionAsync(SectorSessionAccess session, Guid versionId, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
+select exists(
+  select 1 from ged.sector_document_link l
+  join ged.document d on d.tenant_id=l.tenant_id and d.id=l.document_id and coalesce(d.reg_status,'A')='A'
+  where l.tenant_id=@tenantId and l.encounter_id=@encounterId and l.patient_id=@patientId and l.version_id=@versionId and l.reg_status='A'
+    and (@catalog is null or l.catalog_code=@catalog)
+    and (@documentId is null or l.document_id=@documentId)
+    and (@lockedVersion is null or l.version_id=@lockedVersion))
+""", new { tenantId = session.TenantId, encounterId = session.EncounterId, patientId = session.PatientId, versionId, catalog = session.CatalogCode, documentId = session.DocumentId, lockedVersion = session.Mode == "documento" ? session.VersionId : null }, cancellationToken: ct));
+    }
+
+    private async Task<SectorContextRow?> SessionContextAsync(SectorSessionAccess session, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        return await conn.QuerySingleOrDefaultAsync<SectorContextRow>(new CommandDefinition("""
+select p.id as PatientId, p.external_code as PatientCode, p.display_name as DisplayName,
+       e.external_code as EncounterCode, e.raw_kind as RawKind, e.kind as Kind,
+       e.admitted_at as AdmittedAt, e.discharged_at as DischargedAt, e.status as Status
+from ged.sector_encounter e
+join ged.sector_patient p on p.id=e.patient_id and p.tenant_id=e.tenant_id
+where e.tenant_id=@tenantId and e.id=@encounterId and e.patient_id=@patientId
+""", new { tenantId = session.TenantId, encounterId = session.EncounterId, patientId = session.PatientId }, cancellationToken: ct));
+    }
+
+    private static string[] SplitList(string? value)
+        => string.IsNullOrWhiteSpace(value) ? [] : value.Split([',', ';', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
     private string Ip() => HttpContext.Connection.RemoteIpAddress?.ToString() ?? "";
     private string Ua() => Request.Headers.UserAgent.ToString();
 }
+
+public sealed record SectorCatalogChoice(string Code, string Name, int Order);
 
 public sealed record SectorDocumentRow(Guid LinkId, Guid DocumentId, Guid VersionId, string Name, string CatalogCode, string Origin, string OriginalFileName, DateOnly? DocumentDate, string ReviewStatus, string PreviewStatus, string OcrStatus, string ExtractionStatus, string? IssuerName, string? InformationOwner, string? PhysicalEvidence, string? SectorCode, bool RequiresPhysical);
 public sealed record SectorFieldRow(Guid FieldId, Guid LinkId, Guid VersionId, string ContextCode, string SuggestedValue, string? ConfirmedValue, string Evidence, int? PageNumber, string Status);

@@ -1,5 +1,8 @@
 using InovaGed.Application.Sectors;
 using InovaGed.Application.Tests.Ged;
+using InovaGed.Infrastructure.Sectors;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using Dapper;
 
@@ -109,6 +112,42 @@ public sealed class DemaisSetoresRulesTests
         Assert.Contains("where not exists", sql, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("update ged.sector_document_type", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Mapeamento pendente", sql, StringComparison.Ordinal);
+        var access = File.ReadAllText(Path.Combine(FindRoot(), "database", "migrations", "2026_10_26_demais_setores_acesso.sql"));
+        Assert.Contains("ux_sector_patient_identity", access, StringComparison.Ordinal);
+        Assert.DoesNotContain("update ged.sector_document_type", access, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Embed_link_carries_the_version_and_opening_urls_hide_the_identifier()
+    {
+        var version = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var link = SectorEmbedLink.Build(new string('a', 64), version);
+        Assert.Contains("versionId=11111111-1111-1111-1111-111111111111", link, StringComparison.Ordinal);
+        Assert.True(SectorEmbedLink.OriginMatches("https://parceiro.exemplo", " "));
+        Assert.False(SectorEmbedLink.OriginMatches("https://parceiro.exemplo", "https://outro.exemplo/caminho"));
+        Assert.Equal("52998224725", SectorCpf.Normalize("529.982.247-25"));
+        Assert.Null(SectorCpf.Normalize("000120"));
+        var opening = SectorOpeningLink.Path(new string('b', 64));
+        Assert.StartsWith("/DemaisSetores/Abrir/", opening, StringComparison.Ordinal);
+        Assert.False(SectorOpeningLink.Exposes(opening, "52998224725"));
+        Assert.False(SectorOpeningLink.Exposes(link, "52998224725"));
+    }
+
+    [Fact]
+    public void Empty_selection_does_not_count_as_a_complete_package()
+    {
+        var blockers = SectorDeliveryRules.Blockers([]);
+        Assert.Contains(blockers, item => item.Contains("Nenhum documento", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Disabled_clinical_source_reports_unavailable_without_a_patient()
+    {
+        var source = new ConfigurableClinicalSource(new HttpClient(), Options.Create(new ClinicalSourceOptions()), NullLogger<ConfigurableClinicalSource>.Instance);
+        var result = await source.FindAsync(Guid.NewGuid(), "000120", "MV", "1", "ID", CancellationToken.None);
+        Assert.Equal(ClinicalSourceStatus.Unavailable, result.Status);
+        Assert.Null(result.Patient);
+        Assert.Contains("Nenhum paciente foi simulado", result.Message, StringComparison.Ordinal);
     }
 
     private static string FindRoot()
@@ -140,7 +179,10 @@ public sealed class DemaisSetoresCatalogPostgresTests
             await connection.ExecuteAsync("insert into ged.tenant (id) values (@tenant)", new { tenant });
             var sql = await File.ReadAllTextAsync(Path.Combine(FindRoot(), "database", "migrations", "2026_10_25_demais_setores.sql"));
             await connection.ExecuteAsync(sql);
+            var access = await File.ReadAllTextAsync(Path.Combine(FindRoot(), "database", "migrations", "2026_10_26_demais_setores_acesso.sql"));
+            await connection.ExecuteAsync(access);
             await connection.ExecuteAsync(sql);
+            await connection.ExecuteAsync(access);
             var count = await connection.ExecuteScalarAsync<int>("select count(*) from ged.sector_document_type where tenant_id=@tenant", new { tenant });
             Assert.Equal(33, count);
             var pending = await connection.ExecuteScalarAsync<int>("select count(*) from ged.sector_type_mapping where tenant_id=@tenant and mapping_status='PENDENTE'", new { tenant });

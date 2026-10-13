@@ -3183,3 +3183,4 @@ COMMIT;
 \ir migrations/2026_10_23_preview_status_requested_at_contract.sql
 \ir migrations/2026_10_24_preview_attempt_and_recovery.sql
 \ir migrations/2026_10_25_demais_setores.sql
+\ir migrations/2026_10_26_demais_setores_acesso.sql

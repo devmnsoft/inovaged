@@ -175,6 +175,40 @@ public static class SectorSearchTerms
     }
 }
 
+public static class SectorCpf
+{
+    public static string? Normalize(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var digits = new string(value.Where(char.IsDigit).ToArray());
+        if (digits.Length != 11 || digits.Distinct().Count() == 1) return null;
+        return Check(digits, 9) && Check(digits, 10) ? digits : null;
+    }
+
+    private static bool Check(string digits, int length)
+    {
+        var sum = 0;
+        for (var i = 0; i < length; i++) sum += (digits[i] - '0') * (length + 1 - i);
+        var rest = sum % 11;
+        var expected = rest < 2 ? 0 : 11 - rest;
+        return digits[length] - '0' == expected;
+    }
+}
+
+public static class SectorEmbedLink
+{
+    public static string Build(string token, Guid versionId)
+        => "/DemaisSetores/Incorporar/" + token + "?versionId=" + versionId.ToString("D");
+
+    public static bool OriginMatches(string? grantedOrigin, string? presented)
+    {
+        if (string.IsNullOrWhiteSpace(presented)) return true;
+        if (string.IsNullOrWhiteSpace(grantedOrigin)) return false;
+        if (!Uri.TryCreate(presented, UriKind.Absolute, out var uri)) return false;
+        return string.Equals(grantedOrigin, uri.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase);
+    }
+}
+
 public static class SectorDuplicateNotice
 {
     public static string Message(bool callerCanReadExisting, string? standardName)
@@ -188,6 +222,10 @@ public static class SectorExtraction
     public const string Prescrito = "PRESCRITO";
     public const string Planejado = "PLANEJADO";
     public const string MencionadoComoRealizado = "MENCIONADO_COMO_REALIZADO";
+    public const string Administrado = "ADMINISTRADO";
+    public const string Cancelado = "CANCELADO";
+    public const string Negado = "NEGADO";
+    public const string Mencionado = "MENCIONADO";
     public const string Sugerido = "SUGERIDO";
 
     public static IReadOnlyList<SectorFact> Read(string? text, string catalogCode)
@@ -208,12 +246,20 @@ public static class SectorExtraction
                 continue;
             }
 
-            if (LooksMedication(line))
-                facts.Add(new(catalogCode == "DS23" || catalogCode == "DS24" ? Prescrito : Planejado, "medicamento", line, page, lineNo));
-            else if (catalogCode is "DS08" && line.Contains("realiz", StringComparison.OrdinalIgnoreCase))
+            if (line.Contains("administrad", StringComparison.OrdinalIgnoreCase))
+                facts.Add(new(Administrado, "administracao", line, page, lineNo));
+            else if (line.Contains("cancelad", StringComparison.OrdinalIgnoreCase))
+                facts.Add(new(Cancelado, "situacao", line, page, lineNo));
+            else if (line.Contains("negad", StringComparison.OrdinalIgnoreCase))
+                facts.Add(new(Negado, "situacao", line, page, lineNo));
+            else if (LooksMedication(line))
+                facts.Add(new(catalogCode is "DS23" or "DS24" ? Prescrito : Planejado, "medicamento", line, page, lineNo));
+            else if (catalogCode is "DS08" && line.Contains("realizad", StringComparison.OrdinalIgnoreCase))
                 facts.Add(new(MencionadoComoRealizado, "procedimento", line, page, lineNo));
-            else if (catalogCode is "DS23" or "DS05" or "DS27" && line.Contains("proced", StringComparison.OrdinalIgnoreCase))
+            else if (catalogCode is "DS23" or "DS05" or "DS27" && (line.Contains("planejad", StringComparison.OrdinalIgnoreCase) || line.Contains("proced", StringComparison.OrdinalIgnoreCase)))
                 facts.Add(new(Planejado, "procedimento", line, page, lineNo));
+            else if (catalogCode is "DS10" or "DS11" or "DS12" && line.Any(char.IsDigit))
+                facts.Add(new(Mencionado, "material", line, page, lineNo));
         }
 
         return facts;
@@ -238,6 +284,10 @@ public static class SectorFindings
             SectorExtraction.MencionadoComoRealizado => "Procedimento mencionado como realizado na descrição. Isso localiza evidência e não define elegibilidade de faturamento.",
             SectorExtraction.Planejado => "Procedimento apenas planejado ou citado fora da descrição de realização. Não foi tratado como executado.",
             SectorExtraction.Prescrito => "Item prescrito. A prescrição não comprova administração nem procedimento executado.",
+            SectorExtraction.Administrado => "Há menção de administração. Isso não gera código nem valor de cobrança.",
+            SectorExtraction.Cancelado => "Há menção de cancelamento. O item não foi tratado como realizado.",
+            SectorExtraction.Negado => "Há menção de negação. O item não foi tratado como realizado.",
+            SectorExtraction.Mencionado => "Material ou referência mencionada no texto, com a quantidade apenas quando ela está escrita na linha.",
             _ => "Informação localizada para conferência humana."
         };
 }
@@ -246,8 +296,11 @@ public static class SectorDeliveryRules
 {
     public static IReadOnlyList<string> Blockers(IEnumerable<SectorDeliveryCandidate> items)
     {
+        var list = items.ToArray();
         var blockers = new List<string>();
-        foreach (var item in items)
+        if (list.Length == 0)
+            blockers.Add("Nenhum documento foi selecionado. A preparação não foi registrada como pacote completo.");
+        foreach (var item in list)
         {
             if (item.Failed)
                 blockers.Add($"{item.Name}: falha individual. O pacote não pode ser apresentado como completo.");

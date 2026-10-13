@@ -1338,6 +1338,14 @@
       "transactional": true,
       "deploymentSafety": "Additive",
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_10_26_demais_setores_acesso",
+      "path": "database/migrations/2026_10_26_demais_setores_acesso.sql",
+      "module": "DemaisSetores",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
     }
   ]
 }

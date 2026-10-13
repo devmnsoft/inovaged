@@ -34,7 +34,7 @@
     root._finder = controller;
     current = null;
     send.disabled = true;
-    setStatus("Consultando a integração. Nenhum dado local será inventado.", "info");
+    setStatus("Consultando o paciente na origem informada.", "info");
     const body = new FormData(root.querySelector("[data-ds-patient-form]"));
     try {
       const response = await fetch(root.dataset.findUrl, { method: "POST", body, headers: { RequestVerificationToken: token }, signal: controller.signal });
@@ -192,30 +192,14 @@
     results.replaceChildren();
     const pending = [];
     for (const item of files) {
-      const body = new FormData();
-      body.append("__RequestVerificationToken", token);
-      body.append("patientId", current.patientId);
-      body.append("encounterId", current.encounterId);
-      body.append("catalogCode", item.catalog || catalog.value);
-      body.append("sectorCode", item.sector || field("sectorCode").value);
-      body.append("documentDate", item.date || field("documentDate").value);
-      body.append("issuerName", field("issuerName").value);
-      body.append("informationOwner", field("informationOwner").value);
-      body.append("notes", item.notes || field("notes").value);
-      body.append("confirmAnotherOccurrence", item.confirm || field("confirmAnotherOccurrence").checked);
-      body.append("arquivo", item.file);
       const row = document.createElement("li");
-      row.textContent = item.file.name + ": transferência em andamento.";
+      row.textContent = item.file.name + ": preparando a transferência.";
       results.appendChild(row);
       try {
-        const response = await fetch(root.dataset.sendUrl, { method: "POST", body, headers: { RequestVerificationToken: token } });
-        const payload = await response.json();
-        row.textContent = item.file.name + " — " + payload.stage + ": " + payload.message;
-        if (payload.stage === "VINCULO" && payload.documentId) row.appendChild(retryLink(item, payload.documentId));
-        if (payload.stage === "FALHOU_AO_ENFILEIRAR" && payload.linkId) row.appendChild(retryQueue(payload.linkId));
-        if (!payload.stored) pending.push(item);
+        const stored = await sendInParts(item, row);
+        if (!stored) pending.push(item);
       } catch {
-        row.textContent = item.file.name + " — a transferência não foi confirmada. O arquivo permanece disponível para nova tentativa.";
+        row.textContent = item.file.name + " — a transferência não foi confirmada. O arquivo permanece nesta tela para nova tentativa.";
         pending.push(item);
       }
     }
@@ -224,6 +208,89 @@
     send.disabled = !current?.encounterId;
     setStatus("A tentativa de gravação terminou arquivo a arquivo. Pré-visualização, OCR e extração têm situação própria.", "info");
   });
+
+  async function postForm(url, body) {
+    const response = await fetch(url, { method: "POST", body, headers: { RequestVerificationToken: token } });
+    return response.json();
+  }
+
+  async function sendInParts(item, row) {
+    const catalogCode = item.catalog || catalog.value;
+    if (!item.uploadId) {
+      const start = new FormData();
+      start.append("__RequestVerificationToken", token);
+      start.append("patientId", current.patientId);
+      start.append("encounterId", current.encounterId);
+      start.append("catalogCode", catalogCode);
+      start.append("fileName", item.file.name);
+      start.append("contentType", item.file.type || "application/octet-stream");
+      start.append("totalBytes", String(item.file.size));
+      const started = await postForm(root.dataset.startUrl, start);
+      if (!started.uploadId) {
+        row.textContent = item.file.name + " — " + (started.stage || "AUTORIZACAO") + ": " + (started.message || "O envio não começou.");
+        return false;
+      }
+      item.uploadId = started.uploadId;
+      item.chunkSize = started.chunkSize;
+      item.totalChunks = started.totalChunks;
+    }
+    let missing = [];
+    const statusResponse = await fetch(root.dataset.statusUrl + "?uploadId=" + encodeURIComponent(item.uploadId), { headers: { "X-Requested-With": "fetch" } });
+    const status = await statusResponse.json();
+    missing = status.missing || [];
+    if (status.status === "COMPLETED" && status.documentId) {
+      return finish(item, row, catalogCode);
+    }
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.textContent = "Cancelar transferência";
+    let cancelled = false;
+    cancel.addEventListener("click", async function () {
+      cancelled = true;
+      const body = new FormData();
+      body.append("__RequestVerificationToken", token);
+      body.append("uploadId", item.uploadId);
+      await postForm(root.dataset.cancelUrl, body);
+      row.textContent = item.file.name + " — transferência cancelada.";
+    });
+    row.appendChild(cancel);
+    const indexes = missing.length ? missing : Array.from({ length: item.totalChunks || 1 }, function (_, index) { return index; });
+    for (const index of indexes) {
+      if (cancelled) return false;
+      const size = item.chunkSize || item.file.size;
+      const blob = item.file.slice(index * size, Math.min(item.file.size, (index + 1) * size));
+      const part = new FormData();
+      part.append("__RequestVerificationToken", token);
+      part.append("uploadId", item.uploadId);
+      part.append("chunkIndex", String(index));
+      part.append("parte", blob, item.file.name);
+      row.firstChild && (row.childNodes[0].textContent = item.file.name + ": transferência " + (Number(index) + 1) + "/" + (item.totalChunks || indexes.length) + ".");
+      const saved = await postForm(root.dataset.partUrl, part);
+      if (saved.received === undefined && saved.percent === undefined) {
+        row.appendChild(document.createTextNode(" " + (saved.message || "A parte não foi aceita.")));
+        return false;
+      }
+    }
+    if (cancelled) return false;
+    return finish(item, row, catalogCode);
+  }
+
+  async function finish(item, row, catalogCode) {
+    const body = new FormData();
+    body.append("__RequestVerificationToken", token);
+    body.append("patientId", current.patientId);
+    body.append("encounterId", current.encounterId);
+    body.append("catalogCode", catalogCode);
+    body.append("uploadId", item.uploadId);
+    body.append("confirmAnotherOccurrence", item.confirm || field("confirmAnotherOccurrence").checked ? "true" : "false");
+    const payload = await postForm(root.dataset.completeUrl, body);
+    row.textContent = item.file.name + " — " + payload.stage + ": " + payload.message;
+    if ((payload.stage === "VINCULO" || payload.stage === "MULTIPLICIDADE" || payload.stage === "DUPLICIDADE") && payload.documentId)
+      row.appendChild(retryLink(item, payload.documentId));
+    if (payload.stage === "FALHOU_AO_ENFILEIRAR" && payload.linkId) row.appendChild(retryQueue(payload.linkId));
+    if (payload.stored) item.uploadId = null;
+    return !!payload.stored;
+  }
 
   function retryLink(item, documentId) {
     const button = document.createElement("button");
@@ -379,4 +446,29 @@
       waiting.textContent = "A busca não foi concluída. O atendimento selecionado permanece o mesmo.";
     }
   });
+
+  const auto = workspace.dataset.autoVersion;
+  if (auto) {
+    const button = workspace.querySelector("[data-version='" + auto + "']");
+    if (button) openDocument(button);
+  }
+  const partner = page?.dataset.partnerOrigin;
+  if (page?.dataset.embedded === "1" && partner) {
+    const notify = function (payload) {
+      if (window.parent && window.parent !== window) window.parent.postMessage(payload, partner);
+    };
+    notify({ tipo: "ds-carregado", versaoId: auto || null });
+    window.addEventListener("message", function (event) {
+      if (event.origin !== partner || !event.data || typeof event.data !== "object") return;
+      if (event.data.tipo === "ds-altura") return;
+      if (event.data.tipo === "ds-atendimento" && event.data.codigoAtendimento) {
+        const body = new FormData();
+        body.append("encounterCode", event.data.codigoAtendimento);
+        fetch(page.dataset.switchUrl, { method: "POST", body, credentials: "same-origin" }).then(function (response) {
+          if (response.ok) window.location.reload();
+          else notify({ tipo: "ds-expirado" });
+        });
+      }
+    });
+  }
 })();

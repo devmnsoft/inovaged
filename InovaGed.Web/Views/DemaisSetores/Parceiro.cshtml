@@ -1,0 +1,33 @@
+@{
+    ViewData["Title"] = "Teste de abertura";
+}
+<link rel="stylesheet" href="~/css/demais-setores.css" asp-append-version="true" />
+<main class="ds-page">
+    <h1>Teste de abertura</h1>
+    <p class="ds-help">Esta página fica no InovaGed e chama a abertura no servidor. A chave e o identificador do paciente não entram no endereço.</p>
+    <form method="post" class="ds-grid">
+        @Html.AntiForgeryToken()
+        <label>Integração<input name="clientId" required /></label>
+        <label>Chave<input name="secret" type="password" required autocomplete="current-password" /></label>
+        <label>Tipo<select name="identifierKind"><option value="ID">ID</option><option value="CPF">CPF</option></select></label>
+        <label>Identificador<input name="identifier" required /></label>
+        <label>Sistema<input name="sourceSystem" /></label>
+        <label>Unidade<input name="sourceUnit" /></label>
+        <label>Atendimento<input name="encounterCode" required /></label>
+        <label>Nome do documento<input name="documentName" /></label>
+        <label>Código do documento<input name="documentCode" /></label>
+        <label>Modo<select name="mode"><option value="consulta">consulta</option><option value="documento">documento</option></select></label>
+        <label>Origem<input name="origin" placeholder="https://sistema.exemplo" required /></label>
+        <button type="submit">Pedir abertura</button>
+    </form>
+    @if (ViewBag.Code is not null)
+    {
+        <p>@ViewBag.Code — @ViewBag.Message</p>
+        <p>Escopo: @ViewBag.Scope. Validade: @ViewBag.Expires. Correlação: @ViewBag.Correlation.</p>
+        @if (ViewBag.PageUrl is not null)
+        {
+            <p><a href="@ViewBag.PageUrl">Abrir a página completa</a></p>
+            <iframe src="@ViewBag.FrameUrl" title="Documentos do atendimento" width="100%" height="800"></iframe>
+        }
+    }
+</main>

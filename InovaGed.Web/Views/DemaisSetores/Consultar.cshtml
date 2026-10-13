@@ -11,18 +11,25 @@
     var types = documents.Select(item => item.CatalogCode).Distinct().Count();
     var encounterRaw = (object?)ViewBag.EncounterId;
     var encounterId = encounterRaw is Guid parsedEncounter ? parsedEncounter : (Guid?)null;
+    var embedded = ViewBag.Embedded == true;
+    var fileAction = (string?)ViewBag.FileAction ?? "Arquivo";
+    if (embedded)
+        Layout = "~/Views/Shared/_DemaisSetoresFrame.cshtml";
 }
 <link rel="stylesheet" href="~/css/demais-setores.css" asp-append-version="true" />
-<main class="ds-page" data-ds-consult data-search-url="@Url.Action("Pesquisar")" data-text-url="@Url.Action("Texto")" data-file-url="@Url.Action("Arquivo")">
+<main class="ds-page" data-ds-consult data-embedded="@(embedded ? "1" : "0")" data-partner-origin="@ViewBag.PartnerOrigin" data-switch-url="@Url.Action("TrocarAtendimento")" data-search-url="@Url.Action("Pesquisar")" data-text-url="@Url.Action("Texto")" data-file-url="@Url.Action(fileAction)">
     @Html.AntiForgeryToken()
     <h1>Consultar e analisar</h1>
     <p class="ds-help">A leitura reutiliza o OCR do GED. Campo sugerido não é informação validada. A conta não está integrada: ausência no prontuário não significa item não faturado.</p>
     <section class="ds-context">
+        @if (!embedded)
+        {
         <form method="get" class="ds-grid">
             <label>Paciente interno da consulta<input name="patientId" value="@ViewBag.PatientId" /></label>
             <label>Atendimento<input name="encounterId" value="@ViewBag.EncounterId" /></label>
             <div class="ds-actions"><button type="submit">Abrir atendimento</button></div>
         </form>
+        }
         @if (context is null)
         {
             <p class="ds-note">Nenhum atendimento aberto. Informe o paciente e o atendimento confirmados no cadastro.</p>
@@ -40,7 +47,7 @@
         <button type="button" data-ds-tab="pdf" aria-controls="ds-pdf">PDF</button>
         <button type="button" data-ds-tab="analise" aria-controls="ds-analise">Análise</button>
     </div>
-    <div class="ds-workspace" data-ds-workspace>
+    <div class="ds-workspace" data-ds-workspace data-auto-version="@ViewBag.AutoVersion">
         <section class="ds-list is-active" id="ds-lista" data-region="lista">
             <h2>Lista</h2>
             <div class="ds-grid">
@@ -54,7 +61,7 @@
                 <h3>@group.First().Name <span class="ds-badge">@group.Count() arquivo(s)</span></h3>
                 foreach (var document in group.OrderBy(item => item.DocumentDate))
                 {
-                    <button type="button" class="ds-doc" data-ds-open data-url="@Url.Action("Arquivo", new { versionId = document.VersionId })" data-version="@document.VersionId" data-name="@document.Name" data-origin="@document.Origin" data-sector="@document.SectorCode" data-review="@document.ReviewStatus" data-date="@document.DocumentDate?.ToString("yyyy-MM-dd")" aria-current="false">
+                    <button type="button" class="ds-doc" data-ds-open data-url="@Url.Action(fileAction, new { versionId = document.VersionId })" data-version="@document.VersionId" data-name="@document.Name" data-origin="@document.Origin" data-sector="@document.SectorCode" data-review="@document.ReviewStatus" data-date="@document.DocumentDate?.ToString("yyyy-MM-dd")" aria-current="false">
                         <strong>@document.Name</strong>
                         <span class="ds-badge">@document.ReviewStatus</span>
                         <span class="ds-badge">PDF @document.PreviewStatus</span>
@@ -126,7 +133,7 @@
                             <p>Valor revisado: @field.ConfirmedValue</p>
                         }
                         <p>Evidência: @field.Evidence @(field.PageNumber is null ? "(página não informada pelo mecanismo)" : "página " + field.PageNumber)</p>
-                        <button type="button" data-ds-open data-url="@Url.Action("Arquivo", new { versionId = field.VersionId })" data-page="@field.PageNumber">Abrir evidência</button>
+                        <button type="button" data-ds-open data-url="@Url.Action(fileAction, new { versionId = field.VersionId })" data-page="@field.PageNumber">Abrir evidência</button>
                         @if (ViewBag.CanExtract == true)
                         {
                             <form method="post" action="@Url.Action("RevisarCampo")">
@@ -150,7 +157,7 @@
                         <p>@finding.Evidence @(finding.PageNumber is null ? "" : "· página " + finding.PageNumber)</p>
                         @if (finding.VersionId is Guid versionId)
                         {
-                            <button type="button" data-ds-open data-url="@Url.Action("Arquivo", new { versionId })" data-page="@finding.PageNumber">Abrir evidência</button>
+                            <button type="button" data-ds-open data-url="@Url.Action(fileAction, new { versionId })" data-page="@finding.PageNumber">Abrir evidência</button>
                         }
                         @if (ViewBag.CanReview == true)
                         {

@@ -992,5 +992,12 @@
     "area": "DemaisSetores",
     "required": true,
     "description": "Catálogo do Anexo I, vínculos de paciente e atendimento, conferência e concessões de incorporação do módulo Demais setores."
+  },
+  {
+    "name": "2026_10_26_demais_setores_acesso",
+    "path": "database/migrations/2026_10_26_demais_setores_acesso.sql",
+    "area": "DemaisSetores",
+    "required": true,
+    "description": "Identificador CPF ou ID, concessão de incorporação por origem e abertura temporária para sistemas parceiros."
   }
 ]

@@ -37,6 +37,29 @@
             </select></label>
             <button type="submit">Conceder</button>
         </form>
+        <form method="post" action="@Url.Action("RevogarAcesso")">
+            @Html.AntiForgeryToken()
+            <label>Usuário<input name="userId" required /></label>
+            <label>Setor<select name="sectorCode"><option>FATURAMENTO</option><option>FARMACIA</option><option>DDI</option><option>CME</option><option>SELECIONADO</option></select></label>
+            <button type="submit">Revogar setor</button>
+        </form>
+        <p class="ds-note">A revogação retira o acesso do setor e as autorizações antigas dos tipos que a pessoa deixa de consultar.</p>
+    </section>
+    <section class="ds-card">
+        <h2>Integração por link</h2>
+        <form method="post" action="@Url.Action("CadastrarIntegracao")">
+            @Html.AntiForgeryToken()
+            <label>Identificador da integração<input name="clientId" required /></label>
+            <label>Chave<input name="secret" type="password" required minlength="16" autocomplete="new-password" /></label>
+            <label>Sistema<input name="sourceSystem" required /></label>
+            <label>Unidade<input name="sourceUnit" /></label>
+            <label>Origens permitidas<input name="origins" placeholder="https://sistema.exemplo" required /></label>
+            <label>Tipos permitidos<input name="catalogCodes" placeholder="DS23, DS08" /></label>
+            <label><input type="checkbox" name="allowEncounterList" value="true" /> Permitir consulta do atendimento sem tipo</label>
+            <label>Prazo máximo em minutos<input name="maxMinutes" type="number" min="1" max="60" value="15" /></label>
+            <button type="submit">Gravar integração</button>
+        </form>
+        <p class="ds-note"><a href="@Url.Action("Parceiro")">Abrir a página de teste do parceiro</a>. A chave não volta a ser exibida.</p>
     </section>
     <section class="ds-card">
         <h2>Anexo II</h2>
