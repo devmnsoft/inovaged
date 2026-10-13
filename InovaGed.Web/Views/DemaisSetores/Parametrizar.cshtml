@@ -29,7 +29,14 @@
         <h2>Acesso ao módulo</h2>
         <form method="post" action="@Url.Action("Conceder")">
             @Html.AntiForgeryToken()
-            <label>Usuário<input name="userId" required /></label>
+            <label>Usuário
+                <select name="userId" required>
+                    @foreach (var user in ViewBag.Users)
+                    {
+                        <option value="@user.id">@user.name</option>
+                    }
+                </select>
+            </label>
             <label>Setor<select name="sectorCode"><option>FATURAMENTO</option><option>FARMACIA</option><option>DDI</option><option>CME</option><option>SELECIONADO</option></select></label>
             <label>Permissão<select name="permissionCode">
                 <option>CONSULTAR</option><option>CADASTRAR</option><option>CORRIGIR_VINCULO</option><option>REVISAR_EXTRACAO</option>
@@ -39,7 +46,14 @@
         </form>
         <form method="post" action="@Url.Action("RevogarAcesso")">
             @Html.AntiForgeryToken()
-            <label>Usuário<input name="userId" required /></label>
+            <label>Usuário
+                <select name="userId" required>
+                    @foreach (var user in ViewBag.Users)
+                    {
+                        <option value="@user.id">@user.name</option>
+                    }
+                </select>
+            </label>
             <label>Setor<select name="sectorCode"><option>FATURAMENTO</option><option>FARMACIA</option><option>DDI</option><option>CME</option><option>SELECIONADO</option></select></label>
             <button type="submit">Revogar setor</button>
         </form>
@@ -56,10 +70,23 @@
             <label>Origens permitidas<input name="origins" placeholder="https://sistema.exemplo" required /></label>
             <label>Tipos permitidos<input name="catalogCodes" placeholder="DS23, DS08" /></label>
             <label><input type="checkbox" name="allowEncounterList" value="true" /> Permitir consulta do atendimento sem tipo</label>
+            <label><input type="checkbox" name="allowEncounterSwitch" value="true" /> Permitir navegação entre atendimentos do mesmo paciente</label>
             <label>Prazo máximo em minutos<input name="maxMinutes" type="number" min="1" max="60" value="15" /></label>
             <button type="submit">Gravar integração</button>
         </form>
-        <p class="ds-note"><a href="@Url.Action("Parceiro")">Abrir a página de teste do parceiro</a>. A chave não volta a ser exibida.</p>
+        <form method="post" action="@Url.Action("DesativarIntegracao")" class="ds-grid">
+            @Html.AntiForgeryToken()
+            <label>Integração
+                <select name="clientId" required>
+                    @foreach (var integration in ViewBag.Integrations)
+                    {
+                        <option value="@integration.client_id">@integration.client_id — @(integration.active ? "ativa" : "inativa") — @(integration.allow_encounter_switch ? "pode trocar episódio" : "sem troca de episódio")</option>
+                    }
+                </select>
+            </label>
+            <button type="submit">Desativar integração</button>
+        </form>
+        <p class="ds-note">Desativar inutiliza códigos pendentes e revoga sessões. Gravar de novo reativa a integração, sem recuperar essas aberturas. <a href="@Url.Action("Parceiro")">Abrir a página de teste do parceiro</a>. A chave não volta a ser exibida.</p>
     </section>
     <section class="ds-card">
         <h2>Anexo II</h2>

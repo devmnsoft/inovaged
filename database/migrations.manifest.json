@@ -1346,6 +1346,14 @@
       "transactional": true,
       "deploymentSafety": "Additive",
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_10_27_demais_setores_sessao",
+      "path": "database/migrations/2026_10_27_demais_setores_sessao.sql",
+      "module": "DemaisSetores",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
     }
   ]
 }

@@ -1,0 +1,61 @@
+@using InovaGed.Web.Controllers
+@{
+    Layout = null;
+    ViewData["Title"] = "Prévia de entrega";
+    var context = (SectorContextRow)ViewBag.Context;
+    var documents = (IReadOnlyList<SectorDocumentRow>)(ViewBag.Documents ?? Array.Empty<SectorDocumentRow>());
+    var checklist = (IReadOnlyList<SectorChecklistRow>)(ViewBag.Checklist ?? Array.Empty<SectorChecklistRow>());
+}
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8" />
+    <title>Prévia de entrega</title>
+    <link rel="stylesheet" href="~/css/demais-setores.css" asp-append-version="true" />
+</head>
+<body>
+<main class="ds-page">
+    <h1>Prévia de capa e checklist</h1>
+    <p class="ds-help">Isto é preparação para conferência. Não é entrega confirmada, não encerra o atendimento e não prova assinatura digital nem preservação do original físico.</p>
+    <section class="ds-card">
+        <h2>Contexto</h2>
+        <p><strong>@context.DisplayName</strong> · código @context.PatientCode</p>
+        <p>Atendimento @context.EncounterCode · @(context.Kind ?? "tipo ainda não mapeado") · @(context.Status ?? "situação não informada")</p>
+        <p>Entrada @(context.AdmittedAt?.ToString("dd/MM/yyyy HH:mm") ?? "não informada") · alta @(context.DischargedAt?.ToString("dd/MM/yyyy HH:mm") ?? "não informada")</p>
+    </section>
+    <section class="ds-card">
+        <h2>Arquivos visíveis nesta consulta</h2>
+        @if (documents.Count == 0)
+        {
+            <p>Nenhum arquivo visível. A prévia não inventa documento ausente.</p>
+        }
+        <ul>
+            @foreach (var document in documents)
+            {
+                <li>
+                    <strong>@document.Name</strong>
+                    — @document.OriginalFileName
+                    — @(document.DocumentDate?.ToString("dd/MM/yyyy") ?? "sem data")
+                    — conferência @document.ReviewStatus
+                    — prévia @document.PreviewStatus
+                    — OCR @document.OcrStatus
+                    @(document.RequiresPhysical ? "— original físico exigido: " + (string.IsNullOrWhiteSpace(document.PhysicalEvidence) ? "pendente" : document.PhysicalEvidence) : "")
+                    <details><summary>Versão registrada</summary><p class="ds-note">@document.VersionId</p></details>
+                </li>
+            }
+        </ul>
+    </section>
+    <section class="ds-card">
+        <h2>Checklist do Anexo I</h2>
+        <ul>
+            @foreach (var item in checklist)
+            {
+                <li>@item.Order.ToString("00") @item.Name — @item.State @(item.Required ? "(exigido neste contexto)" : "(não exigido neste contexto)")</li>
+            }
+        </ul>
+        <p class="ds-note">O Anexo II permanece um perfil separado e só pode ser usado quando a instituição o habilitar. A impressão desta página não substitui o pacote conferido nem comprova assinatura.</p>
+    </section>
+    <div class="ds-actions"><button type="button" onclick="window.print()">Imprimir prévia</button></div>
+</main>
+</body>
+</html>

@@ -114,7 +114,8 @@ public static class InfrastructureServiceCollectionExtensions
 
         services.AddOptions<InovaGed.Application.Sectors.ClinicalSourceOptions>()
             .Bind(configuration.GetSection(InovaGed.Application.Sectors.ClinicalSourceOptions.SectionName));
-        services.AddHttpClient<InovaGed.Application.Sectors.IClinicalSource, InovaGed.Infrastructure.Sectors.ConfigurableClinicalSource>();
+        services.AddHttpClient<InovaGed.Application.Sectors.IClinicalSource, InovaGed.Infrastructure.Sectors.ConfigurableClinicalSource>()
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
         services.AddScoped<InovaGed.Application.Sectors.IDemaisSetoresService, InovaGed.Infrastructure.Sectors.DemaisSetoresService>();
         services.AddScoped<InovaGed.Application.Sectors.ISectorOpeningService, InovaGed.Infrastructure.Sectors.SectorOpeningService>();
 

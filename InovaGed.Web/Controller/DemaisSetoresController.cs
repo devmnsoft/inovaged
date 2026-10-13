@@ -61,8 +61,6 @@ public sealed class DemaisSetoresController : Controller
         ViewBag.CanShare = await _sectors.HasPermissionAsync(_currentUser.TenantId, _currentUser.UserId, Admin, SectorPermissions.Compartilhar, ct);
         ViewBag.CanCorrect = await _sectors.HasPermissionAsync(_currentUser.TenantId, _currentUser.UserId, Admin, SectorPermissions.CorrigirVinculo, ct);
         ViewBag.CanExtract = await _sectors.HasPermissionAsync(_currentUser.TenantId, _currentUser.UserId, Admin, SectorPermissions.RevisarExtracao, ct);
-        if (encounterId.HasValue)
-            await _sectors.RefreshExtractionAsync(_currentUser.TenantId, encounterId.Value, ct);
         var context = encounterId.HasValue ? await ContextAsync(encounterId.Value, ct) : null;
         if (patientId.HasValue && context is not null && context.PatientId != patientId.Value)
             context = null;
@@ -94,6 +92,8 @@ public sealed class DemaisSetoresController : Controller
         ViewBag.Profiles = await conn.QueryAsync("select code, version_no, enabled from ged.sector_profile where tenant_id=@tenantId order by code, version_no", new { tenantId = _currentUser.TenantId });
         ViewBag.Origins = await conn.QueryAsync("select id, origin from ged.sector_embed_origin where tenant_id=@tenantId and reg_status='A' order by origin", new { tenantId = _currentUser.TenantId });
         ViewBag.Departments = await conn.QueryAsync("select code, name from ged.department where tenant_id=@tenantId and is_active and upper(code) in ('FATURAMENTO','FARMACIA','FARMÁCIA','CME','DDI') order by code", new { tenantId = _currentUser.TenantId });
+        ViewBag.Users = await conn.QueryAsync("select id, name from ged.app_user where tenant_id=@tenantId and is_active and deleted_at_utc is null order by name", new { tenantId = _currentUser.TenantId });
+        ViewBag.Integrations = await conn.QueryAsync("select client_id, active, allow_encounter_list, allow_encounter_switch, source_system, source_unit from ged.sector_integration where tenant_id=@tenantId order by client_id", new { tenantId = _currentUser.TenantId });
         return View();
     }
 
@@ -288,12 +288,21 @@ where l.tenant_id=@tenantId and l.version_id=@versionId and l.reg_status='A'
     }
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> Pesquisar(Guid encounterId, string term, bool includeOtherEncounters, CancellationToken ct)
+    public async Task<IActionResult> Pesquisar(Guid encounterId, string term, bool includeOtherEncounters, int page, CancellationToken ct)
     {
         if (!await _sectors.HasPermissionAsync(_currentUser.TenantId, _currentUser.UserId, Admin, SectorPermissions.Consultar, ct))
             return Forbid();
-        var hits = await _sectors.SearchAsync(new SectorSearchRequest(_currentUser.TenantId, _currentUser.UserId, Admin, encounterId, term, includeOtherEncounters), ct);
-        return Json(new { mode = "literal", message = "A busca é literal no atendimento selecionado. Análise semântica não foi executada e nenhuma página foi estimada.", hits });
+        var result = await _sectors.SearchAsync(new SectorSearchRequest(_currentUser.TenantId, _currentUser.UserId, Admin, encounterId, term, includeOtherEncounters, page), ct);
+        return Json(new { mode = "literal", message = "A busca é literal no atendimento selecionado. Sinônimos cadastrados ampliam o termo. Análise semântica não foi executada e nenhuma página foi estimada.", hits = result.Hits, total = result.Total, page = result.Page, pageSize = result.PageSize });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> AtualizarLeitura(Guid encounterId, CancellationToken ct)
+    {
+        if (!await _sectors.HasPermissionAsync(_currentUser.TenantId, _currentUser.UserId, Admin, SectorPermissions.RevisarExtracao, ct))
+            return Forbid();
+        await _sectors.RefreshExtractionAsync(_currentUser.TenantId, encounterId, ct);
+        return Page(200, "A leitura foi sincronizada com o OCR e o texto já gravados. Campo sugerido continua sem confirmação humana. A página de consulta não executa essa atualização sozinha.");
     }
 
     [HttpPost, ValidateAntiForgeryToken]
@@ -397,14 +406,23 @@ on conflict (tenant_id, user_id, sector_code, permission_code) do update set reg
     }
 
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> CadastrarIntegracao(string clientId, string secret, string sourceSystem, string? sourceUnit, string origins, string? catalogCodes, bool allowEncounterList, int maxMinutes, CancellationToken ct)
+    public async Task<IActionResult> CadastrarIntegracao(string clientId, string secret, string sourceSystem, string? sourceUnit, string origins, string? catalogCodes, bool allowEncounterList, bool allowEncounterSwitch, int maxMinutes, CancellationToken ct)
     {
         if (!await _sectors.HasPermissionAsync(_currentUser.TenantId, _currentUser.UserId, Admin, SectorPermissions.Administrar, ct))
             return Forbid();
         var error = await _opening.RegisterIntegrationAsync(new SectorIntegrationRegistration(
             _currentUser.TenantId, _currentUser.UserId, clientId, secret, sourceSystem, sourceUnit,
-            SplitList(origins), SplitList(catalogCodes), allowEncounterList, maxMinutes), ct);
-        return Page(error is null ? 200 : 400, error ?? "Integração gravada. A chave ficou só no cadastro protegido e não volta a ser exibida.");
+            SplitList(origins), SplitList(catalogCodes), allowEncounterList, allowEncounterSwitch, maxMinutes), ct);
+        return Page(error is null ? 200 : 400, error ?? "Integração gravada. A chave ficou só no cadastro protegido e não volta a ser exibida. Reativar a integração não recupera códigos ou sessões já revogados.");
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> DesativarIntegracao(string clientId, CancellationToken ct)
+    {
+        if (!await _sectors.HasPermissionAsync(_currentUser.TenantId, _currentUser.UserId, Admin, SectorPermissions.Administrar, ct))
+            return Forbid();
+        var error = await _opening.DeactivateIntegrationAsync(_currentUser.TenantId, _currentUser.UserId, clientId, ct);
+        return Page(error is null ? 200 : 400, error ?? "Integração desativada. Códigos ainda não usados foram inutilizados e as sessões abertas foram revogadas.");
     }
 
     [HttpGet("/DemaisSetores/Abrir/{code}")]
@@ -414,30 +432,24 @@ on conflict (tenant_id, user_id, sector_code, permission_code) do update set reg
         var consumed = await _opening.ConsumeAsync(code, ct);
         if (consumed is null)
             return Html(401, "A abertura expirou, já foi usada ou foi revogada. Solicite um novo link ao sistema de origem.");
-        Response.Cookies.Append(SectorOpeningService.CookieName, consumed.CookieValue, new CookieOptions
-        {
-            HttpOnly = true,
-            IsEssential = true,
-            Secure = Request.IsHttps,
-            SameSite = Request.IsHttps ? SameSiteMode.None : SameSiteMode.Lax,
-            MaxAge = consumed.ExpiresAt - DateTimeOffset.UtcNow
-        });
-        return RedirectToAction(nameof(ConsultaIntegrada));
+        Response.Cookies.Append(SectorOpeningService.CookieNameFor(consumed.PublicId), consumed.CookieValue, OpeningCookie(consumed.ExpiresAt));
+        return Redirect($"/DemaisSetores/ConsultaIntegrada/{consumed.PublicId:D}#protecao={consumed.ProtectionToken}");
     }
 
-    [HttpGet]
+    [HttpGet("/DemaisSetores/ConsultaIntegrada/{publicId:guid}")]
     [AllowAnonymous]
-    public async Task<IActionResult> ConsultaIntegrada(CancellationToken ct)
+    public async Task<IActionResult> ConsultaIntegrada(Guid publicId, CancellationToken ct)
     {
-        var session = await _opening.ReadSessionAsync(Request.Cookies[SectorOpeningService.CookieName], ct);
+        var session = await ReadOpeningAsync(publicId, ct);
         if (session is null)
-            return Html(401, "A sessão da consulta expirou. Abra novamente pelo sistema de origem.");
-        Response.Headers.ContentSecurityPolicy = "frame-ancestors " + session.Origin;
-        Response.Headers["Referrer-Policy"] = "no-referrer";
-        Response.Headers.CacheControl = "private, no-store";
+            return Html(401, "A consulta deste prontuário não está autorizada neste navegador. O documento não é público. Abra o link em uma página própria do InovaGed, no mesmo endereço da aplicação. Se o código já foi usado dentro de um quadro com cookies de terceiros bloqueados, peça uma nova abertura ao sistema de origem.");
+        ApplyFrameHeaders(session);
         var documents = await SessionDocumentsAsync(session, ct);
         ViewBag.Embedded = true;
+        ViewBag.PublicId = session.PublicId;
         ViewBag.PartnerOrigin = session.Origin;
+        ViewBag.AllowSwitch = session.AllowEncounterSwitch;
+        ViewBag.ScopeKind = session.ScopeKind;
         ViewBag.CanReview = false;
         ViewBag.CanPrint = false;
         ViewBag.CanShare = false;
@@ -446,38 +458,91 @@ on conflict (tenant_id, user_id, sector_code, permission_code) do update set reg
         ViewBag.PatientId = session.PatientId;
         ViewBag.EncounterId = session.EncounterId;
         ViewBag.Context = await SessionContextAsync(session, ct);
-        ViewBag.Siblings = Array.Empty<SectorEncounterOption>();
+        ViewBag.Siblings = session.AllowEncounterSwitch ? await SessionSiblingsAsync(session, ct) : Array.Empty<SectorEncounterOption>();
         ViewBag.Documents = documents;
-        ViewBag.Fields = Array.Empty<SectorFieldRow>();
-        ViewBag.Findings = Array.Empty<SectorFindingRow>();
-        ViewBag.Checklist = Array.Empty<SectorChecklistRow>();
+        ViewBag.Fields = await SessionFieldsAsync(session, ct);
+        ViewBag.Findings = await SessionFindingsAsync(session, ct);
+        ViewBag.Checklist = await SessionChecklistAsync(session, ct);
         ViewBag.AutoVersion = session.VersionId ?? (documents.Length == 1 ? documents[0].VersionId : (Guid?)null);
         ViewBag.FileAction = "ArquivoIntegrado";
         ViewBag.CatalogCode = session.CatalogCode;
         return View("Consultar");
     }
 
-    [HttpGet]
+    [HttpGet("/DemaisSetores/ConsultaIntegrada/{publicId:guid}/arquivo")]
     [AllowAnonymous]
-    public async Task<IActionResult> ArquivoIntegrado(Guid versionId, CancellationToken ct)
+    public async Task<IActionResult> ArquivoIntegrado(Guid publicId, Guid versionId, CancellationToken ct)
     {
-        var session = await _opening.ReadSessionAsync(Request.Cookies[SectorOpeningService.CookieName], ct);
+        var session = await ReadOpeningAsync(publicId, ct);
         if (session is null)
-            return Html(401, "A sessão da consulta expirou. Abra novamente pelo sistema de origem.");
-        Response.Headers.ContentSecurityPolicy = "frame-ancestors " + session.Origin;
-        Response.Headers.CacheControl = "private, no-store";
+            return Html(401, "A sessão desta abertura expirou ou o navegador não enviou o cookie deste prontuário. O arquivo não é público. Abra a página própria da aplicação.");
+        ApplyFrameHeaders(session);
         if (!await SessionAllowsVersionAsync(session, versionId, ct))
             return Html(403, "Esta sessão não inclui o documento pedido.");
         return await StreamVersionAsync(session.TenantId, versionId, requireGrant: true, ct);
     }
 
-    [HttpPost, AllowAnonymous, IgnoreAntiforgeryToken]
-    public async Task<IActionResult> TrocarAtendimento(string encounterCode, CancellationToken ct)
+    [HttpGet("/DemaisSetores/ConsultaIntegrada/{publicId:guid}/texto")]
+    [AllowAnonymous]
+    public async Task<IActionResult> TextoIntegrado(Guid publicId, Guid versionId, CancellationToken ct)
     {
-        var cookie = Request.Cookies[SectorOpeningService.CookieName];
-        var changed = await _opening.SwitchEncounterAsync(cookie, encounterCode, ct);
-        if (!changed) return Html(403, "A troca de atendimento não foi autorizada.");
-        return RedirectToAction(nameof(ConsultaIntegrada));
+        var session = await ReadOpeningAsync(publicId, ct);
+        if (session is null)
+            return Html(401, "A sessão desta abertura expirou. O texto não é público.");
+        ApplyFrameHeaders(session);
+        if (!await SessionAllowsVersionAsync(session, versionId, ct))
+            return Html(403, "Esta sessão não inclui o texto pedido.");
+        await using var conn = await _db.OpenAsync(ct);
+        var text = await conn.ExecuteScalarAsync<string?>(new CommandDefinition("""
+select coalesce(v.ocr_text, s.ocr_text, v.content_text, '')
+from ged.sector_document_link l
+join ged.document_version v on v.tenant_id=l.tenant_id and v.id=l.version_id
+left join ged.document_search s on s.tenant_id=l.tenant_id and s.version_id=l.version_id
+where l.tenant_id=@tenantId and l.version_id=@versionId and l.reg_status='A'
+""", new { tenantId = session.TenantId, versionId }, cancellationToken: ct));
+        if (string.IsNullOrWhiteSpace(text))
+            return Html(200, "Ainda não há texto desta versão. A leitura pode estar na fila, ter falhado ou não se aplicar a este arquivo. Nada foi inventado.");
+        return Html(200, text);
+    }
+
+    [HttpPost("/DemaisSetores/ConsultaIntegrada/{publicId:guid}/pesquisa")]
+    [AllowAnonymous]
+    public async Task<IActionResult> PesquisarIntegrado(Guid publicId, string term, bool includeOtherEncounters, int page, CancellationToken ct)
+    {
+        var session = await ReadOpeningAsync(publicId, ct);
+        if (session is null) return Html(401, "A sessão desta abertura expirou. A pesquisa não é pública.");
+        if (!CommandOriginAllowed(session)) return Html(403, "A origem do comando não corresponde à concessão.");
+        if (!await CommandAuthorizedAsync(publicId, ct)) return Html(403, "O comando não apresentou o token desta abertura.");
+        ApplyFrameHeaders(session);
+        var result = await SessionSearchAsync(session, term, includeOtherEncounters, page, ct);
+        return Json(new { mode = "literal", message = "Busca literal no escopo da abertura. Análise semântica não foi executada. Outros atendimentos só entram quando a navegação entre episódios está permitida.", hits = result.Hits, total = result.Total, page = result.Page, pageSize = result.PageSize });
+    }
+
+    [HttpPost("/DemaisSetores/ConsultaIntegrada/{publicId:guid}/atendimento")]
+    [AllowAnonymous]
+    public async Task<IActionResult> TrocarAtendimento(Guid publicId, string encounterCode, CancellationToken ct)
+    {
+        var session = await ReadOpeningAsync(publicId, ct);
+        if (session is null) return Html(401, "A sessão desta abertura expirou.");
+        if (!CommandOriginAllowed(session)) return Html(403, "A origem da troca não corresponde à concessão.");
+        if (!await CommandAuthorizedAsync(publicId, ct)) return Html(403, "A troca não apresentou o token desta abertura.");
+        var cookie = Request.Cookies[SectorOpeningService.CookieNameFor(publicId)];
+        var changed = await _opening.SwitchEncounterAsync(cookie, publicId, encounterCode, ct);
+        if (!changed) return Html(403, "A troca de atendimento não foi autorizada. Pertencer ao mesmo paciente não basta.");
+        return Redirect($"/DemaisSetores/ConsultaIntegrada/{publicId:D}");
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> PreviaEntrega(Guid encounterId, CancellationToken ct)
+    {
+        if (!await _sectors.HasPermissionAsync(_currentUser.TenantId, _currentUser.UserId, Admin, SectorPermissions.Imprimir, ct))
+            return Forbid();
+        var context = await ContextAsync(encounterId, ct);
+        if (context is null) return Html(404, "Atendimento não encontrado para a prévia.");
+        ViewBag.Context = context;
+        ViewBag.Documents = await DocumentsAsync(encounterId, null, null, null, ct);
+        ViewBag.Checklist = await ChecklistAsync(encounterId, ct);
+        return View();
     }
 
     [HttpPost, ValidateAntiForgeryToken]
@@ -575,7 +640,8 @@ order by catalog_order
         var codes = await _sectors.VisibleCatalogCodesAsync(_currentUser.TenantId, _currentUser.UserId, Admin, ct);
         return (await conn.QueryAsync<SectorFieldRow>(new CommandDefinition($"""
 select f.id as FieldId, f.link_id as LinkId, f.version_id as VersionId, f.context_code as ContextCode, f.suggested_value as SuggestedValue,
-       f.confirmed_value as ConfirmedValue, f.evidence_excerpt as Evidence, f.page_number as PageNumber, f.status as Status
+       f.confirmed_value as ConfirmedValue, f.evidence_excerpt as Evidence, f.page_number as PageNumber, f.status as Status,
+       f.mechanism as Mechanism, f.source_kind as SourceKind
 from ged.sector_extracted_field f
 join ged.sector_document_link l on l.id=f.link_id and l.tenant_id=f.tenant_id
 join ged.document d on d.tenant_id=l.tenant_id and d.id=l.document_id
@@ -620,7 +686,7 @@ where e.tenant_id=@tenantId and e.id=@encounterId
     {
         await using var conn = await _db.OpenAsync(ct);
         return (await conn.QueryAsync<SectorEncounterOption>(new CommandDefinition("""
-select s.id as Id, s.external_code as Code, s.kind as Kind, s.status as Status
+select s.id as Id, s.external_code as Code, s.kind as Kind, s.status as Status, s.admitted_at as AdmittedAt, s.discharged_at as DischargedAt
 from ged.sector_encounter s
 join ged.sector_encounter current on current.tenant_id=s.tenant_id and current.patient_id=s.patient_id
 where s.tenant_id=@tenantId and current.id=@encounterId and s.id<>current.id
@@ -708,6 +774,182 @@ where e.tenant_id=@tenantId and e.id=@encounterId and e.patient_id=@patientId
 """, new { tenantId = session.TenantId, encounterId = session.EncounterId, patientId = session.PatientId }, cancellationToken: ct));
     }
 
+    private async Task<SectorSessionAccess?> ReadOpeningAsync(Guid publicId, CancellationToken ct)
+        => await _opening.ReadSessionAsync(Request.Cookies[SectorOpeningService.CookieNameFor(publicId)], publicId, ct);
+
+    private CookieOptions OpeningCookie(DateTimeOffset expires)
+    {
+        var options = new CookieOptions
+        {
+            HttpOnly = true,
+            IsEssential = true,
+            Secure = Request.IsHttps,
+            SameSite = Request.IsHttps ? SameSiteMode.None : SameSiteMode.Lax,
+            Path = "/",
+            MaxAge = expires > DateTimeOffset.UtcNow ? expires - DateTimeOffset.UtcNow : TimeSpan.FromMinutes(1)
+        };
+        if (Request.IsHttps)
+            options.Extensions.Add("Partitioned");
+        return options;
+    }
+
+    private void ApplyFrameHeaders(SectorSessionAccess session)
+    {
+        Response.Headers.ContentSecurityPolicy = "frame-ancestors " + (string.IsNullOrWhiteSpace(session.Origin) ? "'none'" : session.Origin);
+        Response.Headers["Referrer-Policy"] = "no-referrer";
+        Response.Headers.CacheControl = "private, no-store";
+    }
+
+    private bool CommandOriginAllowed(SectorSessionAccess session)
+    {
+        var origin = Request.Headers.Origin.ToString();
+        if (string.IsNullOrWhiteSpace(origin))
+        {
+            var site = Request.Headers["Sec-Fetch-Site"].ToString();
+            return string.IsNullOrWhiteSpace(site) || site is "same-origin" or "none";
+        }
+        if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri) || uri.Scheme is not "https" and not "http")
+            return false;
+        var presented = uri.GetLeftPart(UriPartial.Authority);
+        var ours = Request.Scheme + "://" + Request.Host.Value;
+        return string.Equals(presented, ours, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(presented, session.Origin, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<bool> CommandAuthorizedAsync(Guid publicId, CancellationToken ct)
+    {
+        var token = Request.Headers["X-InovaGed-Protecao"].ToString();
+        if (string.IsNullOrWhiteSpace(token) && Request.HasFormContentType)
+            token = Request.Form["protecao"].ToString();
+        var context = Request.Headers["X-InovaGed-Contexto"].ToString();
+        if (!string.IsNullOrWhiteSpace(context) && !string.Equals(context, publicId.ToString("D"), StringComparison.OrdinalIgnoreCase))
+            return false;
+        return await _opening.AuthorizeCommandAsync(Request.Cookies[SectorOpeningService.CookieNameFor(publicId)], publicId, token, ct);
+    }
+
+    private async Task<IReadOnlyList<SectorFieldRow>> SessionFieldsAsync(SectorSessionAccess session, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        return (await conn.QueryAsync<SectorFieldRow>(new CommandDefinition("""
+select f.id as FieldId, f.link_id as LinkId, f.version_id as VersionId, f.context_code as ContextCode, f.suggested_value as SuggestedValue,
+       f.confirmed_value as ConfirmedValue, f.evidence_excerpt as Evidence, f.page_number as PageNumber, f.status as Status,
+       f.mechanism as Mechanism, f.source_kind as SourceKind
+from ged.sector_extracted_field f
+join ged.sector_document_link l on l.id=f.link_id and l.tenant_id=f.tenant_id and l.reg_status='A'
+where f.tenant_id=@tenantId and l.encounter_id=@encounterId and l.patient_id=@patientId
+  and (@catalog is null or l.catalog_code=@catalog)
+  and (@documentId is null or l.document_id=@documentId)
+  and (@versionId is null or f.version_id=@versionId)
+order by f.updated_at desc
+""", new { tenantId = session.TenantId, encounterId = session.EncounterId, patientId = session.PatientId, catalog = session.CatalogCode, documentId = session.DocumentId, versionId = session.Mode == "documento" ? session.VersionId : null }, cancellationToken: ct))).ToArray();
+    }
+
+    private async Task<IReadOnlyList<SectorFindingRow>> SessionFindingsAsync(SectorSessionAccess session, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        return (await conn.QueryAsync<SectorFindingRow>(new CommandDefinition("""
+select f.id as FindingId, f.description as Description, f.category as Category, f.evidence_excerpt as Evidence,
+       f.page_number as PageNumber, f.review_status as Status, l.version_id as VersionId
+from ged.sector_finding f
+join ged.sector_document_link l on l.id=f.link_id and l.tenant_id=f.tenant_id and l.reg_status='A'
+where f.tenant_id=@tenantId and f.encounter_id=@encounterId and l.patient_id=@patientId
+  and (@catalog is null or l.catalog_code=@catalog)
+  and (@documentId is null or l.document_id=@documentId)
+  and (@versionId is null or l.version_id=@versionId)
+order by f.updated_at desc
+""", new { tenantId = session.TenantId, encounterId = session.EncounterId, patientId = session.PatientId, catalog = session.CatalogCode, documentId = session.DocumentId, versionId = session.Mode == "documento" ? session.VersionId : null }, cancellationToken: ct))).ToArray();
+    }
+
+    private async Task<IReadOnlyList<SectorChecklistRow>> SessionChecklistAsync(SectorSessionAccess session, CancellationToken ct)
+    {
+        if (session.ScopeKind == "documento") return [];
+        await using var conn = await _db.OpenAsync(ct);
+        var encounter = await conn.QuerySingleOrDefaultAsync<(string? Kind, bool Surgery, bool Opme, bool HighCost, DateTimeOffset? Discharged)>(new CommandDefinition(
+            "select kind as Kind, surgery as Surgery, opme as Opme, high_cost as HighCost, discharged_at as Discharged from ged.sector_encounter where tenant_id=@tenantId and id=@encounterId and patient_id=@patientId",
+            new { tenantId = session.TenantId, encounterId = session.EncounterId, patientId = session.PatientId }, cancellationToken: ct));
+        var profile = await conn.QuerySingleOrDefaultAsync<(Guid Id, bool Enabled)>(new CommandDefinition(
+            "select id as Id, enabled as Enabled from ged.sector_profile where tenant_id=@tenantId and code='ANEXO_I' order by version_no desc limit 1",
+            new { tenantId = session.TenantId }, cancellationToken: ct));
+        var types = await conn.QueryAsync<(string Code, string Name, string Applicability, int Order)>(new CommandDefinition(
+            "select catalog_code as Code, name as Name, applicability as Applicability, catalog_order as Order from ged.sector_document_type where tenant_id=@tenantId and active and (@catalog is null or catalog_code=@catalog) order by catalog_order",
+            new { tenantId = session.TenantId, catalog = session.CatalogCode }, cancellationToken: ct));
+        var received = (await conn.QueryAsync<string>(new CommandDefinition(
+            "select distinct catalog_code from ged.sector_document_link where tenant_id=@tenantId and encounter_id=@encounterId and patient_id=@patientId and reg_status='A'",
+            new { tenantId = session.TenantId, encounterId = session.EncounterId, patientId = session.PatientId }, cancellationToken: ct))).ToHashSet(StringComparer.Ordinal);
+        var conditions = new SectorConditions(encounter.Surgery, encounter.Opme, encounter.HighCost, encounter.Discharged.HasValue);
+        return types.Select(type =>
+        {
+            var required = profile.Id != Guid.Empty && SectorApplicability.IsRequired("ANEXO_I", profile.Enabled, encounter.Kind, type.Applicability, conditions);
+            var state = received.Contains(type.Code) ? "recebido" : required ? "pendente" : "não exigido neste contexto";
+            return new SectorChecklistRow(type.Order, type.Name, state, required);
+        }).ToArray();
+    }
+
+    private async Task<IReadOnlyList<SectorEncounterOption>> SessionSiblingsAsync(SectorSessionAccess session, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        return (await conn.QueryAsync<SectorEncounterOption>(new CommandDefinition("""
+select s.id as Id, s.external_code as Code, s.kind as Kind, s.status as Status, s.admitted_at as AdmittedAt, s.discharged_at as DischargedAt
+from ged.sector_encounter s
+where s.tenant_id=@tenantId and s.patient_id=@patientId and s.id<>@encounterId
+order by s.admitted_at desc nulls last
+""", new { tenantId = session.TenantId, patientId = session.PatientId, encounterId = session.EncounterId }, cancellationToken: ct))).ToArray();
+    }
+
+    private async Task<SectorSearchPage> SessionSearchAsync(SectorSessionAccess session, string? term, bool includeOtherEncounters, int page, CancellationToken ct)
+    {
+        const int pageSize = 20;
+        page = Math.Clamp(page, 0, 50);
+        term = term?.Trim();
+        if (string.IsNullOrWhiteSpace(term) || term.Length < 2)
+            return new SectorSearchPage([], 0, page, pageSize);
+        var expand = includeOtherEncounters && session.AllowEncounterSwitch && session.ScopeKind == "atendimento" && session.DocumentId is null && session.VersionId is null;
+        await using var conn = await _db.OpenAsync(ct);
+        var catalog = await conn.QueryAsync<(string Name, string[] Synonyms)>(new CommandDefinition("""
+select t.name as Name, t.synonyms as Synonyms
+from ged.sector_document_type t
+where t.tenant_id=@tenantId and t.active and (@catalog is null or t.catalog_code=@catalog)
+""", new { tenantId = session.TenantId, catalog = session.CatalogCode }, cancellationToken: ct));
+        var patterns = SectorSearchTerms.Patterns(term, catalog).ToArray();
+        var args = new
+        {
+            tenantId = session.TenantId, patientId = session.PatientId, encounterId = session.EncounterId, publicId = session.PublicId,
+            catalog = session.CatalogCode, documentId = session.DocumentId, versionId = session.Mode == "documento" ? session.VersionId : null,
+            expand, patterns, take = pageSize, skip = page * pageSize
+        };
+        var filter = """
+from ged.sector_document_link l
+join ged.sector_encounter e on e.tenant_id=l.tenant_id and e.id=l.encounter_id and e.patient_id=l.patient_id
+join ged.sector_document_type t on t.tenant_id=l.tenant_id and t.catalog_code=l.catalog_code
+join ged.document d on d.tenant_id=l.tenant_id and d.id=l.document_id and coalesce(d.reg_status,'A')='A'
+join ged.document_version v on v.tenant_id=l.tenant_id and v.id=l.version_id
+join ged.sector_open_session s on s.public_id=@publicId and s.tenant_id=l.tenant_id
+join ged.sector_integration i on i.id=s.integration_id and i.tenant_id=s.tenant_id and i.active
+left join ged.document_search ds on ds.tenant_id=l.tenant_id and ds.version_id=l.version_id
+where l.tenant_id=@tenantId and l.patient_id=@patientId and l.reg_status='A'
+  and ((not @expand and l.encounter_id=@encounterId) or (@expand and e.patient_id=@patientId))
+  and (@catalog is null or l.catalog_code=@catalog)
+  and (@documentId is null or l.document_id=@documentId)
+  and (@versionId is null or l.version_id=@versionId)
+  and (cardinality(i.catalog_codes)=0 or l.catalog_code = any(i.catalog_codes))
+  and coalesce(v.ocr_text, ds.ocr_text, v.content_text, '') ilike any(@patterns)
+""";
+        var total = await conn.ExecuteScalarAsync<int>(new CommandDefinition("select count(*) " + filter, args, cancellationToken: ct));
+        var rows = await conn.QueryAsync<(Guid DocumentId, Guid VersionId, string Name, string Text, string EncounterCode, string? OcrStatus)>(new CommandDefinition("""
+select l.document_id as DocumentId, l.version_id as VersionId, t.name as Name,
+       coalesce(v.ocr_text, ds.ocr_text, v.content_text, '') as Text,
+       e.external_code as EncounterCode, null as OcrStatus
+""" + filter + " order by l.document_date nulls last limit @take offset @skip", args, cancellationToken: ct));
+        var hits = rows.Select(row =>
+        {
+            var index = SectorSearchTerms.FirstIndex(row.Text, patterns);
+            var start = Math.Max(0, index - 60);
+            var excerpt = index < 0 ? "" : row.Text.Substring(start, Math.Min(180, row.Text.Length - start));
+            return new SectorSearchHit(row.DocumentId, row.VersionId, row.Name, excerpt, SectorTextLocator.PageAt(row.Text, index), row.EncounterCode, "texto da versão no escopo da abertura");
+        }).ToArray();
+        return new SectorSearchPage(hits, total, page, pageSize);
+    }
+
     private static string[] SplitList(string? value)
         => string.IsNullOrWhiteSpace(value) ? [] : value.Split([',', ';', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
@@ -718,8 +960,8 @@ where e.tenant_id=@tenantId and e.id=@encounterId and e.patient_id=@patientId
 public sealed record SectorCatalogChoice(string Code, string Name, int Order);
 
 public sealed record SectorDocumentRow(Guid LinkId, Guid DocumentId, Guid VersionId, string Name, string CatalogCode, string Origin, string OriginalFileName, DateOnly? DocumentDate, string ReviewStatus, string PreviewStatus, string OcrStatus, string ExtractionStatus, string? IssuerName, string? InformationOwner, string? PhysicalEvidence, string? SectorCode, bool RequiresPhysical);
-public sealed record SectorFieldRow(Guid FieldId, Guid LinkId, Guid VersionId, string ContextCode, string SuggestedValue, string? ConfirmedValue, string Evidence, int? PageNumber, string Status);
+public sealed record SectorFieldRow(Guid FieldId, Guid LinkId, Guid VersionId, string ContextCode, string SuggestedValue, string? ConfirmedValue, string Evidence, int? PageNumber, string Status, string? Mechanism, string? SourceKind);
 public sealed record SectorFindingRow(Guid FindingId, string Description, string Category, string? Evidence, int? PageNumber, string Status, Guid? VersionId);
 public sealed record SectorChecklistRow(int Order, string Name, string State, bool Required);
 public sealed record SectorContextRow(Guid PatientId, string PatientCode, string DisplayName, string EncounterCode, string? RawKind, string? Kind, DateTimeOffset? AdmittedAt, DateTimeOffset? DischargedAt, string? Status);
-public sealed record SectorEncounterOption(Guid Id, string Code, string? Kind, string? Status);
+public sealed record SectorEncounterOption(Guid Id, string Code, string? Kind, string? Status, DateTimeOffset? AdmittedAt = null, DateTimeOffset? DischargedAt = null);

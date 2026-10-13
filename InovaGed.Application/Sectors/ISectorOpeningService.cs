@@ -4,9 +4,11 @@ public interface ISectorOpeningService
 {
     Task<SectorOpeningResponse> OpenAsync(SectorOpeningRequest request, CancellationToken ct);
     Task<SectorConsumedOpening?> ConsumeAsync(string code, CancellationToken ct);
-    Task<SectorSessionAccess?> ReadSessionAsync(string? cookieValue, CancellationToken ct);
-    Task<bool> SwitchEncounterAsync(string? cookieValue, string encounterCode, CancellationToken ct);
+    Task<SectorSessionAccess?> ReadSessionAsync(string? cookieValue, Guid publicId, CancellationToken ct);
+    Task<bool> SwitchEncounterAsync(string? cookieValue, Guid publicId, string encounterCode, CancellationToken ct);
+    Task<bool> AuthorizeCommandAsync(string? cookieValue, Guid publicId, string? protectionToken, CancellationToken ct);
     Task<string?> RegisterIntegrationAsync(SectorIntegrationRegistration registration, CancellationToken ct);
+    Task<string?> DeactivateIntegrationAsync(Guid tenantId, Guid actorId, string clientId, CancellationToken ct);
 }
 
 public static class SectorOpeningCodes
@@ -58,6 +60,7 @@ public sealed record SectorOpeningResponse(
 
 public sealed record SectorConsumedOpening(
     string CookieValue,
+    Guid PublicId,
     Guid TenantId,
     Guid PatientId,
     Guid EncounterId,
@@ -65,11 +68,14 @@ public sealed record SectorConsumedOpening(
     Guid? DocumentId,
     Guid? VersionId,
     string Mode,
+    string ScopeKind,
     string Origin,
     DateTimeOffset ExpiresAt,
-    string CorrelationId);
+    string CorrelationId,
+    string ProtectionToken);
 
 public sealed record SectorSessionAccess(
+    Guid PublicId,
     Guid TenantId,
     Guid PatientId,
     Guid EncounterId,
@@ -77,6 +83,8 @@ public sealed record SectorSessionAccess(
     Guid? DocumentId,
     Guid? VersionId,
     string Mode,
+    string ScopeKind,
+    bool AllowEncounterSwitch,
     string Origin,
     string CorrelationId,
     DateTimeOffset ExpiresAt);
@@ -91,4 +99,5 @@ public sealed record SectorIntegrationRegistration(
     string[] Origins,
     string[] CatalogCodes,
     bool AllowEncounterList,
+    bool AllowEncounterSwitch,
     int MaxMinutes);

@@ -525,20 +525,20 @@ values (gen_random_uuid(), @TenantId, @LinkId, @fromId, @ToEncounterId, @Reason,
         return null;
     }
 
-    public async Task<IReadOnlyList<SectorSearchHit>> SearchAsync(SectorSearchRequest request, CancellationToken ct)
+    public async Task<SectorSearchPage> SearchAsync(SectorSearchRequest request, CancellationToken ct)
     {
         var term = request.Term?.Trim();
-        if (string.IsNullOrWhiteSpace(term) || term.Length < 2) return [];
+        const int pageSize = 20;
+        var page = Math.Clamp(request.Page, 0, 50);
+        if (string.IsNullOrWhiteSpace(term) || term.Length < 2)
+            return new SectorSearchPage([], 0, page, pageSize);
         var codes = await VisibleCatalogCodesAsync(request.TenantId, request.UserId, request.IsFullAdmin, ct);
         await using var conn = await _db.OpenAsync(ct);
         var catalog = await conn.QueryAsync<(string Name, string[] Synonyms)>(new CommandDefinition(
             "select name as Name, synonyms as Synonyms from ged.sector_document_type where tenant_id=@tenantId and catalog_code = any(@codes)",
             new { tenantId = request.TenantId, codes = codes.ToArray() }, cancellationToken: ct));
         var patterns = SectorSearchTerms.Patterns(term, catalog).ToArray();
-        var rows = await conn.QueryAsync<(Guid DocumentId, Guid VersionId, string Name, string Text, string EncounterCode, string? OcrStatus)>(new CommandDefinition($"""
-select l.document_id as DocumentId, l.version_id as VersionId, t.name as Name,
-       coalesce(v.ocr_text, s.ocr_text, v.content_text, '') as Text,
-       e.external_code as EncounterCode, oj.status as OcrStatus
+        var filter = $"""
 from ged.sector_document_link l
 join ged.sector_encounter e on e.tenant_id=l.tenant_id and e.id=l.encounter_id
 join ged.sector_document_type t on t.tenant_id=l.tenant_id and t.catalog_code=l.catalog_code
@@ -553,10 +553,19 @@ where l.tenant_id=@tenantId and l.reg_status='A' and t.catalog_code = any(@codes
   and (l.encounter_id=@encounterId or (@include and e.patient_id = (select patient_id from ged.sector_encounter where tenant_id=@tenantId and id=@encounterId)))
   and {InovaGed.Infrastructure.Security.AbacAuthorizationService.DocumentAccessPredicate("d")}
   and coalesce(v.ocr_text, s.ocr_text, v.content_text, '') ilike any(@patterns)
-limit 50
-""", new { tenantId = request.TenantId, userId = request.UserId, permissionCode = "Documents.View", write = false, hour = DateTime.UtcNow.Hour, encounterId = request.EncounterId, include = request.IncludeOtherEncounters, codes = codes.ToArray(), patterns }, cancellationToken: ct));
+""";
+        var args = new { tenantId = request.TenantId, userId = request.UserId, permissionCode = "Documents.View", write = false, hour = DateTime.UtcNow.Hour, encounterId = request.EncounterId, include = request.IncludeOtherEncounters, codes = codes.ToArray(), patterns, take = pageSize, skip = page * pageSize };
+        var total = await conn.ExecuteScalarAsync<int>(new CommandDefinition("select count(*) " + filter, args, cancellationToken: ct));
+        var rows = await conn.QueryAsync<(Guid DocumentId, Guid VersionId, string Name, string Text, string EncounterCode, string? OcrStatus, DateOnly? DocumentDate)>(new CommandDefinition($"""
+select l.document_id as DocumentId, l.version_id as VersionId, t.name as Name,
+       coalesce(v.ocr_text, s.ocr_text, v.content_text, '') as Text,
+       e.external_code as EncounterCode, oj.status as OcrStatus, l.document_date as DocumentDate
+{filter}
+order by l.document_date nulls last, t.catalog_order
+limit @take offset @skip
+""", args, cancellationToken: ct));
 
-        return rows.Select(row =>
+        var hits = rows.Select(row =>
         {
             var index = SectorSearchTerms.FirstIndex(row.Text, patterns);
             var start = Math.Max(0, index - 60);
@@ -564,14 +573,15 @@ limit 50
             var origin = string.Equals(row.OcrStatus, "COMPLETED", StringComparison.OrdinalIgnoreCase) ? "OCR existente" : "texto da versão, origem não separada";
             return new SectorSearchHit(row.DocumentId, row.VersionId, row.Name, excerpt, SectorTextLocator.PageAt(row.Text, index), row.EncounterCode, origin);
         }).ToArray();
+        return new SectorSearchPage(hits, total, page, pageSize);
     }
 
     public async Task RefreshExtractionAsync(Guid tenantId, Guid encounterId, CancellationToken ct)
     {
         await using var conn = await _db.OpenAsync(ct);
-        var rows = await conn.QueryAsync<(Guid LinkId, Guid VersionId, string Code, string? Text, string? OcrStatus)>(new CommandDefinition("""
+        var rows = await conn.QueryAsync<(Guid LinkId, Guid VersionId, string Code, string? Text, string? OcrStatus, string? LinkOcr)>(new CommandDefinition("""
 select l.id as LinkId, l.version_id as VersionId, l.catalog_code as Code,
-       coalesce(v.ocr_text, s.ocr_text, v.content_text) as Text, oj.status as OcrStatus
+       coalesce(v.ocr_text, s.ocr_text, v.content_text) as Text, oj.status as OcrStatus, l.ocr_status as LinkOcr
 from ged.sector_document_link l
 join ged.document_version v on v.tenant_id=l.tenant_id and v.id=l.version_id
 left join ged.document_search s on s.tenant_id=l.tenant_id and s.version_id=l.version_id
@@ -588,6 +598,9 @@ where l.tenant_id=@tenantId and l.encounter_id=@encounterId and l.reg_status='A'
                 "COMPLETED" => string.IsNullOrWhiteSpace(row.Text) ? "CONCLUIDO_COM_PENDENCIAS" : "CONCLUIDO",
                 "FAILED" => "FALHOU",
                 "PROCESSING" or "PENDING" => "PROCESSANDO",
+                "CANCELLED" or "CANCELED" => "CANCELADO",
+                _ when string.Equals(row.LinkOcr, "ENFILEIRADO", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(row.Text) => "CONCLUIDO",
+                _ when string.Equals(row.LinkOcr, "ENFILEIRADO", StringComparison.OrdinalIgnoreCase) => "AGUARDANDO",
                 _ => (string?)null
             };
             var extraction = ocr ?? (string.IsNullOrWhiteSpace(row.Text) ? "AGUARDANDO" : "CONCLUIDO");
@@ -603,8 +616,8 @@ select exists(select 1 from ged.sector_extracted_field
                 if (kept) continue;
                 await conn.ExecuteAsync(new CommandDefinition("""
 insert into ged.sector_extracted_field
- (id, tenant_id, link_id, version_id, field_key, context_code, suggested_value, evidence_excerpt, page_number, status)
-select gen_random_uuid(), @tenantId, @linkId, @versionId, @key, @context, @value, @excerpt, @page, 'SUGERIDO'
+ (id, tenant_id, link_id, version_id, field_key, context_code, suggested_value, evidence_excerpt, page_number, status, source_kind, mechanism)
+select gen_random_uuid(), @tenantId, @linkId, @versionId, @key, @context, @value, @excerpt, @page, 'SUGERIDO', 'TEXTO_VERSIONADO', 'REGRAS_LOCAIS'
 where not exists (
     select 1 from ged.sector_extracted_field
     where tenant_id=@tenantId and link_id=@linkId and evidence_excerpt=@excerpt and status='SUGERIDO')

@@ -332,6 +332,15 @@
   if (!workspace) return;
   const page = document.querySelector("[data-ds-consult]");
   const frame = workspace.querySelector("[data-ds-frame]");
+  if (page?.dataset.publicId && window.location.hash.indexOf("protecao=") >= 0) {
+    const token = new URLSearchParams(window.location.hash.replace(/^#/, "")).get("protecao");
+    if (token) sessionStorage.setItem("ds-protecao-" + page.dataset.publicId, token);
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+  }
+  const protection = function () {
+    return page?.dataset.publicId ? (sessionStorage.getItem("ds-protecao-" + page.dataset.publicId) || "") : "";
+  };
+  page?.querySelectorAll("[data-ds-protection]").forEach(function (input) { input.value = protection(); });
   const viewerStatus = workspace.querySelector("[data-ds-viewer-status]");
   const textHost = workspace.querySelector("[data-ds-text]");
   let request = 0;
@@ -409,18 +418,20 @@
     const token = page.querySelector("input[name=__RequestVerificationToken]")?.value || "";
     const body = new FormData(search);
     body.append("__RequestVerificationToken", token);
-    body.append("encounterId", new URLSearchParams(window.location.search).get("encounterId") || "");
+    body.append("protecao", protection());
+    if (page.dataset.embedded !== "1")
+      body.append("encounterId", page.dataset.encounterId || "");
     const hits = workspace.querySelector("[data-ds-hits]");
     hits.replaceChildren();
     const waiting = document.createElement("li");
     waiting.textContent = "Buscando no atendimento selecionado.";
     hits.appendChild(waiting);
     try {
-      const response = await fetch(page.dataset.searchUrl, { method: "POST", body, headers: { RequestVerificationToken: token } });
+      const response = await fetch(page.dataset.searchUrl, { method: "POST", body, credentials: "same-origin", headers: { RequestVerificationToken: token, "X-InovaGed-Protecao": protection(), "X-InovaGed-Contexto": page.dataset.publicId || "" } });
       const payload = await response.json();
       hits.replaceChildren();
       const note = document.createElement("li");
-      note.textContent = payload.message || "Busca literal concluída.";
+      note.textContent = (payload.message || "Busca literal concluída.") + (typeof payload.total === "number" ? " Resultados neste escopo: " + payload.total + "." : "");
       hits.appendChild(note);
       (payload.hits || []).forEach(function (hit) {
         const item = document.createElement("li");
@@ -452,23 +463,68 @@
     const button = workspace.querySelector("[data-version='" + auto + "']");
     if (button) openDocument(button);
   }
+  page?.querySelector("[data-ds-collapse]")?.addEventListener("click", function (event) {
+    const hidden = workspace.classList.toggle("is-analysis-hidden");
+    event.currentTarget.setAttribute("aria-expanded", hidden ? "false" : "true");
+    event.currentTarget.textContent = hidden ? "Mostrar análise" : "Recolher análise";
+  });
+  const lookup = page?.querySelector("[data-ds-consult-lookup]");
+  lookup?.querySelector("[data-ds-find]")?.addEventListener("click", async function () {
+    const my = ++request;
+    const token = page.querySelector("input[name=__RequestVerificationToken]")?.value || "";
+    const body = new FormData(lookup.querySelector("[data-ds-patient-form]"));
+    const status = lookup.querySelector("[data-ds-context]");
+    try {
+      const response = await fetch(page.dataset.findUrl, { method: "POST", body, headers: { RequestVerificationToken: token } });
+      const payload = await response.json();
+      if (my !== request) return;
+      const list = lookup.querySelector("[data-ds-encounters]");
+      list.replaceChildren();
+      if (payload.status !== "Found") {
+        status.textContent = payload.message || "A consulta não retornou paciente.";
+        return;
+      }
+      status.textContent = "Paciente " + payload.patient.external_code + " — " + payload.patient.display_name + ". Confirme o atendimento.";
+      (payload.encounters || []).forEach(function (item) {
+        const option = document.createElement("option");
+        option.value = item.id;
+        option.dataset.patient = payload.patient.id;
+        option.textContent = item.external_code + " · " + (item.raw_kind || "sem código") + " · " + (item.kind || "tipo não mapeado") + " · " + (item.admitted_at || "entrada não informada") + " · " + (item.discharged_at || "sem alta");
+        list.appendChild(option);
+      });
+    } catch {
+      if (my === request) status.textContent = "A consulta não foi concluída. O atendimento anterior permanece.";
+    }
+  });
+  lookup?.querySelector("[data-ds-encounters]")?.addEventListener("change", function (event) {
+    const option = event.target.selectedOptions[0];
+    const open = lookup.querySelector("[data-ds-open]");
+    if (!open || !option?.value) return;
+    open.href = "/DemaisSetores/Consultar?patientId=" + encodeURIComponent(option.dataset.patient || "") + "&encounterId=" + encodeURIComponent(option.value);
+  });
   const partner = page?.dataset.partnerOrigin;
   if (page?.dataset.embedded === "1" && partner) {
+    let partnerUrl;
+    try { partnerUrl = new URL(partner); } catch { partnerUrl = null; }
     const notify = function (payload) {
-      if (window.parent && window.parent !== window) window.parent.postMessage(payload, partner);
+      if (partnerUrl && window.parent && window.parent !== window) window.parent.postMessage(payload, partnerUrl.origin);
     };
-    notify({ tipo: "ds-carregado", versaoId: auto || null });
+    notify({ tipo: "ds-carregado" });
     window.addEventListener("message", function (event) {
-      if (event.origin !== partner || !event.data || typeof event.data !== "object") return;
+      if (!partnerUrl || event.origin !== partnerUrl.origin) return;
+      if (!event.data || typeof event.data !== "object") return;
       if (event.data.tipo === "ds-altura") return;
-      if (event.data.tipo === "ds-atendimento" && event.data.codigoAtendimento) {
-        const body = new FormData();
-        body.append("encounterCode", event.data.codigoAtendimento);
-        fetch(page.dataset.switchUrl, { method: "POST", body, credentials: "same-origin" }).then(function (response) {
-          if (response.ok) window.location.reload();
-          else notify({ tipo: "ds-expirado" });
-        });
-      }
+      if (event.data.tipo !== "ds-atendimento" || typeof event.data.codigoAtendimento !== "string") return;
+      if (page.dataset.allowSwitch !== "1") { notify({ tipo: "ds-expirado" }); return; }
+      const body = new FormData();
+      body.append("encounterCode", event.data.codigoAtendimento.slice(0, 80));
+      body.append("protecao", protection());
+      const antiforgery = page.querySelector("input[name=__RequestVerificationToken]")?.value || "";
+      body.append("__RequestVerificationToken", antiforgery);
+      fetch(page.dataset.switchUrl, { method: "POST", body, credentials: "same-origin", headers: { "X-InovaGed-Protecao": protection(), "X-InovaGed-Contexto": page.dataset.publicId || "", RequestVerificationToken: antiforgery } }).then(function (response) {
+        if (response.ok) window.location.assign(window.location.pathname);
+        else notify({ tipo: "ds-expirado" });
+      });
     });
   }
 })();

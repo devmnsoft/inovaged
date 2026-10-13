@@ -68,17 +68,23 @@ public sealed class ConfigurableClinicalSource : IClinicalSource
             return Unavailable<T>(blocked);
         }
 
-        var builder = new UriBuilder(new Uri(new Uri(_options.BaseUrl!), path))
+        if (!TryBuildUri(path, query, out var target, out var uriError))
         {
-            Query = string.Join('&', query.Where(item => !string.IsNullOrWhiteSpace(item.Value)).Select(item => Uri.EscapeDataString(item.Key) + "=" + Uri.EscapeDataString(item.Value!)))
-        };
+            _logger.LogInformation("Destino da origem clínica recusado. Tenant={TenantId} Motivo={Motivo}", tenantId, uriError);
+            return Unavailable<T>(uriError!, ClinicalSourceStatus.Failed);
+        }
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, builder.Uri);
+            using var request = new HttpRequestMessage(HttpMethod.Get, target);
             var keyName = _options.ApiKeyEnvironmentVariable;
             var key = string.IsNullOrWhiteSpace(keyName) ? null : Environment.GetEnvironmentVariable(keyName);
             if (!string.IsNullOrWhiteSpace(key)) request.Headers.TryAddWithoutValidation("X-InovaGed-Origem", key);
-            using var response = await _http.SendAsync(request, ct);
+            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            if ((int)response.StatusCode is >= 300 and < 400)
+            {
+                _logger.LogWarning("Redirecionamento da origem clínica recusado. Tenant={TenantId}", tenantId);
+                return Unavailable<T>("A origem clínica respondeu com redirecionamento. A credencial não foi enviada a outro destino.", ClinicalSourceStatus.Failed);
+            }
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                 return Unavailable<T>(ClinicalSourceMessages.NotFound, ClinicalSourceStatus.NotFound);
             if (!response.IsSuccessStatusCode)
@@ -90,6 +96,30 @@ public sealed class ConfigurableClinicalSource : IClinicalSource
             _logger.LogWarning("Falha ao consultar a origem clínica configurada. Tenant={TenantId} Tipo={Tipo}", tenantId, ex.GetType().Name);
             return Unavailable<T>(ClinicalSourceMessages.Unavailable, ClinicalSourceStatus.Unavailable);
         }
+    }
+
+    private bool TryBuildUri(string? path, IReadOnlyDictionary<string, string?> query, out Uri target, out string? error)
+    {
+        target = null!;
+        error = null;
+        if (string.IsNullOrWhiteSpace(path) || path.Contains("://", StringComparison.Ordinal) || path.StartsWith("//", StringComparison.Ordinal))
+        {
+            error = "O caminho da origem clínica precisa ser relativo ao host configurado.";
+            return false;
+        }
+        var baseUri = new Uri(_options.BaseUrl!);
+        var built = new Uri(baseUri, path);
+        if (!string.Equals(built.Host, baseUri.Host, StringComparison.OrdinalIgnoreCase) || built.Port != baseUri.Port || !string.Equals(built.Scheme, baseUri.Scheme, StringComparison.OrdinalIgnoreCase))
+        {
+            error = "O caminho da origem clínica apontaria para outro destino. A consulta foi recusada.";
+            return false;
+        }
+        var builder = new UriBuilder(built)
+        {
+            Query = string.Join('&', query.Where(item => !string.IsNullOrWhiteSpace(item.Value)).Select(item => Uri.EscapeDataString(item.Key) + "=" + Uri.EscapeDataString(item.Value!)))
+        };
+        target = builder.Uri;
+        return true;
     }
 
     private string? Missing()

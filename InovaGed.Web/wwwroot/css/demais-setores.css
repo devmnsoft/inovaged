@@ -6,7 +6,12 @@
 .ds-steps li { border: 1px solid #c5d0c6; border-radius: 999px; padding: 4px 10px; }
 .ds-grid { display: grid; gap: 10px; }
 .ds-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.ds-page button, .ds-page input, .ds-page select, .ds-page textarea { font: inherit; }
+.ds-page button, .ds-page input, .ds-page select, .ds-page textarea { font: inherit; max-width: 100%; }
+.ds-page button:focus-visible, .ds-page a:focus-visible, .ds-page input:focus-visible, .ds-page select:focus-visible { outline: 3px solid #0b3a28; outline-offset: 2px; }
+.ds-doc strong, .ds-page h1, .ds-page h2, .ds-page h3 { overflow-wrap: anywhere; }
+.ds-workspace > * { min-width: 0; }
+.ds-viewer { width: 100%; }
+.ds-tabs { overflow: auto; }
 .ds-page button { background: #1f4d3a; color: #fff; border: 0; border-radius: 6px; padding: 8px 12px; }
 .ds-page button:disabled { background: #8aa093; }
 .ds-page input, .ds-page select, .ds-page textarea { border: 1px solid #b7c3b8; border-radius: 6px; padding: 8px; width: 100%; }
@@ -27,6 +32,13 @@
 .ds-analysis [data-ds-panel-body] { margin-top: 8px; }
 @media (min-width: 769px) {
   .ds-list, .ds-analysis { resize: horizontal; min-width: 200px; }
+  .ds-workspace.is-analysis-hidden { grid-template-columns: minmax(220px, 28%) minmax(0, 1fr); }
+  .ds-workspace.is-analysis-hidden .ds-analysis { display: none; }
+}
+@media print {
+  .ds-actions, form, iframe, script { display: none !important; }
+  .ds-workspace { display: block; }
+  .ds-page { background: #fff; color: #000; }
 }
 @media (max-width: 768px) {
   .ds-workspace { grid-template-columns: 1fr; }

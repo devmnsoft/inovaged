@@ -13,40 +13,74 @@
     var encounterId = encounterRaw is Guid parsedEncounter ? parsedEncounter : (Guid?)null;
     var embedded = ViewBag.Embedded == true;
     var fileAction = (string?)ViewBag.FileAction ?? "Arquivo";
+    var publicId = ViewBag.PublicId is Guid parsedPublic ? parsedPublic : (Guid?)null;
+    string FileUrl(Guid versionId) => publicId is Guid id
+        ? Url.Action(fileAction, new { publicId = id, versionId }) ?? "#"
+        : Url.Action(fileAction, new { versionId }) ?? "#";
+    var searchUrl = publicId is Guid searchId ? Url.Action("PesquisarIntegrado", new { publicId = searchId }) : Url.Action("Pesquisar");
+    var textUrl = publicId is Guid textId ? Url.Action("TextoIntegrado", new { publicId = textId }) : Url.Action("Texto");
+    var switchUrl = publicId is Guid switchId ? Url.Action("TrocarAtendimento", new { publicId = switchId }) : Url.Action("TrocarAtendimento");
     if (embedded)
         Layout = "~/Views/Shared/_DemaisSetoresFrame.cshtml";
 }
 <link rel="stylesheet" href="~/css/demais-setores.css" asp-append-version="true" />
-<main class="ds-page" data-ds-consult data-embedded="@(embedded ? "1" : "0")" data-partner-origin="@ViewBag.PartnerOrigin" data-switch-url="@Url.Action("TrocarAtendimento")" data-search-url="@Url.Action("Pesquisar")" data-text-url="@Url.Action("Texto")" data-file-url="@Url.Action(fileAction)">
+<main class="ds-page" data-ds-consult data-embedded="@(embedded ? "1" : "0")" data-public-id="@publicId" data-partner-origin="@ViewBag.PartnerOrigin" data-allow-switch="@(ViewBag.AllowSwitch == true ? "1" : "0")" data-encounter-id="@encounterId" data-find-url="@Url.Action("BuscarPaciente")" data-switch-url="@switchUrl" data-search-url="@searchUrl" data-text-url="@textUrl" data-file-url="@(publicId is Guid fileId ? Url.Action(fileAction, new { publicId = fileId }) : Url.Action(fileAction))">
     @Html.AntiForgeryToken()
     <h1>Consultar e analisar</h1>
     <p class="ds-help">A leitura reutiliza o OCR do GED. Campo sugerido não é informação validada. A conta não está integrada: ausência no prontuário não significa item não faturado.</p>
-    <section class="ds-context">
+    <section class="ds-context" data-ds-consult-lookup>
         @if (!embedded)
         {
-        <form method="get" class="ds-grid">
-            <label>Paciente interno da consulta<input name="patientId" value="@ViewBag.PatientId" /></label>
-            <label>Atendimento<input name="encounterId" value="@ViewBag.EncounterId" /></label>
-            <div class="ds-actions"><button type="submit">Abrir atendimento</button></div>
+        <form data-ds-patient-form class="ds-grid">
+            @Html.AntiForgeryToken()
+            <label>Tipo do identificador<select name="identifierKind"><option value="ID">ID do paciente</option><option value="CPF">CPF</option></select></label>
+            <label>Identificador do paciente<input name="externalCode" autocomplete="off" /></label>
+            <label>Sistema de origem<input name="sourceSystem" value="MV" /></label>
+            <label>Unidade de origem<input name="sourceUnit" /></label>
+            <div class="ds-actions"><button type="button" data-ds-find>Consultar paciente</button></div>
         </form>
+        <p data-ds-context class="ds-note">Busque pelo ID externo ou CPF e confirme o paciente antes de escolher o atendimento.</p>
+        <label>Atendimento<select data-ds-encounters><option value="">Selecione depois da consulta</option></select></label>
+        <div class="ds-actions"><a data-ds-open href="@Url.Action("Consultar")">Abrir o atendimento confirmado</a></div>
         }
         @if (context is null)
         {
-            <p class="ds-note">Nenhum atendimento aberto. Informe o paciente e o atendimento confirmados no cadastro.</p>
+            <p class="ds-note">Nenhum atendimento aberto. A origem clínica, quando indisponível, não cria paciente fictício.</p>
         }
         else
         {
             <p><strong>@context.DisplayName</strong> · código @context.PatientCode</p>
             <p>Atendimento @context.EncounterCode · código externo @(context.RawKind ?? "não informado") · tipo @(context.Kind ?? "ainda não mapeado") · @(context.Status ?? "situação não informada")</p>
             <p class="ds-note">Entrada @(context.AdmittedAt?.ToString("dd/MM/yyyy HH:mm") ?? "não informada") · alta @(context.DischargedAt?.ToString("dd/MM/yyyy HH:mm") ?? "não informada")</p>
+            <details>
+                <summary>Detalhes administrativos</summary>
+                <p class="ds-note">Paciente interno @context.PatientId · atendimento interno @(encounterId?.ToString() ?? "") · escopo @(ViewBag.ScopeKind ?? "consulta interna")</p>
+            </details>
         }
-        <p>Arquivos visíveis: @files. Tipos presentes: @types. Essas quantidades são diferentes.</p>
+        <p>Arquivos visíveis: @files. Tipos presentes: @types. Essas quantidades são diferentes. Pré-visualização, OCR e extração são etapas separadas. OCR concluído não confirma os dados.</p>
+        @if (embedded && ViewBag.AllowSwitch == true)
+        {
+            <form method="post" action="@switchUrl" class="ds-grid" data-ds-switch>
+                <input type="hidden" name="protecao" data-ds-protection value="" />
+                <label>Outro atendimento deste paciente
+                    <select name="encounterCode">
+                        @foreach (var sibling in siblings)
+                        {
+                            <option value="@sibling.Code">@sibling.Code · @(sibling.Kind ?? "tipo não mapeado") · @(sibling.AdmittedAt?.ToString("dd/MM/yyyy") ?? "entrada não informada") · @(sibling.DischargedAt?.ToString("dd/MM/yyyy") ?? "sem alta")</option>
+                        }
+                    </select>
+                </label>
+                <button type="submit">Trocar atendimento</button>
+            </form>
+            <p class="ds-note">A troca só vale se a integração e esta abertura permitirem navegação entre episódios. O mesmo paciente não autoriza a troca sozinho.</p>
+        }
     </section>
     <div class="ds-tabs" role="tablist">
         <button type="button" data-ds-tab="lista" aria-controls="ds-lista">Documentos</button>
         <button type="button" data-ds-tab="pdf" aria-controls="ds-pdf">PDF</button>
         <button type="button" data-ds-tab="analise" aria-controls="ds-analise">Análise</button>
     </div>
+    <div class="ds-actions"><button type="button" data-ds-collapse aria-controls="ds-analise" aria-expanded="true">Recolher análise</button></div>
     <div class="ds-workspace" data-ds-workspace data-auto-version="@ViewBag.AutoVersion">
         <section class="ds-list is-active" id="ds-lista" data-region="lista">
             <h2>Lista</h2>
@@ -61,11 +95,12 @@
                 <h3>@group.First().Name <span class="ds-badge">@group.Count() arquivo(s)</span></h3>
                 foreach (var document in group.OrderBy(item => item.DocumentDate))
                 {
-                    <button type="button" class="ds-doc" data-ds-open data-url="@Url.Action(fileAction, new { versionId = document.VersionId })" data-version="@document.VersionId" data-name="@document.Name" data-origin="@document.Origin" data-sector="@document.SectorCode" data-review="@document.ReviewStatus" data-date="@document.DocumentDate?.ToString("yyyy-MM-dd")" aria-current="false">
+                    <button type="button" class="ds-doc" data-ds-open data-url="@FileUrl(document.VersionId)" data-version="@document.VersionId" data-name="@document.Name" data-origin="@document.Origin" data-sector="@document.SectorCode" data-review="@document.ReviewStatus" data-date="@document.DocumentDate?.ToString("yyyy-MM-dd")" aria-current="false">
                         <strong>@document.Name</strong>
                         <span class="ds-badge">@document.ReviewStatus</span>
-                        <span class="ds-badge">PDF @document.PreviewStatus</span>
+                        <span class="ds-badge">Prévia @document.PreviewStatus</span>
                         <span class="ds-badge">OCR @document.OcrStatus</span>
+                        <span class="ds-badge">Extração @document.ExtractionStatus</span>
                         <span class="ds-note">@document.OriginalFileName · @document.Origin · @(document.SectorCode ?? "setor não informado") · @(document.DocumentDate?.ToString("dd/MM/yyyy") ?? "sem data")</span>
                     </button>
                     @if (ViewBag.CanReview == true)
@@ -96,7 +131,11 @@
             <h3>Pesquisar neste atendimento</h3>
             <form data-ds-search class="ds-grid">
                 <label>Palavra ou expressão<input name="term" minlength="2" required /></label>
-                <label><input type="checkbox" name="includeOtherEncounters" /> Incluir outros atendimentos deste paciente. Cada resultado mostra a origem.</label>
+                @if (!embedded || ViewBag.AllowSwitch == true)
+                {
+                    <label><input type="checkbox" name="includeOtherEncounters" /> Incluir outros atendimentos deste paciente. Cada resultado mostra o episódio. Sem permissão de navegação, a busca permanece neste atendimento.</label>
+                }
+                <input type="hidden" name="page" value="0" data-ds-page />
                 <button type="submit">Buscar texto</button>
             </form>
             <p class="ds-note">A busca é literal. Sinônimos cadastrados no tipo ampliam o termo. Análise semântica não é executada e página sem marcação no texto não é estimada.</p>
@@ -132,8 +171,9 @@
                         {
                             <p>Valor revisado: @field.ConfirmedValue</p>
                         }
-                        <p>Evidência: @field.Evidence @(field.PageNumber is null ? "(página não informada pelo mecanismo)" : "página " + field.PageNumber)</p>
-                        <button type="button" data-ds-open data-url="@Url.Action(fileAction, new { versionId = field.VersionId })" data-page="@field.PageNumber">Abrir evidência</button>
+                        <p>Evidência: @field.Evidence @(field.PageNumber is null ? "(página não informada pelo mecanismo; sem coordenadas não há destaque visual)" : "página " + field.PageNumber)</p>
+                        <p class="ds-note">Origem @(field.SourceKind ?? "texto da versão") · mecanismo @(field.Mechanism ?? "regras locais") · situação @field.Status. Valor sugerido não é dado confirmado.</p>
+                        <button type="button" data-ds-open data-url="@FileUrl(field.VersionId)" data-page="@field.PageNumber" data-version="@field.VersionId">Abrir evidência</button>
                         @if (ViewBag.CanExtract == true)
                         {
                             <form method="post" action="@Url.Action("RevisarCampo")">
@@ -157,7 +197,7 @@
                         <p>@finding.Evidence @(finding.PageNumber is null ? "" : "· página " + finding.PageNumber)</p>
                         @if (finding.VersionId is Guid versionId)
                         {
-                            <button type="button" data-ds-open data-url="@Url.Action(fileAction, new { versionId })" data-page="@finding.PageNumber">Abrir evidência</button>
+                            <button type="button" data-ds-open data-url="@FileUrl(versionId)" data-page="@finding.PageNumber" data-version="@versionId">Abrir evidência</button>
                         }
                         @if (ViewBag.CanReview == true)
                         {
@@ -209,10 +249,21 @@
                         <p class="ds-note">Não há outro atendimento deste paciente para receber o vínculo.</p>
                     }
                 }
+                @if (ViewBag.CanExtract == true && encounterId.HasValue)
+                {
+                    <h3>Sincronizar leitura</h3>
+                    <p class="ds-note">A consulta não relê o documento ao abrir. Esta ação acompanha o OCR já persistido e grava sugestões. Correções humanas são preservadas.</p>
+                    <form method="post" action="@Url.Action("AtualizarLeitura")">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="encounterId" value="@encounterId" />
+                        <button type="submit">Atualizar leitura</button>
+                    </form>
+                }
                 @if (ViewBag.CanPrint == true && encounterId.HasValue)
                 {
                     <h3>Preparar entrega</h3>
-                    <p class="ds-note">A impressão não avalia assinatura digital e não substitui original físico. A entrega não encerra o atendimento.</p>
+                    <p class="ds-note">A impressão não avalia assinatura digital e não substitui original físico. A preparação não é entrega confirmada e não encerra o atendimento. O Anexo II só entra se o perfil institucional estiver habilitado.</p>
+                    <p><a href="@Url.Action("PreviaEntrega", new { encounterId })">Abrir prévia de capa e checklist</a></p>
                     <form method="post" action="@Url.Action("PrepararEntrega")" class="ds-grid">
                         @Html.AntiForgeryToken()
                         <input type="hidden" name="encounterId" value="@encounterId" />

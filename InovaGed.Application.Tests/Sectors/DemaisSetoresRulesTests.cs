@@ -1,3 +1,4 @@
+using System.Net;
 using InovaGed.Application.Sectors;
 using InovaGed.Application.Tests.Ged;
 using InovaGed.Infrastructure.Sectors;
@@ -148,6 +149,50 @@ public sealed class DemaisSetoresRulesTests
         Assert.Equal(ClinicalSourceStatus.Unavailable, result.Status);
         Assert.Null(result.Patient);
         Assert.Contains("Nenhum paciente foi simulado", result.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Clinical_source_refuses_another_host_and_does_not_follow_redirects()
+    {
+        var handler = new CountingHandler(HttpStatusCode.Redirect);
+        var http = new HttpClient(handler);
+        var source = new ConfigurableClinicalSource(http, Options.Create(new ClinicalSourceOptions
+        {
+            Enabled = true,
+            BaseUrl = "https://origem.exemplo",
+            PatientPath = "https://outro.exemplo/paciente"
+        }), NullLogger<ConfigurableClinicalSource>.Instance);
+        var escaped = await source.FindAsync(Guid.NewGuid(), "000120", "MV", "1", "ID", CancellationToken.None);
+        Assert.Equal(ClinicalSourceStatus.Failed, escaped.Status);
+        Assert.Equal(0, handler.Calls);
+        Assert.Null(escaped.Patient);
+
+        var redirecting = new ConfigurableClinicalSource(new HttpClient(handler), Options.Create(new ClinicalSourceOptions
+        {
+            Enabled = true,
+            BaseUrl = "https://origem.exemplo",
+            PatientPath = "/paciente"
+        }), NullLogger<ConfigurableClinicalSource>.Instance);
+        var redirected = await redirecting.FindAsync(Guid.NewGuid(), "000120", "MV", "1", "ID", CancellationToken.None);
+        Assert.Equal(ClinicalSourceStatus.Failed, redirected.Status);
+        Assert.Equal(1, handler.Calls);
+        Assert.Contains("redirecionamento", redirected.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(redirected.Patient);
+    }
+
+    private sealed class CountingHandler : HttpMessageHandler
+    {
+        private readonly HttpStatusCode _status;
+        public int Calls { get; private set; }
+        public CountingHandler(HttpStatusCode status) => _status = status;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Calls++;
+            var response = new HttpResponseMessage(_status);
+            if (_status == HttpStatusCode.Redirect)
+                response.Headers.Location = new Uri("https://outro.exemplo/desvio");
+            return Task.FromResult(response);
+        }
     }
 
     private static string FindRoot()

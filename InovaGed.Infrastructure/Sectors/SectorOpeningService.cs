@@ -11,6 +11,7 @@ namespace InovaGed.Infrastructure.Sectors;
 public sealed class SectorOpeningService : ISectorOpeningService
 {
     public const string CookieName = "ds_abertura";
+    public static string CookieNameFor(Guid publicId) => "ds_ctx_" + publicId.ToString("N");
     private readonly IDbConnectionFactory _db;
     private readonly IDemaisSetoresService _sectors;
     private readonly IAuditWriter _audit;
@@ -33,7 +34,8 @@ public sealed class SectorOpeningService : ISectorOpeningService
         await using var conn = await _db.OpenAsync(ct);
         var integration = await conn.QuerySingleOrDefaultAsync<IntegrationRow>(new CommandDefinition("""
 select id as Id, tenant_id as TenantId, secret_hash as SecretHash, source_system as SourceSystem, source_unit as SourceUnit,
-       origins as Origins, catalog_codes as CatalogCodes, allow_encounter_list as AllowEncounterList, max_minutes as MaxMinutes, active as Active
+       origins as Origins, catalog_codes as CatalogCodes, allow_encounter_list as AllowEncounterList,
+       allow_encounter_switch as AllowEncounterSwitch, max_minutes as MaxMinutes, active as Active
 from ged.sector_integration
 where client_id=@clientId
 """, new { clientId = request.ClientId.Trim() }, cancellationToken: ct));
@@ -140,18 +142,15 @@ where l.tenant_id=@tenantId and l.encounter_id=@encounterId and l.patient_id=@pa
             mode = "consulta";
             catalog ??= rows[0].CatalogCode;
         }
-        else if (rows.Length == 1 && catalog is not null)
-        {
-            versionId = rows[0].VersionId;
-            documentId = rows[0].DocumentId;
-        }
-
+        var storedMode = mode == "documento" && documentId.HasValue ? "documento" : "consulta";
+        var scopeKind = storedMode == "documento" ? "documento" : catalog is not null ? "tipo" : "atendimento";
+        var allowSwitch = integration.AllowEncounterSwitch && scopeKind == "atendimento";
         var minutes = Math.Clamp(integration.MaxMinutes <= 0 ? 15 : integration.MaxMinutes, 1, 60);
         var expires = DateTimeOffset.UtcNow.AddMinutes(minutes);
         var pageCode = NewSecret();
         var frameCode = NewSecret();
-        await InsertCodeAsync(conn, integration, pageCode, patientId, encounterId, catalog, documentId, versionId, mode == "documento" ? "documento" : "consulta", origin, correlation, expires, ct);
-        await InsertCodeAsync(conn, integration, frameCode, patientId, encounterId, catalog, documentId, versionId, "documento", origin, correlation, expires, ct);
+        await InsertCodeAsync(conn, integration, pageCode, patientId, encounterId, catalog, documentId, versionId, storedMode, scopeKind, allowSwitch, origin, correlation, expires, ct);
+        await InsertCodeAsync(conn, integration, frameCode, patientId, encounterId, catalog, documentId, versionId, storedMode, scopeKind, allowSwitch, origin, correlation, expires, ct);
         var scope = documentId.HasValue ? "documento" : catalog is null ? "atendimento" : "tipo";
         await Audit(integration.TenantId, integration.Id, "FILE_PREVIEW", "Abertura temporária concedida. Correlacao " + correlation + ".", correlation, ct);
         _logger.LogInformation("Abertura concedida. Tenant={TenantId} Integracao={IntegrationId} Correlacao={Correlation} Escopo={Scope} Ocorrencias={Count}", integration.TenantId, integration.Id, correlation, scope, rows.Length);
@@ -160,70 +159,42 @@ where l.tenant_id=@tenantId and l.encounter_id=@encounterId and l.patient_id=@pa
 
     public async Task<SectorConsumedOpening?> ConsumeAsync(string code, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(code) || code.Length != 64) return null;
-        var hash = Hash(code);
         await using var conn = await _db.OpenAsync(ct);
-        var row = await conn.QuerySingleOrDefaultAsync<CodeRow>(new CommandDefinition("""
-update ged.sector_open_code
-set consumed_at=now()
-where code_hash=@hash and consumed_at is null and expires_at>now()
-returning tenant_id as TenantId, patient_id as PatientId, encounter_id as EncounterId, catalog_code as CatalogCode,
-          document_id as DocumentId, version_id as VersionId, mode as Mode, origin as Origin, integration_id as IntegrationId,
-          correlation_id as CorrelationId, expires_at as ExpiresAt, id as Id
-""", new { hash }, cancellationToken: ct));
-        if (row is null) return null;
-        var cookie = NewSecret();
-        var sessionId = Guid.NewGuid();
-        await conn.ExecuteAsync(new CommandDefinition("""
-insert into ged.sector_open_session
- (id, tenant_id, integration_id, cookie_hash, patient_id, encounter_id, catalog_code, document_id, version_id, mode, origin, correlation_id, expires_at)
-values
- (@sessionId, @tenantId, @integrationId, @cookieHash, @patientId, @encounterId, @catalog, @documentId, @versionId, @mode, @origin, @correlation, @expires)
-""", new
+        try
         {
-            sessionId, tenantId = row.TenantId, integrationId = row.IntegrationId, cookieHash = Hash(cookie),
-            patientId = row.PatientId, encounterId = row.EncounterId, catalog = row.CatalogCode,
-            documentId = row.DocumentId, versionId = row.VersionId, mode = row.Mode, origin = row.Origin,
-            correlation = row.CorrelationId, expires = row.ExpiresAt
-        }, cancellationToken: ct));
-        await conn.ExecuteAsync(new CommandDefinition(
-            "update ged.sector_open_code set session_id=@sessionId where id=@id",
-            new { sessionId, id = row.Id }, cancellationToken: ct));
-        _logger.LogInformation("Codigo de abertura trocado por sessao. Correlacao={Correlation}", row.CorrelationId);
-        return new SectorConsumedOpening(cookie, row.TenantId, row.PatientId, row.EncounterId, row.CatalogCode, row.DocumentId, row.VersionId, row.Mode, row.Origin, row.ExpiresAt, row.CorrelationId);
+            var opened = await SectorOpeningExchange.ConsumeAsync(conn, code, ct);
+            if (opened is not null)
+                _logger.LogInformation("Codigo de abertura trocado por sessao. Correlacao={Correlation} Contexto={PublicId}", opened.CorrelationId, opened.PublicId);
+            return opened;
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("Troca da abertura cancelada antes da confirmacao.");
+            throw;
+        }
     }
 
-    public async Task<SectorSessionAccess?> ReadSessionAsync(string? cookieValue, CancellationToken ct)
+    public async Task<SectorSessionAccess?> ReadSessionAsync(string? cookieValue, Guid publicId, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(cookieValue) || cookieValue.Length != 64) return null;
         await using var conn = await _db.OpenAsync(ct);
-        return await conn.QuerySingleOrDefaultAsync<SectorSessionAccess>(new CommandDefinition("""
-select tenant_id as TenantId, patient_id as PatientId, encounter_id as EncounterId, catalog_code as CatalogCode,
-       document_id as DocumentId, version_id as VersionId, mode as Mode, origin as Origin,
-       correlation_id as CorrelationId, expires_at as ExpiresAt
-from ged.sector_open_session
-where cookie_hash=@hash and revoked_at is null and expires_at>now()
-""", new { hash = Hash(cookieValue) }, cancellationToken: ct));
+        return await SectorOpeningExchange.ReadAsync(conn, cookieValue, publicId, ct);
     }
 
-    public async Task<bool> SwitchEncounterAsync(string? cookieValue, string encounterCode, CancellationToken ct)
+    public async Task<bool> SwitchEncounterAsync(string? cookieValue, Guid publicId, string encounterCode, CancellationToken ct)
     {
-        var session = await ReadSessionAsync(cookieValue, ct);
-        if (session is null || session.DocumentId.HasValue || string.IsNullOrWhiteSpace(encounterCode)) return false;
+        var before = await ReadSessionAsync(cookieValue, publicId, ct);
+        if (before is null || !before.AllowEncounterSwitch) return false;
         await using var conn = await _db.OpenAsync(ct);
-        var encounterId = await conn.ExecuteScalarAsync<Guid>(new CommandDefinition("""
-select id from ged.sector_encounter
-where tenant_id=@tenantId and patient_id=@patientId and external_code=@code
-""", new { tenantId = session.TenantId, patientId = session.PatientId, code = encounterCode.Trim() }, cancellationToken: ct));
-        if (encounterId == Guid.Empty) return false;
-        var updated = await conn.ExecuteAsync(new CommandDefinition("""
-update ged.sector_open_session
-set encounter_id=@encounterId, document_id=null, version_id=null
-where cookie_hash=@hash and revoked_at is null and expires_at>now() and document_id is null
-""", new { encounterId, hash = Hash(cookieValue!) }, cancellationToken: ct));
-        if (updated > 0)
-            await Audit(session.TenantId, encounterId, "FILE_PREVIEW", "Atendimento da abertura alterado dentro do mesmo paciente. Correlacao " + session.CorrelationId + ".", session.CorrelationId, ct);
-        return updated > 0;
+        var changed = await SectorOpeningExchange.SwitchAsync(conn, cookieValue, publicId, encounterCode, ct);
+        if (changed)
+            await Audit(before.TenantId, before.PatientId, "FILE_PREVIEW", "Atendimento da abertura alterado com permissão explícita. Correlacao " + before.CorrelationId + ".", before.CorrelationId, ct);
+        return changed;
+    }
+
+    public async Task<bool> AuthorizeCommandAsync(string? cookieValue, Guid publicId, string? protectionToken, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        return await SectorOpeningExchange.AuthorizeAsync(conn, cookieValue, publicId, protectionToken, ct);
     }
 
     public async Task<string?> RegisterIntegrationAsync(SectorIntegrationRegistration registration, CancellationToken ct)
@@ -242,35 +213,44 @@ where cookie_hash=@hash and revoked_at is null and expires_at>now() and document
         await using var conn = await _db.OpenAsync(ct);
         await conn.ExecuteAsync(new CommandDefinition("""
 insert into ged.sector_integration
- (id, tenant_id, client_id, secret_hash, source_system, source_unit, origins, catalog_codes, allow_encounter_list, max_minutes, active)
+ (id, tenant_id, client_id, secret_hash, source_system, source_unit, origins, catalog_codes, allow_encounter_list, allow_encounter_switch, max_minutes, active)
 values
- (gen_random_uuid(), @tenantId, @clientId, @hash, @system, @unit, @origins, @catalogs, @allow, @minutes, true)
+ (gen_random_uuid(), @tenantId, @clientId, @hash, @system, @unit, @origins, @catalogs, @allow, @allowSwitch, @minutes, true)
 on conflict (tenant_id, client_id) do update
 set secret_hash=excluded.secret_hash, source_system=excluded.source_system, source_unit=excluded.source_unit,
     origins=excluded.origins, catalog_codes=excluded.catalog_codes, allow_encounter_list=excluded.allow_encounter_list,
-    max_minutes=excluded.max_minutes, active=true
+    allow_encounter_switch=excluded.allow_encounter_switch, max_minutes=excluded.max_minutes, active=true
 """, new
         {
             tenantId = registration.TenantId, clientId = registration.ClientId.Trim(), hash = Hash(registration.Secret),
             system = registration.SourceSystem.Trim(), unit = registration.SourceUnit?.Trim() ?? "",
             origins = origins.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
             catalogs = registration.CatalogCodes.Where(item => !string.IsNullOrWhiteSpace(item)).Select(item => item.Trim()).Distinct(StringComparer.Ordinal).ToArray(),
-            allow = registration.AllowEncounterList, minutes = Math.Clamp(registration.MaxMinutes, 1, 60)
+            allow = registration.AllowEncounterList, allowSwitch = registration.AllowEncounterSwitch, minutes = Math.Clamp(registration.MaxMinutes, 1, 60)
         }, cancellationToken: ct));
         await Audit(registration.TenantId, registration.ActorId, "PERMISSION_CHANGE", "Integração cadastrada ou atualizada, sem registrar a chave.", null, ct);
         return null;
     }
 
-    private static async Task InsertCodeAsync(Npgsql.NpgsqlConnection conn, IntegrationRow integration, string code, Guid patientId, Guid encounterId, string? catalog, Guid? documentId, Guid? versionId, string mode, string origin, string correlation, DateTimeOffset expires, CancellationToken ct)
+    public async Task<string?> DeactivateIntegrationAsync(Guid tenantId, Guid actorId, string clientId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(clientId)) return "Informe a integração.";
+        await using var conn = await _db.OpenAsync(ct);
+        await SectorOpeningExchange.DeactivateAsync(conn, tenantId, clientId.Trim(), ct);
+        await Audit(tenantId, actorId, "PERMISSION_CHANGE", "Integração desativada. Códigos e sessões pendentes foram revogados.", null, ct);
+        return null;
+    }
+
+    private static async Task InsertCodeAsync(Npgsql.NpgsqlConnection conn, IntegrationRow integration, string code, Guid patientId, Guid encounterId, string? catalog, Guid? documentId, Guid? versionId, string mode, string scopeKind, bool allowSwitch, string origin, string correlation, DateTimeOffset expires, CancellationToken ct)
     {
         await conn.ExecuteAsync(new CommandDefinition("""
 insert into ged.sector_open_code
- (id, tenant_id, code_hash, patient_id, encounter_id, catalog_code, document_id, version_id, mode, origin, integration_id, correlation_id, expires_at)
+ (id, tenant_id, code_hash, patient_id, encounter_id, catalog_code, document_id, version_id, mode, scope_kind, allow_encounter_switch, origin, integration_id, correlation_id, expires_at)
 values
- (gen_random_uuid(), @tenantId, @hash, @patientId, @encounterId, @catalog, @documentId, @versionId, @mode, @origin, @integrationId, @correlation, @expires)
+ (gen_random_uuid(), @tenantId, @hash, @patientId, @encounterId, @catalog, @documentId, @versionId, @mode, @scopeKind, @allowSwitch, @origin, @integrationId, @correlation, @expires)
 """, new
         {
-            tenantId = integration.TenantId, hash = Hash(code), patientId, encounterId, catalog, documentId, versionId, mode, origin,
+            tenantId = integration.TenantId, hash = Hash(code), patientId, encounterId, catalog, documentId, versionId, mode, scopeKind, allowSwitch, origin,
             integrationId = integration.Id, correlation, expires
         }, cancellationToken: ct));
     }
@@ -345,6 +325,7 @@ limit 1
         public string[] Origins { get; set; } = [];
         public string[] CatalogCodes { get; set; } = [];
         public bool AllowEncounterList { get; set; }
+        public bool AllowEncounterSwitch { get; set; }
         public int MaxMinutes { get; set; }
         public bool Active { get; set; }
     }
