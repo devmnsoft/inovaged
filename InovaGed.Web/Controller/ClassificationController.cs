@@ -136,11 +136,11 @@ public sealed class ClassificationController : Controller
 
             await using var conn = await _db.OpenAsync(ct);
             var currentClassification = await conn.QueryFirstOrDefaultAsync<(Guid? ClassificationId, string? Code, string? Name, bool Selectable)>(
-                new CommandDefinition("""
+                new CommandDefinition($"""
                 SELECT 
                     d.classification_id AS "ClassificationId",
-                    COALESCE(pvi.code, cp.code) AS "Code",
-                    COALESCE(pvi.name, cp.name) AS "Name",
+                    {ArchivalClassificationSql.Code()} AS "Code",
+                    {ArchivalClassificationSql.Name()} AS "Name",
                     EXISTS (
                         SELECT 1
                         FROM ged.classification_plan_version_item ei
@@ -149,10 +149,14 @@ public sealed class ClassificationController : Controller
                           AND ei.classification_id = d.classification_id
                           AND COALESCE(ei.is_active, true)
                           AND COALESCE(ev.reg_status, 'A') = 'A'
-                          AND ev.version_no = (
-                              SELECT max(version_no)
-                              FROM ged.classification_plan_version
-                              WHERE tenant_id = d.tenant_id AND COALESCE(reg_status, 'A') = 'A'
+                          AND ev.id = (
+                              SELECT v_current.id
+                              FROM ged.classification_plan_version v_current
+                              WHERE v_current.tenant_id = d.tenant_id
+                                AND COALESCE(v_current.reg_status, 'A') = 'A'
+                                AND v_current.published_at IS NOT NULL
+                              ORDER BY v_current.published_at DESC, v_current.version_no DESC
+                              LIMIT 1
                           )
                     ) AS "Selectable"
                 FROM ged.document d
@@ -166,9 +170,14 @@ public sealed class ClassificationController : Controller
                 LIMIT 1
                 """, new { tenantId, documentId }, cancellationToken: ct));
 
+            var documentToken = await conn.ExecuteScalarAsync<long>(new CommandDefinition(
+                $"select {DocumentConcurrency.TokenSelect("d")} from ged.document d where d.tenant_id=@tenantId and d.id=@documentId",
+                new { tenantId, documentId }, cancellationToken: ct));
+
             var vm = new EditClassificationVM
             {
                 DocumentId = documentId,
+                DocumentToken = documentToken,
                 ClassificationId = currentClassification.ClassificationId,
                 ClassificationLabel = currentClassification.ClassificationId.HasValue
                     ? (!string.IsNullOrWhiteSpace(currentClassification.Code)
@@ -232,6 +241,7 @@ public sealed class ClassificationController : Controller
         [FromForm] string? tagsCsv,
         [FromForm] string? metadataJson,
         [FromForm] string? metadataLines,
+        [FromForm] long? documentToken,
         CancellationToken ct)
     {
         try
@@ -299,7 +309,8 @@ public sealed class ClassificationController : Controller
                 HasTags: hasTags,
                 Tags: tags,
                 HasMetadata: hasMetadata,
-                Metadata: metadata
+                Metadata: metadata,
+                ExpectedDocumentToken: documentToken
             );
 
             var result = await _commands.SaveManualIntegratedAsync(cmd, ct);
@@ -307,7 +318,9 @@ public sealed class ClassificationController : Controller
             if (!result.Success)
             {
                 if (IsAjaxRequest())
-                    return BadRequest(result.Message);
+                    return result.ErrorCode is DocumentConcurrency.ConflictCode or DocumentConcurrency.MissingTokenCode
+                        ? Conflict(result.Message)
+                        : BadRequest(result.Message);
 
                 TempData["Error"] = result.Message;
                 return RedirectToAction("Details", "Ged", new

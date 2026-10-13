@@ -334,11 +334,14 @@ WHERE c.tenant_id = @tenantId
   AND COALESCE(c.is_active, true)
   AND COALESCE(i.is_active, true)
   AND COALESCE(v.reg_status, 'A') = 'A'
-  AND v.version_no = (
-      SELECT max(version_no)
-      FROM ged.classification_plan_version
-      WHERE tenant_id = @tenantId
-        AND COALESCE(reg_status, 'A') = 'A'
+  AND v.id = (
+      SELECT v_current.id
+      FROM ged.classification_plan_version v_current
+      WHERE v_current.tenant_id = @tenantId
+        AND COALESCE(v_current.reg_status, 'A') = 'A'
+        AND v_current.published_at IS NOT NULL
+      ORDER BY v_current.published_at DESC, v_current.version_no DESC
+      LIMIT 1
   )
   AND (
       nullif(@query, '') is null

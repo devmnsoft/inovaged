@@ -1,0 +1,242 @@
+@using InovaGed.Web.Controllers
+@{
+    ViewData["Title"] = "Consultar e analisar";
+    var documents = (IReadOnlyList<SectorDocumentRow>)(ViewBag.Documents ?? Array.Empty<SectorDocumentRow>());
+    var fields = (IReadOnlyList<SectorFieldRow>)(ViewBag.Fields ?? Array.Empty<SectorFieldRow>());
+    var findings = (IReadOnlyList<SectorFindingRow>)(ViewBag.Findings ?? Array.Empty<SectorFindingRow>());
+    var checklist = (IReadOnlyList<SectorChecklistRow>)(ViewBag.Checklist ?? Array.Empty<SectorChecklistRow>());
+    var siblings = (IReadOnlyList<SectorEncounterOption>)(ViewBag.Siblings ?? Array.Empty<SectorEncounterOption>());
+    var context = (object?)ViewBag.Context as SectorContextRow;
+    var files = documents.Count;
+    var types = documents.Select(item => item.CatalogCode).Distinct().Count();
+    var encounterRaw = (object?)ViewBag.EncounterId;
+    var encounterId = encounterRaw is Guid parsedEncounter ? parsedEncounter : (Guid?)null;
+}
+<link rel="stylesheet" href="~/css/demais-setores.css" asp-append-version="true" />
+<main class="ds-page" data-ds-consult data-search-url="@Url.Action("Pesquisar")" data-text-url="@Url.Action("Texto")" data-file-url="@Url.Action("Arquivo")">
+    @Html.AntiForgeryToken()
+    <h1>Consultar e analisar</h1>
+    <p class="ds-help">A leitura reutiliza o OCR do GED. Campo sugerido não é informação validada. A conta não está integrada: ausência no prontuário não significa item não faturado.</p>
+    <section class="ds-context">
+        <form method="get" class="ds-grid">
+            <label>Paciente interno da consulta<input name="patientId" value="@ViewBag.PatientId" /></label>
+            <label>Atendimento<input name="encounterId" value="@ViewBag.EncounterId" /></label>
+            <div class="ds-actions"><button type="submit">Abrir atendimento</button></div>
+        </form>
+        @if (context is null)
+        {
+            <p class="ds-note">Nenhum atendimento aberto. Informe o paciente e o atendimento confirmados no cadastro.</p>
+        }
+        else
+        {
+            <p><strong>@context.DisplayName</strong> · código @context.PatientCode</p>
+            <p>Atendimento @context.EncounterCode · código externo @(context.RawKind ?? "não informado") · tipo @(context.Kind ?? "ainda não mapeado") · @(context.Status ?? "situação não informada")</p>
+            <p class="ds-note">Entrada @(context.AdmittedAt?.ToString("dd/MM/yyyy HH:mm") ?? "não informada") · alta @(context.DischargedAt?.ToString("dd/MM/yyyy HH:mm") ?? "não informada")</p>
+        }
+        <p>Arquivos visíveis: @files. Tipos presentes: @types. Essas quantidades são diferentes.</p>
+    </section>
+    <div class="ds-tabs" role="tablist">
+        <button type="button" data-ds-tab="lista" aria-controls="ds-lista">Documentos</button>
+        <button type="button" data-ds-tab="pdf" aria-controls="ds-pdf">PDF</button>
+        <button type="button" data-ds-tab="analise" aria-controls="ds-analise">Análise</button>
+    </div>
+    <div class="ds-workspace" data-ds-workspace>
+        <section class="ds-list is-active" id="ds-lista" data-region="lista">
+            <h2>Lista</h2>
+            <div class="ds-grid">
+                <label>Nome<input data-ds-filter="name" type="search" /></label>
+                <label>Origem<select data-ds-filter="origin"><option value="">Todas</option><option>GED_UPLOAD</option><option>MV</option><option>EXTERNO</option></select></label>
+                <label>Setor<input data-ds-filter="sector" /></label>
+                <label>Situação<select data-ds-filter="review"><option value="">Todas</option><option>RECEBIDO</option><option>PENDENTE</option><option>EM_CONFERENCIA</option><option>CONFERIDO</option><option>INCONSISTENTE</option><option>NAO_APLICAVEL</option><option>SUBSTITUIDO</option></select></label>
+            </div>
+            @foreach (var group in documents.GroupBy(item => item.CatalogCode))
+            {
+                <h3>@group.First().Name <span class="ds-badge">@group.Count() arquivo(s)</span></h3>
+                foreach (var document in group.OrderBy(item => item.DocumentDate))
+                {
+                    <button type="button" class="ds-doc" data-ds-open data-url="@Url.Action("Arquivo", new { versionId = document.VersionId })" data-version="@document.VersionId" data-name="@document.Name" data-origin="@document.Origin" data-sector="@document.SectorCode" data-review="@document.ReviewStatus" data-date="@document.DocumentDate?.ToString("yyyy-MM-dd")" aria-current="false">
+                        <strong>@document.Name</strong>
+                        <span class="ds-badge">@document.ReviewStatus</span>
+                        <span class="ds-badge">PDF @document.PreviewStatus</span>
+                        <span class="ds-badge">OCR @document.OcrStatus</span>
+                        <span class="ds-note">@document.OriginalFileName · @document.Origin · @(document.SectorCode ?? "setor não informado") · @(document.DocumentDate?.ToString("dd/MM/yyyy") ?? "sem data")</span>
+                    </button>
+                    @if (ViewBag.CanReview == true)
+                    {
+                        <form method="post" action="@Url.Action("Conferir")" class="ds-inline">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="linkId" value="@document.LinkId" />
+                            <label>Conferência<select name="toStatus"><option>EM_CONFERENCIA</option><option>CONFERIDO</option><option>INCONSISTENTE</option><option>PENDENTE</option><option>NAO_APLICAVEL</option><option>RECEBIDO</option></select></label>
+                            <label>Justificativa<input name="justification" /></label>
+                            <button type="submit">Registrar conferência</button>
+                        </form>
+                    }
+                    @if (document.RequiresPhysical && ViewBag.CanReview == true)
+                    {
+                        <form method="post" action="@Url.Action("EvidenciaFisica")" class="ds-inline">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="linkId" value="@document.LinkId" />
+                            <label>Evidência do original físico<input name="evidence" value="@document.PhysicalEvidence" required /></label>
+                            <button type="submit">Registrar original</button>
+                        </form>
+                    }
+                }
+            }
+            @if (documents.Count == 0)
+            {
+                <p>Nenhum documento visível para este atendimento.</p>
+            }
+            <h3>Pesquisar neste atendimento</h3>
+            <form data-ds-search class="ds-grid">
+                <label>Palavra ou expressão<input name="term" minlength="2" required /></label>
+                <label><input type="checkbox" name="includeOtherEncounters" /> Incluir outros atendimentos deste paciente. Cada resultado mostra a origem.</label>
+                <button type="submit">Buscar texto</button>
+            </form>
+            <p class="ds-note">A busca é literal. Sinônimos cadastrados no tipo ampliam o termo. Análise semântica não é executada e página sem marcação no texto não é estimada.</p>
+            <ul data-ds-hits></ul>
+        </section>
+        <section id="ds-pdf" data-region="pdf">
+            <h2>Visualizador</h2>
+            <p class="ds-note" data-ds-viewer-status>Nenhum documento selecionado.</p>
+            <iframe class="ds-viewer" data-ds-frame title="Documento do atendimento" name="ds-viewer"></iframe>
+        </section>
+        <aside class="ds-analysis" id="ds-analise" data-region="analise">
+            <h2>Análise</h2>
+            <div class="ds-tabs ds-tabs-always" role="tablist">
+                <button type="button" data-ds-panel="texto">Texto</button>
+                <button type="button" data-ds-panel="dados">Dados extraídos</button>
+                <button type="button" data-ds-panel="achados">Achados</button>
+                <button type="button" data-ds-panel="checklist">Checklist e histórico</button>
+            </div>
+            <div data-ds-panel-body="texto" class="is-active">
+                <p data-ds-text class="ds-note">Selecione um documento para ver o texto já lido. Correção de campo não altera o PDF.</p>
+            </div>
+            <div data-ds-panel-body="dados" hidden>
+                @if (fields.Count == 0)
+                {
+                    <p>Nenhum campo extraído para os documentos visíveis.</p>
+                }
+                @foreach (var field in fields)
+                {
+                    <article class="ds-card">
+                        <p><span class="ds-badge">@field.Status</span> @field.ContextCode</p>
+                        <p>Proposta: @field.SuggestedValue</p>
+                        @if (!string.IsNullOrWhiteSpace(field.ConfirmedValue))
+                        {
+                            <p>Valor revisado: @field.ConfirmedValue</p>
+                        }
+                        <p>Evidência: @field.Evidence @(field.PageNumber is null ? "(página não informada pelo mecanismo)" : "página " + field.PageNumber)</p>
+                        <button type="button" data-ds-open data-url="@Url.Action("Arquivo", new { versionId = field.VersionId })" data-page="@field.PageNumber">Abrir evidência</button>
+                        @if (ViewBag.CanExtract == true)
+                        {
+                            <form method="post" action="@Url.Action("RevisarCampo")">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="fieldId" value="@field.FieldId" />
+                                <select name="status"><option>CONFIRMADO</option><option>CORRIGIDO</option><option>REJEITADO</option><option>INCONCLUSIVO</option></select>
+                                <input name="value" placeholder="Valor corrigido, se houver" />
+                                <button type="submit">Registrar revisão</button>
+                            </form>
+                        }
+                    </article>
+                }
+            </div>
+            <div data-ds-panel-body="achados" hidden>
+                <p class="ds-note">@InovaGed.Application.Sectors.SectorFindings.AccountUnavailable</p>
+                @foreach (var finding in findings)
+                {
+                    <article class="ds-card">
+                        <p>@finding.Description</p>
+                        <p><span class="ds-badge">@finding.Status</span> <span class="ds-badge">@finding.Category</span> Informação localizada, não elegibilidade de faturamento.</p>
+                        <p>@finding.Evidence @(finding.PageNumber is null ? "" : "· página " + finding.PageNumber)</p>
+                        @if (finding.VersionId is Guid versionId)
+                        {
+                            <button type="button" data-ds-open data-url="@Url.Action("Arquivo", new { versionId })" data-page="@finding.PageNumber">Abrir evidência</button>
+                        }
+                        @if (ViewBag.CanReview == true)
+                        {
+                            <form method="post" action="@Url.Action("DecidirAchado")">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="findingId" value="@finding.FindingId" />
+                                <select name="status"><option>CONFIRMADO</option><option>REJEITADO</option><option>COMPLEMENTACAO</option><option>ENCAMINHADO</option></select>
+                                <input name="justification" required />
+                                <button type="submit">Registrar decisão</button>
+                            </form>
+                        }
+                    </article>
+                }
+            </div>
+            <div data-ds-panel-body="checklist" hidden>
+                <h3>Checklist do Anexo I</h3>
+                <ul>
+                    @foreach (var item in checklist)
+                    {
+                        <li>@item.Order.ToString("00") @item.Name — @item.State @(item.Required ? "(exigido neste contexto)" : "")</li>
+                    }
+                </ul>
+                @if (ViewBag.CanCorrect == true && encounterId.HasValue)
+                {
+                    <h3>Corrigir vínculo</h3>
+                    <form method="post" action="@Url.Action("CorrigirVinculo")" class="ds-grid">
+                        @Html.AntiForgeryToken()
+                        <label>Documento
+                            <select name="linkId">
+                                @foreach (var document in documents)
+                                {
+                                    <option value="@document.LinkId">@document.Name</option>
+                                }
+                            </select>
+                        </label>
+                        <label>Atendimento do mesmo paciente
+                            <select name="toEncounterId">
+                                @foreach (var sibling in siblings)
+                                {
+                                    <option value="@sibling.Id">@sibling.Code · @(sibling.Kind ?? "tipo não mapeado") · @(sibling.Status ?? "situação não informada")</option>
+                                }
+                            </select>
+                        </label>
+                        <label>Justificativa<input name="reason" required /></label>
+                        <button type="submit">Corrigir vínculo</button>
+                    </form>
+                    @if (siblings.Count == 0)
+                    {
+                        <p class="ds-note">Não há outro atendimento deste paciente para receber o vínculo.</p>
+                    }
+                }
+                @if (ViewBag.CanPrint == true && encounterId.HasValue)
+                {
+                    <h3>Preparar entrega</h3>
+                    <p class="ds-note">A impressão não avalia assinatura digital e não substitui original físico. A entrega não encerra o atendimento.</p>
+                    <form method="post" action="@Url.Action("PrepararEntrega")" class="ds-grid">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="encounterId" value="@encounterId" />
+                        <label>Perfil<select name="profileCode"><option>ANEXO_I</option><option>ANEXO_II</option></select></label>
+                        <label>Destinatário<input name="recipient" /></label>
+                        @foreach (var document in documents)
+                        {
+                            <label><input type="checkbox" name="linkIds" value="@document.LinkId" /> @document.Name @(document.RequiresPhysical ? "(original físico)" : "")</label>
+                        }
+                        <button type="submit">Preparar entrega</button>
+                    </form>
+                }
+                @if (ViewBag.CanShare == true)
+                {
+                    <h3>Link para incorporação</h3>
+                    <form method="post" action="@Url.Action("CriarIncorporacao")" class="ds-grid">
+                        @Html.AntiForgeryToken()
+                        <label>Versão
+                            <select name="versionId">
+                                @foreach (var document in documents)
+                                {
+                                    <option value="@document.VersionId">@document.Name</option>
+                                }
+                            </select>
+                        </label>
+                        <label>Origem cadastrada<input name="origin" placeholder="https://aplicacao.exemplo" /></label>
+                        <button type="submit">Gerar concessão de 15 minutos</button>
+                    </form>
+                }
+            </div>
+        </aside>
+    </div>
+</main>
+<script src="~/js/demais-setores.js" asp-append-version="true"></script>

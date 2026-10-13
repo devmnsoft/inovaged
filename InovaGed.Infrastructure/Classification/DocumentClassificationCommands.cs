@@ -275,19 +275,34 @@ WHERE tenant_id = @TenantId
 
         try
         {
-            const string lockSql = @"
-select id, current_version_id as CurrentVersionId, classification_id as ClassificationId, classification_version_id as ClassificationVersionId, type_id as TypeId
+            var lockSql = $@"
+select id, current_version_id as CurrentVersionId, classification_id as ClassificationId, classification_version_id as ClassificationVersionId, type_id as TypeId, {DocumentConcurrency.TokenSelect()} as Token
 from ged.document
 where tenant_id = @TenantId and id = @DocumentId and coalesce(reg_status, 'A') = 'A'
 for update;";
 
-            var doc = await con.QueryFirstOrDefaultAsync<(Guid Id, Guid? CurrentVersionId, Guid? ClassificationId, Guid? ClassificationVersionId, Guid? TypeId)>(
+            var doc = await con.QueryFirstOrDefaultAsync<(Guid Id, Guid? CurrentVersionId, Guid? ClassificationId, Guid? ClassificationVersionId, Guid? TypeId, long Token)>(
                 new CommandDefinition(lockSql, new { command.TenantId, command.DocumentId }, tx, cancellationToken: ct));
 
             if (doc.Id == Guid.Empty)
             {
                 await tx.RollbackAsync(ct);
                 return new(false, false, false, false, false, false, "Documento não encontrado ou inativo.", "NOT_FOUND");
+            }
+
+            if (!command.IsSystemExecution)
+            {
+                if (command.ExpectedDocumentToken is null)
+                {
+                    await tx.RollbackAsync(ct);
+                    return new(false, false, false, false, false, false, DocumentConcurrency.MissingTokenMessage, DocumentConcurrency.MissingTokenCode);
+                }
+
+                if (command.ExpectedDocumentToken.Value != doc.Token)
+                {
+                    await tx.RollbackAsync(ct);
+                    return new(false, false, false, false, false, false, DocumentConcurrency.ConflictMessage, DocumentConcurrency.ConflictCode);
+                }
             }
 
             var beforeJson = await SnapshotAsync(con, tx, command.TenantId, command.DocumentId, ct);
@@ -312,10 +327,14 @@ where i.tenant_id = @TenantId
   and i.classification_id = @ClassificationId
   and coalesce(i.is_active, true)
   and coalesce(v.reg_status, 'A') = 'A'
-  and v.version_no = (
-    select max(version_no)
-    from ged.classification_plan_version
-    where tenant_id = @TenantId and coalesce(reg_status, 'A') = 'A'
+  and v.id = (
+    select v_current.id
+    from ged.classification_plan_version v_current
+    where v_current.tenant_id = @TenantId
+      and coalesce(v_current.reg_status, 'A') = 'A'
+      and v_current.published_at is not null
+    order by v_current.published_at desc, v_current.version_no desc
+    limit 1
   );";
 
                     var targetVersionId = await con.ExecuteScalarAsync<Guid?>(

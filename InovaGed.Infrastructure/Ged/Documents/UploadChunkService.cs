@@ -476,7 +476,7 @@ select exists(
     and coalesce(c.is_active,true)
     and coalesce(i.is_active,true)
     and coalesce(v.reg_status,'A')='A'
-    and v.version_no=(select max(version_no) from ged.classification_plan_version where tenant_id=@tenantId and coalesce(reg_status,'A')='A')
+    and v.id=(select v_current.id from ged.classification_plan_version v_current where v_current.tenant_id=@tenantId and coalesce(v_current.reg_status, 'A')='A' and v_current.published_at is not null order by v_current.published_at desc, v_current.version_no desc limit 1)
 );
 """;
         await using var conn = await _db.OpenAsync(ct);

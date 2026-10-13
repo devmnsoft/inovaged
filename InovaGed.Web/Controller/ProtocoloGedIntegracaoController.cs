@@ -1,4 +1,5 @@
 using Dapper;
+using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Database;
 using InovaGed.Web.Models.Protocolo;
 using InovaGed.Web.Security;
@@ -67,13 +68,13 @@ order by created_at desc;", new { TenantId, ProtocoloId = protocoloId })).ToList
         Dictionary<Guid, (string Title, int? VersionNumber, string? ClassCode, string? ClassName, int? PlanVersionNo, string? PlanVersionTitle, string? Status)> docMap = new();
         if (authorizedIds.Count > 0)
         {
-            const string batchSql = @"
+            var batchSql = $@"
 select 
   d.id as DocumentId,
   coalesce(nullif(d.title,''), d.code, 'Documento') as Title,
   v.version_number as VersionNumber,
-  coalesce(pvi.code, cp.code) as ClassCode,
-  coalesce(pvi.name, cp.name) as ClassName,
+  {ArchivalClassificationSql.Code()} as ClassCode,
+  {ArchivalClassificationSql.Name()} as ClassName,
   pv.version_no as PlanVersionNo,
   case
     when d.classification_id is null then null

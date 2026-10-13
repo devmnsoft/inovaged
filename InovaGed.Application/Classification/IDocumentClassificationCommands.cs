@@ -67,7 +67,8 @@ public sealed record SaveManualIntegratedCommand(
     bool HasMetadata = false,
     IReadOnlyDictionary<string, string>? Metadata = null,
     bool IsSystemExecution = false,
-    string? SystemExecutionReason = null
+    string? SystemExecutionReason = null,
+    long? ExpectedDocumentToken = null
 )
 {
     public SaveManualIntegratedCommand(

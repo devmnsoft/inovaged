@@ -1322,6 +1322,22 @@
       "transactional": true,
       "deploymentSafety": "Additive",
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_10_24_preview_attempt_and_recovery",
+      "path": "database/migrations/2026_10_24_preview_attempt_and_recovery.sql",
+      "module": "Preview",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_10_25_demais_setores",
+      "path": "database/migrations/2026_10_25_demais_setores.sql",
+      "module": "DemaisSetores",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
     }
   ]
 }

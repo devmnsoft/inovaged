@@ -32,7 +32,7 @@ public sealed class DocumentClassificationQueries : IDocumentClassificationQueri
         // ✅ 1) usa d.current_version_id
         // ✅ 2) junta com ged.document_version (singular)
         // ✅ 3) pega a classificação mais recente (por suggested_at/classified_at)
-        const string headSql = @"
+        var headSql = $@"
 SELECT
   d.id                         AS ""DocumentId"",
   d.tenant_id                  AS ""TenantId"",
@@ -42,8 +42,8 @@ SELECT
   dt.name                      AS ""DocumentTypeName"",
 
   d.classification_id          AS ""ClassificationId"",
-  COALESCE(pvi.code, cp.code)  AS ""ClassificationCode"",
-  COALESCE(pvi.name, cp.name)  AS ""ClassificationName"",
+  {ArchivalClassificationSql.Code()}  AS ""ClassificationCode"",
+  {ArchivalClassificationSql.Name()}  AS ""ClassificationName"",
   pv.version_no                AS ""PlanVersionNo"",
   CASE
     WHEN d.classification_id IS NULL THEN NULL

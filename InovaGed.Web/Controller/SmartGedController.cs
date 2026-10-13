@@ -1,4 +1,5 @@
 using Dapper;
+using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Identity;
 using InovaGed.Application.SmartGed;
@@ -151,13 +152,13 @@ public sealed class SmartGedController : Controller
         if (!allowed) return Forbid();
 
         await using var conn = await _db.OpenAsync(ct);
-        var doc = await conn.QuerySingleOrDefaultAsync<DocumentDetailsRow>(new CommandDefinition("""
+        var doc = await conn.QuerySingleOrDefaultAsync<DocumentDetailsRow>(new CommandDefinition($"""
 select d.id as Id,
        coalesce(d.title, 'Documento') as Title,
        d.description as Description,
        d.current_version_id as CurrentVersionId,
        coalesce(v.version_number, 1) as VersionNumber,
-       coalesce(concat_ws(' - ', pvi.code, nullif(pvi.name, '')), cp.code || ' - ' || cp.name) as CurrentClassification,
+       {ArchivalClassificationSql.Label()} as CurrentClassification,
        d.classification_id as CurrentClassificationId,
        d.retention_status as CurrentRetentionStatus,
        v.ocr_status as OcrStatus,
@@ -456,7 +457,7 @@ from ged.classification_plan_version_item i
 join ged.classification_plan_version v on v.tenant_id=i.tenant_id and v.id=i.version_id
 left join ged.classification_plan cp on cp.tenant_id=i.tenant_id and cp.id=i.classification_id
 where i.tenant_id=@TenantId and coalesce(i.is_active,true) and coalesce(v.reg_status,'A')='A'
-  and v.version_no=(select max(version_no) from ged.classification_plan_version where tenant_id=@TenantId and coalesce(reg_status,'A')='A')
+  and v.id=(select v_current.id from ged.classification_plan_version v_current where v_current.tenant_id=@TenantId and coalesce(v_current.reg_status, 'A')='A' and v_current.published_at is not null order by v_current.published_at desc, v_current.version_no desc limit 1)
 order by i.code;
 """, new { TenantId = _user.TenantId }, cancellationToken: ct));
         vm.Classifications = classes.Select(c => new SelectListItem($"{c.Code} - {c.Name}", c.Id.ToString(), c.Id == vm.ClassificationId)).ToList();

@@ -10,6 +10,13 @@ public sealed class PreviewStatusDto
     public int Attempts { get; init; }
     public DateTimeOffset? LastUpdatedAt { get; init; }
     public DateTimeOffset? RequestedAt { get; init; }
+    public string RequestedAtKind { get; init; } = "UNSPECIFIED";
     public DateTimeOffset? FinishedAt { get; init; }
     public DateTimeOffset? LastAttemptAt { get; init; }
+    public DateTimeOffset? AttemptStartedAt { get; init; }
+    public DateTimeOffset? OutcomeConfirmedAt { get; init; }
+    public Guid? CurrentAttemptId { get; init; }
+    public string? PersistenceError { get; init; }
+    public string? PendingPreviewPath { get; init; }
+    public bool CancelRequested { get; init; }
 }

@@ -799,7 +799,11 @@ limit 1;", cancellationToken: ct));
             && HasColumn(existingColumns, "preview_status", "requested_at")
             && HasColumn(existingColumns, "preview_status", "finished_at")
             && HasColumn(existingColumns, "preview_status", "attempts")
-            && HasColumn(existingColumns, "preview_status", "last_attempt_at");
+            && HasColumn(existingColumns, "preview_status", "last_attempt_at")
+            && HasColumn(existingColumns, "preview_status", "current_attempt_id")
+            && HasColumn(existingColumns, "preview_status", "attempt_started_at")
+            && HasColumn(existingColumns, "preview_status", "requested_at_kind")
+            && HasColumn(existingColumns, "preview_status", "outcome_confirmed_at");
         var requestedAtOk = columnContracts.TryGetValue("preview_status.requested_at", out var requestedAt)
             && string.Equals(requestedAt.IsNullable, "NO", StringComparison.OrdinalIgnoreCase)
             && !string.IsNullOrWhiteSpace(requestedAt.ColumnDefault);
@@ -809,13 +813,14 @@ limit 1;", cancellationToken: ct));
         var hasUniqueContract = hasTable && hasRequiredColumns && requestedAtOk && statusOk && existingIndexes.Any(index =>
             index.IndexDef.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase)
             && index.IndexDef.Contains("ON ged.preview_status", StringComparison.OrdinalIgnoreCase)
-            && index.IndexDef.Contains("(tenant_id, document_version_id)", StringComparison.OrdinalIgnoreCase));
+            && index.IndexDef.Contains("(tenant_id, document_version_id)", StringComparison.OrdinalIgnoreCase)
+            && !index.IndexDef.Contains(" WHERE ", StringComparison.OrdinalIgnoreCase));
 
         AddCheck(report, checkId, "Preview", objectName, "Contrato de upsert", "Critical", hasUniqueContract,
             hasUniqueContract
                 ? "Contrato do preview por tenant/versão OK: chave única, enum, requested_at obrigatório com default e colunas de tentativa disponíveis."
                 : "Contrato do preview incompatível; PreviewVersion pode falhar por conflito sem índice, requested_at nulo/sem default ou enum/colunas de estado incompletos.",
-            "Execute database/migrations/2026_10_14_preview_status_upsert_contract.sql e database/migrations/2026_10_23_preview_status_requested_at_contract.sql pelo migrador oficial. Se houver duplicidades, reconcilie os registros antes de reaplicar.");
+            "Execute database/migrations/2026_10_14_preview_status_upsert_contract.sql, database/migrations/2026_10_23_preview_status_requested_at_contract.sql e database/migrations/2026_10_24_preview_attempt_and_recovery.sql pelo migrador oficial. Duplicidade não é apagada: a migration 2026_10_14 interrompe e preserva as duas linhas. A reconciliação exige decisão explícita; não use exclusão automática.");
     }
 
     private sealed class PgIndexInfo

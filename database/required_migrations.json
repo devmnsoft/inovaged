@@ -978,5 +978,19 @@
     "area": "Preview",
     "required": true,
     "description": "Fecha o contrato de requested_at obrigatório no preview, preservando a primeira observação e estados canônicos."
+  },
+  {
+    "name": "2026_10_24_preview_attempt_and_recovery",
+    "path": "database/migrations/2026_10_24_preview_attempt_and_recovery.sql",
+    "area": "Preview",
+    "required": true,
+    "description": "Identifica cada tentativa de preview, distingue a data comprovada da reconstruída e prepara a recuperação da fila durável."
+  },
+  {
+    "name": "2026_10_25_demais_setores",
+    "path": "database/migrations/2026_10_25_demais_setores.sql",
+    "area": "DemaisSetores",
+    "required": true,
+    "description": "Catálogo do Anexo I, vínculos de paciente e atendimento, conferência e concessões de incorporação do módulo Demais setores."
   }
 ]

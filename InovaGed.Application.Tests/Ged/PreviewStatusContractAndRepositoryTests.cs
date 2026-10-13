@@ -16,20 +16,22 @@ public sealed class PreviewStatusContractAndRepositoryTests
         Assert.NotNull(getAsyncMethod);
 
         // Verify that PreviewStatusRepository does not expose or rely on dynamic binding
-        var repoFile = Path.Combine(AppContext.BaseDirectory, "../../../../../InovaGed.Infrastructure/Preview/PreviewStatusRepository.cs");
+        var repoFile = Path.Combine(RepoRoot(), "InovaGed.Infrastructure/Preview/PreviewStatusRepository.cs");
         if (File.Exists(repoFile))
         {
             var content = File.ReadAllText(repoFile);
             Assert.DoesNotContain("dynamic", content, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("PreviewStatusRow", content);
             Assert.Contains("ColumnMetadataRow", content);
-            Assert.Contains("AS \"TenantId\"", content);
-            Assert.Contains("AS \"VersionId\"", content);
-            Assert.Contains("AS \"Status\"", content);
-            Assert.Contains("AS \"Attempts\"", content);
-            Assert.Contains("AS \"LastUpdatedAt\"", content);
+            Assert.Contains("AS \"\"TenantId\"\"", content);
+            Assert.Contains("AS \"\"VersionId\"\"", content);
+            Assert.Contains("AS \"\"Status\"\"", content);
+            Assert.Contains("AS \"\"Attempts\"\"", content);
+            Assert.Contains("AS \"\"LastUpdatedAt\"\"", content);
             Assert.Contains("effectiveRequestedAt", content);
             Assert.Contains("requested_at = COALESCE(ged.preview_status.requested_at, EXCLUDED.requested_at, now())", content);
+            Assert.Contains("ged.preview_status.current_attempt_id IS DISTINCT FROM EXCLUDED.current_attempt_id", content);
+            Assert.DoesNotContain("WHEN EXCLUDED.status IN ('PROCESSING'::ged.preview_processing_status, 'FAILED'::ged.preview_processing_status) THEN 1", content);
         }
     }
 
@@ -105,7 +107,7 @@ public sealed class PreviewStatusContractAndRepositoryTests
     [Fact]
     public void MigrationFile_PreviewStatusUpsertContract_ContainsRequiredElements()
     {
-        var migrationPath = Path.Combine(AppContext.BaseDirectory, "../../../../../database/migrations/2026_10_14_preview_status_upsert_contract.sql");
+        var migrationPath = Path.Combine(RepoRoot(), "database/migrations/2026_10_14_preview_status_upsert_contract.sql");
         if (File.Exists(migrationPath))
         {
             var sql = File.ReadAllText(migrationPath);
@@ -121,7 +123,7 @@ public sealed class PreviewStatusContractAndRepositoryTests
     [Fact]
     public void PreviewStatusRequestedAtContract_IsRequiredMigration()
     {
-        var migrationPath = Path.Combine(AppContext.BaseDirectory, "../../../../../database/migrations/2026_10_23_preview_status_requested_at_contract.sql");
+        var migrationPath = Path.Combine(RepoRoot(), "database/migrations/2026_10_23_preview_status_requested_at_contract.sql");
         Assert.True(File.Exists(migrationPath));
 
         var sql = File.ReadAllText(migrationPath);
@@ -129,17 +131,88 @@ public sealed class PreviewStatusContractAndRepositoryTests
         Assert.Contains("ALTER COLUMN requested_at SET NOT NULL", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("ux_preview_status_tenant_version", sql, StringComparison.OrdinalIgnoreCase);
 
-        var requiredPath = Path.Combine(AppContext.BaseDirectory, "../../../../../database/required_migrations.json");
+        var requiredPath = Path.Combine(RepoRoot(), "database/required_migrations.json");
         var required = File.ReadAllText(requiredPath);
         Assert.Contains("2026_10_23_preview_status_requested_at_contract", required, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
+    public void PreviewAttemptMigration_DistinguishesProvenAndReconstructedRequestTime()
+    {
+        var migrationPath = Path.Combine(RepoRoot(), "database/migrations/2026_10_24_preview_attempt_and_recovery.sql");
+        Assert.True(File.Exists(migrationPath));
+        var sql = File.ReadAllText(migrationPath);
+        Assert.Contains("requested_at_kind", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("'RECONSTRUCTED'", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("'UNSPECIFIED'", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("current_attempt_id", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("attempt_started_at", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("outcome_confirmed_at", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ged.processing_job", sql, StringComparison.OrdinalIgnoreCase);
+
+        var requiredPath = Path.Combine(RepoRoot(), "database/required_migrations.json");
+        Assert.Contains("2026_10_24_preview_attempt_and_recovery", File.ReadAllText(requiredPath), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void IndexedSearchAndBoxLabel_UseLiveClassNotPlanOrStoredIndex()
+    {
+        var search = File.ReadAllText(Path.Combine(RepoRoot(), "InovaGed.Infrastructure/Ged/Search/GedSmartSearchService.cs"));
+        Assert.DoesNotContain("si.classification", search, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("cp.name, cp.code, pvi.name, pvi.code", search, StringComparison.Ordinal);
+        Assert.Contains("ArchivalClassificationSql.Name()", search, StringComparison.Ordinal);
+        Assert.Contains("cp.id=d.classification_id", search, StringComparison.Ordinal);
+
+        var labels = File.ReadAllText(Path.Combine(RepoRoot(), "InovaGed.Web/Controller/LabelsController.cs"));
+        Assert.DoesNotContain("count(distinct cp.id)", labels, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("count(distinct ({ArchivalClassificationSql.Label()}))", labels, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RetentionSql_UsesClassNameAndKeepsPlanTitleSeparate()
+    {
+        var path = Path.Combine(RepoRoot(), "InovaGed.Infrastructure/Retention/RetentionJobRepository.cs");
+        var content = File.ReadAllText(path);
+        Assert.Contains("ArchivalClassificationSql.Name(\"d\", \"c\", \"pvi\")", content, StringComparison.Ordinal);
+        Assert.Contains("pv.title as plan_version_title", content, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("pvi.title", content, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void PreviewPipeline_ReusesDurableProcessingJobAndSeparatesPersistence()
+    {
+        var root = Path.Combine(RepoRoot(), "InovaGed.Infrastructure/Preview");
+        var worker = File.ReadAllText(Path.Combine(root, "PreviewWorker.cs"));
+        var queue = File.ReadAllText(Path.Combine(root, "PreviewQueue.cs"));
+        var processor = File.ReadAllText(Path.Combine(root, "PreviewJobProcessor.cs"));
+        var generator = File.ReadAllText(Path.Combine(RepoRoot(), "InovaGed.Application/Common/Preview/LibreOfficePreviewGenerator.cs"));
+        var processingWorker = File.ReadAllText(Path.Combine(RepoRoot(), "InovaGed.Infrastructure/Ged/Documents/GedProcessingWorker.cs"));
+
+        Assert.Contains("ged.processing_job", queue, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("CreateUnbounded", queue, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("DequeueAsync(_workerId, 1, \"PREVIEW\"", worker, StringComparison.Ordinal);
+        Assert.Contains("RecoverAbandonedAsync", worker, StringComparison.Ordinal);
+        Assert.Contains("PersistencePending", processor, StringComparison.Ordinal);
+        Assert.Contains("FailureUnrecorded", processor, StringComparison.Ordinal);
+        Assert.Contains("FAILURE_PERSIST", processor, StringComparison.Ordinal);
+        Assert.Contains("SupportCode={SupportCode}", processor, StringComparison.Ordinal);
+        Assert.Contains("CycleBackoff", worker, StringComparison.Ordinal);
+        Assert.DoesNotContain("BackgroundServiceExceptionBehavior", worker, StringComparison.Ordinal);
+        Assert.Contains("ConversionFailed", processor, StringComparison.Ordinal);
+        Assert.Contains("NotificationFailed", processor, StringComparison.Ordinal);
+        Assert.Contains("ExistsAsync(previewRelPath", generator, StringComparison.Ordinal);
+        Assert.Contains("ReleaseAsync", processingWorker, StringComparison.Ordinal);
+        Assert.DoesNotContain("case \"PREVIEW\":\r\n                    break;", processingWorker, StringComparison.Ordinal);
+        Assert.DoesNotContain("case \"PREVIEW\":\n                    break;", processingWorker, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RuntimeSql_DoesNotReferenceLegacyClassificationVersionItemTitle()
     {
-        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var root = RepoRoot();
         var files = Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
             .Where(path => path.Contains($"{Path.DirectorySeparatorChar}InovaGed.", StringComparison.OrdinalIgnoreCase))
+            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}InovaGed.Application.Tests{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
             .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
             .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase));
 
@@ -153,7 +226,7 @@ public sealed class PreviewStatusContractAndRepositoryTests
     [Fact]
     public void AtlasViews_DoNotUseMissingClockIcon()
     {
-        var viewsRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../InovaGed.Web/Views"));
+        var viewsRoot = Path.Combine(RepoRoot(), "InovaGed.Web/Views");
         var files = Directory.EnumerateFiles(viewsRoot, "*.cshtml", SearchOption.AllDirectories);
 
         foreach (var file in files)
@@ -162,5 +235,13 @@ public sealed class PreviewStatusContractAndRepositoryTests
             Assert.DoesNotContain("name=\"clock\"", content, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("\"clock\"", content, StringComparison.OrdinalIgnoreCase);
         }
+    }
+
+    private static string RepoRoot()
+    {
+        var current = new DirectoryInfo(AppContext.BaseDirectory);
+        while (current is not null && !File.Exists(Path.Combine(current.FullName, "InovaGed.sln")))
+            current = current.Parent;
+        return current?.FullName ?? throw new DirectoryNotFoundException("Raiz do repositório não encontrada.");
     }
 }

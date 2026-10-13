@@ -224,7 +224,7 @@ alter table ged.document add column if not exists classification_version_id uuid
 alter table ged.document add column if not exists updated_at timestamptz;
 alter table ged.document add column if not exists updated_by uuid;
 create table if not exists ged.classification_plan(id uuid primary key, tenant_id uuid not null, code text, name text);
-create table if not exists ged.classification_plan_version(id uuid primary key, tenant_id uuid not null, version_no int not null, title text);
+create table if not exists ged.classification_plan_version(id uuid primary key, tenant_id uuid not null, version_no int not null, title text, published_at timestamptz not null default now(), reg_status char(1) not null default 'A');
 create table if not exists ged.classification_plan_version_item(tenant_id uuid not null, version_id uuid not null, classification_id uuid not null, code text, name text, is_active boolean not null default true);
 create table if not exists ged.document_classification(id uuid primary key default gen_random_uuid(), tenant_id uuid not null, document_id uuid not null,
   document_version_id uuid, classification_id uuid, classification_version_id uuid, confidence numeric(5,4), method text, summary text,

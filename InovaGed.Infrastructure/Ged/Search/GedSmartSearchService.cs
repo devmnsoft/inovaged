@@ -2,6 +2,7 @@ using System.Data;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 using Dapper;
+using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Search;
 using Microsoft.Extensions.Caching.Memory;
@@ -109,7 +110,7 @@ public sealed class GedSmartSearchService : IGedSmartSearchService
         p.Add("Q", normalized, DbType.String);
         p.Add("Limit", limit, DbType.Int32);
 
-        const string sql = """
+        var sql = $"""
 WITH q AS (
     SELECT @TenantId::uuid AS tenant_id, NULLIF(@Q::text, '') AS raw_query, ('%' || NULLIF(@Q::text, '') || '%') AS pattern
 ), indexed AS (
@@ -117,12 +118,14 @@ WITH q AS (
            COALESCE(NULLIF(si.title,''), d.title, 'Documento sem título') AS title,
            COALESCE(NULLIF(si.file_name,''), latest_v.file_name, 'arquivo') AS file_name,
            COALESCE(NULLIF(si.folder_name,''), f.name, 'Sem pasta') AS folder_name, f.path AS folder_path,
-           si.document_type, NULL::text AS classification_code, COALESCE(si.classification_name, si.classification) AS classification_name,
+           si.document_type, {ArchivalClassificationSql.Code()} AS classification_code, {ArchivalClassificationSql.Name()} AS classification_name,
            COALESCE(oj.status::text, 'NONE') AS ocr_status, d.status::text AS document_status, d.created_at,
            COALESCE(d.code,'') AS code, COALESCE(d.description,'') AS description, substring(COALESCE(si.ocr_text,'') from 1 for 4000) AS ocr_limited,
-           COALESCE(si.search_text,'') AS search_text, 'INDEX'::text AS source
+           concat_ws(' ', COALESCE(si.search_text,''), {ArchivalClassificationSql.Name()}, {ArchivalClassificationSql.Code()}) AS search_text, 'INDEX'::text AS source
     FROM ged.document_search_index si
     JOIN ged.document d ON d.tenant_id=si.tenant_id AND d.id=si.document_id
+    LEFT JOIN ged.classification_plan cp ON cp.tenant_id=d.tenant_id AND cp.id=d.classification_id
+    LEFT JOIN ged.classification_plan_version_item pvi ON pvi.tenant_id=d.tenant_id AND pvi.version_id=d.classification_version_id AND pvi.classification_id=d.classification_id
     LEFT JOIN ged.folder f ON f.tenant_id=d.tenant_id AND f.id=d.folder_id
     LEFT JOIN LATERAL (SELECT vx.id, vx.file_name FROM ged.document_version vx WHERE vx.tenant_id=d.tenant_id AND vx.document_id=d.id ORDER BY vx.version_number DESC NULLS LAST, vx.created_at DESC NULLS LAST LIMIT 1) latest_v ON true
     LEFT JOIN LATERAL (SELECT j.status FROM ged.ocr_job j WHERE j.tenant_id=d.tenant_id AND j.document_version_id=COALESCE(si.document_version_id, si.version_id, d.current_version_id, latest_v.id) ORDER BY j.requested_at DESC LIMIT 1) oj ON true
@@ -133,16 +136,16 @@ WITH q AS (
     SELECT d.id AS document_id, COALESCE(NULLIF(d.current_version_id, '00000000-0000-0000-0000-000000000000'::uuid), latest_v.id, ds.version_id) AS version_id, d.folder_id,
            COALESCE(NULLIF(d.title,''), NULLIF(latest_v.file_name,''), 'Documento sem título') AS title,
            COALESCE(NULLIF(latest_v.file_name,''), NULLIF(ds.file_name,''), 'arquivo') AS file_name,
-           COALESCE(f.name,'Sem pasta') AS folder_name, f.path AS folder_path, dt.name AS document_type, cp.code AS classification_code, cp.name AS classification_name,
+           COALESCE(f.name,'Sem pasta') AS folder_name, f.path AS folder_path, dt.name AS document_type, {ArchivalClassificationSql.Code()} AS classification_code, {ArchivalClassificationSql.Name()} AS classification_name,
            COALESCE(oj.status::text, ds.ocr_status::text, 'NONE') AS ocr_status, d.status::text AS document_status, d.created_at, COALESCE(d.code,'') AS code, COALESCE(d.description,'') AS description,
            substring(COALESCE(ds.ocr_text,'') from 1 for 4000) AS ocr_limited,
-           concat_ws(' ', d.title, d.code, d.description, latest_v.file_name, ds.file_name, f.name, f.path, dt.name, cp.name, cp.code, ds.ocr_text) AS search_text, 'FALLBACK'::text AS source
+           concat_ws(' ', d.title, d.code, d.description, latest_v.file_name, ds.file_name, f.name, f.path, dt.name, {ArchivalClassificationSql.Name()}, {ArchivalClassificationSql.Code()}, ds.ocr_text) AS search_text, 'FALLBACK'::text AS source
     FROM ged.document d
     LEFT JOIN ged.document_search ds ON ds.tenant_id=d.tenant_id AND ds.document_id=d.id
     LEFT JOIN ged.folder f ON f.tenant_id=d.tenant_id AND f.id=d.folder_id
     LEFT JOIN ged.document_type dt ON dt.tenant_id=d.tenant_id AND dt.id=d.document_type_id
-    LEFT JOIN ged.document_classification dc ON dc.tenant_id=d.tenant_id AND dc.document_id=d.id AND dc.reg_status='A'
-    LEFT JOIN ged.classification_plan cp ON cp.tenant_id=d.tenant_id AND cp.id=COALESCE(dc.classification_id,d.classification_id)
+    LEFT JOIN ged.classification_plan cp ON cp.tenant_id=d.tenant_id AND cp.id=d.classification_id
+    LEFT JOIN ged.classification_plan_version_item pvi ON pvi.tenant_id=d.tenant_id AND pvi.version_id=d.classification_version_id AND pvi.classification_id=d.classification_id
     LEFT JOIN LATERAL (SELECT vx.id, vx.file_name FROM ged.document_version vx WHERE vx.tenant_id=d.tenant_id AND vx.document_id=d.id ORDER BY vx.version_number DESC NULLS LAST, vx.created_at DESC NULLS LAST LIMIT 1) latest_v ON true
     LEFT JOIN LATERAL (SELECT j.status FROM ged.ocr_job j WHERE j.tenant_id=d.tenant_id AND j.document_version_id=COALESCE(d.current_version_id, latest_v.id, ds.version_id) ORDER BY j.requested_at DESC LIMIT 1) oj ON true
     JOIN q ON q.tenant_id=d.tenant_id

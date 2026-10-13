@@ -569,6 +569,7 @@ if (builder.Configuration.GetValue<bool>("Workers:LoanOverdue:Enabled"))
 // =======================================================
 // Authorization Policies
 // =======================================================
+builder.Services.AddScoped<Microsoft.AspNetCore.Authorization.IAuthorizationHandler, DemaisSetoresAccessHandler>();
 builder.Services.AddAuthorization(options =>
 {
     static void RequireAny(Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder p, params string[] roles)
@@ -604,6 +605,11 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(AppPolicies.GedAccess, p => RequireAny(p, gedAccess));
     options.AddPolicy(AppPolicies.Ocr, p => RequireAny(p, gedAccess));
     options.AddPolicy(AppPolicies.HospitalDocumentsAccess, p => RequireAny(p, hospitalDocumentsAccess));
+    options.AddPolicy(AppPolicies.DemaisSetores, p =>
+    {
+        p.RequireAuthenticatedUser();
+        p.AddRequirements(new DemaisSetoresAccessRequirement());
+    });
     options.AddPolicy(AppPolicies.LoansView, p => RequireAny(p, loansView));
     options.AddPolicy(AppPolicies.LoansManage, p => RequireAny(p, loansManage));
     options.AddPolicy(AppPolicies.LoansRequest, p => RequireAny(p, loansRequest));

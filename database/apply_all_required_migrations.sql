@@ -3181,3 +3181,5 @@ COMMIT;
 \ir migrations/2026_10_21_smart_ged_review_admin_audit_reconciliation.sql
 \ir migrations/2026_10_22_smart_ged_admin_audit_claims.sql
 \ir migrations/2026_10_23_preview_status_requested_at_contract.sql
+\ir migrations/2026_10_24_preview_attempt_and_recovery.sql
+\ir migrations/2026_10_25_demais_setores.sql

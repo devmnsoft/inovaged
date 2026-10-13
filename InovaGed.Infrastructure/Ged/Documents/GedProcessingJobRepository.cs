@@ -35,14 +35,19 @@ ON CONFLICT DO NOTHING;
         }
     }
 
-    public async Task<IReadOnlyList<GedProcessingJobDto>> DequeueAsync(string workerId, int take, CancellationToken ct)
+    public Task<IReadOnlyList<GedProcessingJobDto>> DequeueAsync(string workerId, int take, CancellationToken ct)
+        => DequeueAsync(workerId, take, null, ct);
+
+    public async Task<IReadOnlyList<GedProcessingJobDto>> DequeueAsync(string workerId, int take, string? jobType, CancellationToken ct)
     {
-        const string sql = """
+        var sql = jobType == "PREVIEW"
+            ? """
 WITH picked AS (
   SELECT id
   FROM ged.processing_job
   WHERE reg_status='A'
     AND status='PENDING'
+    AND job_type='PREVIEW'
     AND (next_attempt_at IS NULL OR next_attempt_at <= now())
   ORDER BY priority ASC, created_at ASC
   FOR UPDATE SKIP LOCKED
@@ -54,7 +59,29 @@ FROM picked
 WHERE j.id=picked.id
 RETURNING j.id, j.tenant_id AS TenantId, j.document_id AS DocumentId, j.document_version_id AS DocumentVersionId,
           j.upload_batch_id AS UploadBatchId, j.upload_batch_item_id AS UploadBatchItemId,
-          j.job_type AS JobType, j.attempt_count AS AttemptCount, j.max_attempts AS MaxAttempts;
+          j.job_type AS JobType, j.attempt_count AS AttemptCount, j.max_attempts AS MaxAttempts,
+          j.payload::text AS PayloadJson, j.created_at AS CreatedAt;
+"""
+            : """
+WITH picked AS (
+  SELECT id
+  FROM ged.processing_job
+  WHERE reg_status='A'
+    AND status='PENDING'
+    AND job_type <> 'PREVIEW'
+    AND (next_attempt_at IS NULL OR next_attempt_at <= now())
+  ORDER BY priority ASC, created_at ASC
+  FOR UPDATE SKIP LOCKED
+  LIMIT @take
+)
+UPDATE ged.processing_job j
+SET status='PROCESSING', locked_by=@workerId, locked_at=now(), started_at=COALESCE(started_at, now()), attempt_count=attempt_count+1, updated_at=now()
+FROM picked
+WHERE j.id=picked.id
+RETURNING j.id, j.tenant_id AS TenantId, j.document_id AS DocumentId, j.document_version_id AS DocumentVersionId,
+          j.upload_batch_id AS UploadBatchId, j.upload_batch_item_id AS UploadBatchItemId,
+          j.job_type AS JobType, j.attempt_count AS AttemptCount, j.max_attempts AS MaxAttempts,
+          NULL::text AS PayloadJson, j.created_at AS CreatedAt;
 """;
         try
         {
@@ -67,6 +94,69 @@ RETURNING j.id, j.tenant_id AS TenantId, j.document_id AS DocumentId, j.document
             return Array.Empty<GedProcessingJobDto>();
         }
     }
+
+    public async Task<int> RecoverAbandonedAsync(string jobType, TimeSpan lease, CancellationToken ct)
+    {
+        const string sql = """
+UPDATE ged.processing_job
+SET status='PENDING', locked_by=NULL, locked_at=NULL, next_attempt_at=now(), updated_at=now(),
+    error_message=left(coalesce(error_message, '') || ' PROCESSING abandonado recuperado para nova tentativa.', 2000)
+WHERE reg_status='A'
+  AND job_type=@jobType
+  AND status='PROCESSING'
+  AND locked_at IS NOT NULL
+  AND locked_at < now() - (@leaseSeconds || ' seconds')::interval;
+""";
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            return await conn.ExecuteAsync(new CommandDefinition(sql, new { jobType, leaseSeconds = Math.Max(60, (int)lease.TotalSeconds) }, cancellationToken: ct));
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            _logger.LogWarning(ex, "Tabela ged.processing_job ausente; recuperação de jobs abandonados adiada.");
+            return 0;
+        }
+    }
+
+    public async Task<IReadOnlyList<GedProcessingJobDto>> ExpirePendingAsync(string jobType, TimeSpan maxAge, CancellationToken ct)
+    {
+        const string sql = """
+WITH expired AS (
+  SELECT id
+  FROM ged.processing_job
+  WHERE reg_status='A'
+    AND job_type=@jobType
+    AND status='PENDING'
+    AND created_at < now() - (@ageSeconds || ' seconds')::interval
+  FOR UPDATE SKIP LOCKED
+)
+UPDATE ged.processing_job j
+SET status='CANCELLED', finished_at=now(), error_message='Expirado sem conclusão', locked_by=NULL, locked_at=NULL, updated_at=now()
+FROM expired
+WHERE j.id=expired.id
+RETURNING j.id, j.tenant_id AS TenantId, j.document_id AS DocumentId, j.document_version_id AS DocumentVersionId,
+          j.upload_batch_id AS UploadBatchId, j.upload_batch_item_id AS UploadBatchItemId,
+          j.job_type AS JobType, j.attempt_count AS AttemptCount, j.max_attempts AS MaxAttempts,
+          NULL::text AS PayloadJson, j.created_at AS CreatedAt;
+""";
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            return (await conn.QueryAsync<GedProcessingJobDto>(new CommandDefinition(sql, new { jobType, ageSeconds = Math.Max(3600, (int)maxAge.TotalSeconds) }, cancellationToken: ct))).AsList();
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            _logger.LogWarning(ex, "Tabela ged.processing_job ausente; expiração de jobs adiada.");
+            return Array.Empty<GedProcessingJobDto>();
+        }
+    }
+
+    public Task TouchLockAsync(Guid tenantId, Guid jobId, string workerId, CancellationToken ct)
+        => ExecuteAsync("UPDATE ged.processing_job SET locked_at=now(), updated_at=now() WHERE tenant_id=@tenantId AND id=@jobId AND status='PROCESSING' AND locked_by=@workerId;", new { tenantId, jobId, workerId }, ct);
+
+    public Task ReleaseAsync(Guid tenantId, Guid jobId, string workerId, CancellationToken ct)
+        => ExecuteAsync("UPDATE ged.processing_job SET status='PENDING', locked_by=NULL, locked_at=NULL, next_attempt_at=now(), updated_at=now() WHERE tenant_id=@tenantId AND id=@jobId AND status='PROCESSING' AND locked_by=@workerId;", new { tenantId, jobId, workerId }, ct);
 
     public async Task CompleteAsync(Guid tenantId, Guid jobId, CancellationToken ct) => await ExecuteAsync("UPDATE ged.processing_job SET status='COMPLETED', finished_at=now(), locked_by=NULL, locked_at=NULL, updated_at=now() WHERE tenant_id=@tenantId AND id=@jobId;", new { tenantId, jobId }, ct);
 

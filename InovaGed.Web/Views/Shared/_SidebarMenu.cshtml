@@ -44,6 +44,12 @@
         <a asp-controller="ClassificationPlan" asp-action="RetentionRules" class="@Active("ClassificationPlan", "RetentionRules")"><i class="bi bi-clock"></i><span>Tabela de Temporalidade</span></a>
         <a asp-controller="SmartGed" asp-action="Index" class="@ActiveAny("SmartGed", "SmartAssistant")"><i class="bi bi-stars"></i><span>GED Inteligente</span></a>
     </details>
+    <details class="sidebar-group" open="@(ActiveAny("DemaisSetores") == "active" ? "open" : null)">
+        <summary>Demais setores</summary>
+        <a asp-controller="DemaisSetores" asp-action="Cadastrar" class="@Active("DemaisSetores", "Cadastrar")"><i class="bi bi-person-vcard"></i><span>Cadastrar documentos</span></a>
+        <a asp-controller="DemaisSetores" asp-action="Consultar" class="@Active("DemaisSetores", "Consultar")"><i class="bi bi-file-earmark-medical"></i><span>Consultar e analisar</span></a>
+        <a asp-controller="DemaisSetores" asp-action="Parametrizar" class="@Active("DemaisSetores", "Parametrizar")"><i class="bi bi-sliders"></i><span>Parametrizações</span></a>
+    </details>
     <details class="sidebar-group" open="@(ActiveAny("Batches", "Physical", "Labels") == "active" ? "open" : null)">
         <summary>Arquivo Físico</summary>
         <a asp-controller="Batches" asp-action="Index" class="@ActiveAny("Batches")"><i class="bi bi-collection"></i><span>Lotes</span></a>
@@ -80,6 +86,7 @@ else if (isAdministradorOphir)
 {
     <div class="sidebar-section-title">Setor</div>
     <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Documentos Hospitalares</span></a>
+    @await Component.InvokeAsync("DemaisSetoresMenu")
     <a asp-controller="Loans" asp-action="Index" class="@ActiveAny("Loans")"><i class="bi bi-arrow-left-right"></i><span>Pedidos do Setor</span></a>
     <a href="/Protocols/WorkQueue" class="@ActivePathStarts("/protocols/workqueue")"><i class="bi bi-inboxes"></i><span>Fila de Protocolos</span></a>
     <a href="/PhysicalTransit" class="@ActivePathStarts("/physicaltransit")"><i class="bi bi-box-seam"></i><span>Trânsito Físico</span></a>
@@ -89,6 +96,7 @@ else if (isArquivistaOphir)
 {
     <div class="sidebar-section-title">Solicitações</div>
     <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Documentos Hospitalares</span></a>
+    @await Component.InvokeAsync("DemaisSetoresMenu")
     <a asp-controller="Loans" asp-action="New" class="@Active("Loans", "New")"><i class="bi bi-file-earmark-plus"></i><span>Novo Pedido de Documento</span></a>
     <a asp-controller="Loans" asp-action="Index" class="@Active("Loans", "Index")"><i class="bi bi-collection"></i><span>Meus Pedidos</span></a>
     <a asp-controller="ProtocolRequests" asp-action="My" class="@Active("ProtocolRequests", "My")"><i class="bi bi-list-check"></i><span>Meus Protocolos</span></a>
@@ -98,10 +106,12 @@ else if (isHospital)
 {
     <div class="sidebar-section-title">Consulta</div>
     <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Documentos Hospitalares</span></a>
+    @await Component.InvokeAsync("DemaisSetoresMenu")
 }
 else
 {
     <div class="sidebar-section-title">Consulta</div>
     <a asp-controller="HospitalDocuments" asp-action="Index" class="@ActiveAny("HospitalDocuments")"><i class="bi bi-search-heart"></i><span>Buscar Prontuários e Documentos</span></a>
     <a asp-controller="SmartSearch" asp-action="Index" class="@ActiveAny("SmartSearch")"><i class="bi bi-stars"></i><span>Busca Inteligente</span></a>
+    @await Component.InvokeAsync("DemaisSetoresMenu")
 }

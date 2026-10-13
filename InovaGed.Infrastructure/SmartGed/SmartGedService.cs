@@ -107,8 +107,8 @@ values(@id,@tenantId,@documentId,'COMPLETED','LOCAL_RULES',@text,@Summary,@Docum
             var maxVersionRow = await c.QuerySingleOrDefaultAsync<PlanVersionInfoRow>(new CommandDefinition("""
 select id as Id, version_no as VersionNo
 from ged.classification_plan_version
-where tenant_id=@tenantId and coalesce(reg_status,'A')='A'
-order by version_no desc limit 1
+where tenant_id=@tenantId and coalesce(reg_status,'A')='A' and published_at is not null
+order by published_at desc, version_no desc limit 1
 """, new { tenantId }, cancellationToken: ct));
 
             List<PlanRow> plans = [];
@@ -400,7 +400,8 @@ where s.tenant_id = @tenantId
             {
                 var docState = await c.QuerySingleOrDefaultAsync<DocumentCurrentStateRow>(new CommandDefinition("""
 select id as Id, coalesce(status,'') as DocStatus, coalesce(reg_status,'A') as RegStatus,
-       classification_id as CurrentClassificationId, current_version_id as CurrentVersionId
+       classification_id as CurrentClassificationId, current_version_id as CurrentVersionId,
+       xmin::text::bigint as Token
 from ged.document
 where tenant_id = @tenantId and id = @DocumentId
 """, new { tenantId, DocumentId = existing.DocumentId }, cancellationToken: ct));
@@ -417,11 +418,11 @@ where tenant_id = @tenantId and id = @DocumentId
                 }
 
                 // 3. Validar classe e versão elegíveis
-                var maxVersion = await c.ExecuteScalarAsync<int?>(new CommandDefinition(
-                    "select max(version_no) from ged.classification_plan_version where tenant_id=@tenantId and coalesce(reg_status,'A')='A'",
+                var currentPlanVersionId = await c.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+                    "select " + PlanVersionSql.CurrentId("@tenantId"),
                     new { tenantId }, cancellationToken: ct));
 
-                if (maxVersion.HasValue)
+                if (currentPlanVersionId.HasValue)
                 {
                     var isEligible = await c.ExecuteScalarAsync<bool>(new CommandDefinition("""
 select exists(
@@ -432,9 +433,9 @@ select exists(
       and i.classification_id = @ClassificationId
       and coalesce(i.is_active, true)
       and coalesce(v.reg_status, 'A') = 'A'
-      and v.version_no = @maxVersion
+      and v.id = @currentPlanVersionId
 )
-""", new { tenantId, ClassificationId = existing.ClassificationId.Value, maxVersion = maxVersion.Value }, cancellationToken: ct));
+""", new { tenantId, ClassificationId = existing.ClassificationId.Value, currentPlanVersionId }, cancellationToken: ct));
 
                     if (!isEligible)
                         throw new InvalidOperationException("A classe sugerida não pertence à versão vigente do plano de classificação ou está inativa.");
@@ -455,7 +456,8 @@ select exists(
                     HasMetadata: false,
                     Metadata: null,
                     IsSystemExecution: false,
-                    SystemExecutionReason: "SMART_GED_CONFIRMED"
+                    SystemExecutionReason: "SMART_GED_CONFIRMED",
+                    ExpectedDocumentToken: docState.Token
                 );
 
                 var saveResult = await _commands.SaveManualIntegratedAsync(saveCommand, ct);
@@ -583,7 +585,8 @@ where s.tenant_id = @tenantId and s.id = @id
 
         var docState = await c.QuerySingleOrDefaultAsync<DocumentCurrentStateRow>(new CommandDefinition("""
 select id as Id, coalesce(status,'') as DocStatus, coalesce(reg_status,'A') as RegStatus,
-       classification_id as CurrentClassificationId, current_version_id as CurrentVersionId
+       classification_id as CurrentClassificationId, current_version_id as CurrentVersionId,
+       xmin::text::bigint as Token
 from ged.document
 where tenant_id = @tenantId and id = @DocumentId
 """, new { tenantId, DocumentId = existing.DocumentId }, cancellationToken: ct));
@@ -1433,12 +1436,12 @@ where s.tenant_id = @tenantId
 
         var exclusiveEndOfDay = createdBefore.HasValue ? createdBefore.Value.Date.AddDays(1) : (DateTime?)null;
 
-        var sql = new System.Text.StringBuilder("""
+        var sql = new System.Text.StringBuilder($"""
 select d.id as DocumentId,
        coalesce(d.title, 'Documento') as Document,
        a.extracted_summary as Summary,
        a.extracted_text as ExtractedText,
-       coalesce(nullif(concat_ws(' - ', pvi.code, nullif(pvi.name, '')), ''), cp.code || ' - ' || cp.name, 'Não classificado') as Classification,
+       {ArchivalClassificationSql.Label()} as Classification,
        case when exists(select 1 from ged.document_quality_issue qi where qi.tenant_id=d.tenant_id and qi.document_id=d.id and qi.status='OPEN') then 'ATENÇÃO' else 'OK' end as QualityStatus,
        v.version_number as VersionNumber,
        d.retention_status as RetentionStatus,
@@ -1533,12 +1536,12 @@ where d.tenant_id = @TenantId
         IReadOnlyList<SearchRow> pagedRows = [];
         if (pageIds.Length > 0)
         {
-            pagedRows = (await c.QueryAsync<SearchRow>(new CommandDefinition("""
+            pagedRows = (await c.QueryAsync<SearchRow>(new CommandDefinition($"""
 select d.id as DocumentId,
        coalesce(d.title, 'Documento') as Document,
        a.extracted_summary as Summary,
        a.extracted_text as ExtractedText,
-       coalesce(nullif(concat_ws(' - ', pvi.code, nullif(pvi.name, '')), ''), cp.code || ' - ' || cp.name, 'Não classificado') as Classification,
+       {ArchivalClassificationSql.Label()} as Classification,
        case when exists(select 1 from ged.document_quality_issue qi where qi.tenant_id=d.tenant_id and qi.document_id=d.id and qi.status='OPEN') then 'ATENÇÃO' else 'OK' end as QualityStatus,
        v.version_number as VersionNumber,
        d.retention_status as RetentionStatus,
@@ -1643,7 +1646,7 @@ select s.id as Id,
        s.status as Status,
        d.title as DocumentTitle,
        v.version_number as VersionNumber,
-       coalesce(nullif(concat_ws(' - ', pvi.code, nullif(pvi.name, '')), ''), cp.code || ' - ' || cp.name, 'Não classificado') as CurrentClassification,
+       {ArchivalClassificationSql.Label()} as CurrentClassification,
        s.created_at as CreatedAt,
        case
            when s.version_id is not null and d.current_version_id is not null and s.version_id <> d.current_version_id then true
@@ -1886,7 +1889,7 @@ order by {orderBy}
     }
     private sealed class AdminResolutionRow { public Guid DocumentId { get; set; } public Guid? OperationId { get; set; } public string PreviousStatus { get; set; } = ""; }
     private sealed class AdminAuditPendingRow { public string SuggestionKind { get; set; } = ""; public Guid SuggestionId { get; set; } public Guid DocumentId { get; set; } public Guid? OperationId { get; set; } public string PreviousStatus { get; set; } = ""; public string Reason { get; set; } = ""; public string Evidence { get; set; } = ""; public Guid? DecisionBy { get; set; } }
-    private sealed class DocumentCurrentStateRow { public Guid Id { get; set; } public string DocStatus { get; set; } = ""; public string RegStatus { get; set; } = ""; public Guid? CurrentClassificationId { get; set; } public Guid? CurrentVersionId { get; set; } }
+    private sealed class DocumentCurrentStateRow { public Guid Id { get; set; } public string DocStatus { get; set; } = ""; public string RegStatus { get; set; } = ""; public Guid? CurrentClassificationId { get; set; } public Guid? CurrentVersionId { get; set; } public long Token { get; set; } }
     private sealed class ClassificationRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public string? Code { get; set; } public string? Title { get; set; } public string? Reason { get; set; } public decimal Confidence { get; set; } public string Status { get; set; } = ""; public string? DocumentTitle { get; set; } public int? VersionNumber { get; set; } public string? CurrentClassification { get; set; } public DateTimeOffset? CreatedAt { get; set; } public bool IsObsolete { get; set; } public string? ReviewNotes { get; set; } public Guid? VersionId { get; set; } public Guid? PlanVersionId { get; set; } public bool IsLegacyUnproven { get; set; } public Guid? ReviewOperationId { get; set; } public DateTimeOffset? ProcessingStartedAt { get; set; } public string? PublicFailureMessage { get; set; } public DateTimeOffset? RecoveredAt { get; set; } public string? RecoveryNotes { get; set; } public Guid? AdminResolutionBy { get; set; } public DateTimeOffset? AdminResolutionAt { get; set; } public string? AdminResolutionReason { get; set; } public string? AdminResolutionEvidence { get; set; } public string? AdminResolutionAuditStatus { get; set; } }
     private sealed class RetentionRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public string? Phase { get; set; } public string? FinalDestination { get; set; } public string? TriggerEvent { get; set; } public DateTime? RetentionUntil { get; set; } public string? Reason { get; set; } public decimal Confidence { get; set; } public string Status { get; set; } = ""; public string? DocumentTitle { get; set; } public int? VersionNumber { get; set; } public string? CurrentRetention { get; set; } public DateTimeOffset? CreatedAt { get; set; } public bool IsObsolete { get; set; } public string? ReviewNotes { get; set; } public Guid? VersionId { get; set; } public Guid? PlanVersionId { get; set; } public bool IsLegacyUnproven { get; set; } public Guid? ReviewOperationId { get; set; } public DateTimeOffset? ProcessingStartedAt { get; set; } public string? PublicFailureMessage { get; set; } public DateTimeOffset? RecoveredAt { get; set; } public string? RecoveryNotes { get; set; } public Guid? AdminResolutionBy { get; set; } public DateTimeOffset? AdminResolutionAt { get; set; } public string? AdminResolutionReason { get; set; } public string? AdminResolutionEvidence { get; set; } public string? AdminResolutionAuditStatus { get; set; } }
     private sealed class IssueRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public string Type { get; set; } = ""; public string Severity { get; set; } = ""; public string Title { get; set; } = ""; public string? RecommendedAction { get; set; } public string Status { get; set; } = ""; }

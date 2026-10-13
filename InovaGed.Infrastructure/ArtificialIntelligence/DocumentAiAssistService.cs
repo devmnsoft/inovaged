@@ -129,7 +129,7 @@ join ged.classification_plan_version v on v.tenant_id=i.tenant_id and v.id=i.ver
 where i.tenant_id=@tenantId
   and coalesce(i.is_active,true)
   and coalesce(v.reg_status,'A')='A'
-  and v.version_no=(select max(version_no) from ged.classification_plan_version where tenant_id=@tenantId and coalesce(reg_status,'A')='A')
+  and v.id=(select v_current.id from ged.classification_plan_version v_current where v_current.tenant_id=@tenantId and coalesce(v_current.reg_status, 'A')='A' and v_current.published_at is not null order by v_current.published_at desc, v_current.version_no desc limit 1)
 """;
             var available = await connection.ExecuteScalarAsync<int>(new CommandDefinition(countSql, new { tenantId = caller.TenantId }, cancellationToken: ct));
             var classes = (await connection.QueryAsync<ClassOption>(new CommandDefinition("""
@@ -138,7 +138,7 @@ from ged.classification_plan_version_item i
 join ged.classification_plan_version v on v.tenant_id=i.tenant_id and v.id=i.version_id
 where i.tenant_id=@tenantId and coalesce(i.is_active,true)
   and coalesce(v.reg_status,'A')='A'
-  and v.version_no=(select max(version_no) from ged.classification_plan_version where tenant_id=@tenantId and coalesce(reg_status,'A')='A')
+  and v.id=(select v_current.id from ged.classification_plan_version v_current where v_current.tenant_id=@tenantId and coalesce(v_current.reg_status, 'A')='A' and v_current.published_at is not null order by v_current.published_at desc, v_current.version_no desc limit 1)
 order by i.code limit @limit
 """, new { tenantId = caller.TenantId, limit = CandidateLimit }, cancellationToken: ct))).ToList();
             if (classes.Count == 0) return Fail(422, "O plano de classificação vigente não possui classes ativas.");
@@ -157,7 +157,7 @@ select i.code from ged.classification_plan_version_item i
 join ged.classification_plan_version v on v.tenant_id=i.tenant_id and v.id=i.version_id
 where i.tenant_id=@tenantId and i.classification_id=@id and coalesce(i.is_active,true)
   and coalesce(v.reg_status,'A')='A'
-  and v.version_no=(select max(version_no) from ged.classification_plan_version where tenant_id=@tenantId and coalesce(reg_status,'A')='A')
+  and v.id=(select v_current.id from ged.classification_plan_version v_current where v_current.tenant_id=@tenantId and coalesce(v_current.reg_status, 'A')='A' and v_current.published_at is not null order by v_current.published_at desc, v_current.version_no desc limit 1)
 """, "AI_ARCHIVAL_APPLY", "Classificação arquivística aplicada a partir de sugestão de IA", (application, token, id, mutate, tokenCt) => documents.ApplyArchivalClassAsync(application, token, id, mutate, tokenCt), ct);
 
     private async Task<AssistResponse> ApplyCatalogAsync(ApplyCatalogCommand command, AssistCaller caller, AiTask task, string nameSql, string auditAction, string auditMessage, Func<AssistedApplicationRecord, long, Guid, bool, CancellationToken, Task<AssistedWriteResult>> write, CancellationToken ct)

@@ -60,7 +60,7 @@ JOIN LATERAL (
     WHERE pv.tenant_id = c.tenant_id
       AND COALESCE(pv.reg_status, 'A') = 'A'
       AND COALESCE(pvi.is_active, true)
-      AND pv.version_no = (SELECT max(version_no) FROM ged.classification_plan_version WHERE tenant_id = c.tenant_id AND COALESCE(reg_status, 'A') = 'A')
+      AND pv.id = (SELECT v_current.id FROM ged.classification_plan_version v_current WHERE v_current.tenant_id = c.tenant_id AND COALESCE(v_current.reg_status, 'A') = 'A' AND v_current.published_at IS NOT NULL ORDER BY v_current.published_at DESC, v_current.version_no DESC LIMIT 1)
     LIMIT 1
 ) v ON true
 WHERE c.tenant_id = @TenantId
@@ -142,7 +142,7 @@ WHERE c.tenant_id = @TenantId
       WHERE v.tenant_id = c.tenant_id
         AND COALESCE(v.reg_status, 'A') = 'A'
         AND COALESCE(i.is_active, true)
-        AND v.version_no = (SELECT max(version_no) FROM ged.classification_plan_version WHERE tenant_id = c.tenant_id AND COALESCE(reg_status, 'A') = 'A')
+        AND v.id = (SELECT v_current.id FROM ged.classification_plan_version v_current WHERE v_current.tenant_id = c.tenant_id AND COALESCE(v_current.reg_status, 'A') = 'A' AND v_current.published_at IS NOT NULL ORDER BY v_current.published_at DESC, v_current.version_no DESC LIMIT 1)
   )
 LIMIT 1;
 """, new { TenantId = _currentUser.TenantId, Id = newId.Value }, cancellationToken: ct));

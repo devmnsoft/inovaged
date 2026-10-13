@@ -3,6 +3,7 @@ namespace InovaGed.Web.Models.Classification;
 public sealed class EditClassificationVM
 {
     public Guid DocumentId { get; set; }
+    public long DocumentToken { get; set; }
     public Guid? ClassificationId { get; set; }
     public string? ClassificationLabel { get; set; }
     public bool CurrentClassificationIsSelectable { get; set; }

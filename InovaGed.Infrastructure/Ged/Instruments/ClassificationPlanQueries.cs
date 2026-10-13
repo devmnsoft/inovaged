@@ -1,6 +1,7 @@
 using System.Text;
 using Dapper;
 using InovaGed.Application.Audit;
+using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Instruments;
 using Microsoft.Extensions.Logging;
@@ -63,11 +64,11 @@ order by sort_order, code;
     public async Task<IReadOnlyList<ClassificationPlanItemSelectorRow>> ListEligibleActiveItemsAsync(Guid tenantId, CancellationToken ct)
     {
         await using var conn = await _db.OpenAsync(ct);
-        var maxVersion = await conn.ExecuteScalarAsync<int?>(new CommandDefinition(
-            "select max(version_no) from ged.classification_plan_version where tenant_id = @tenant_id and coalesce(reg_status, 'A') = 'A'",
+        var currentPlanVersionId = await conn.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+            "select " + PlanVersionSql.CurrentId("@tenant_id"),
             new { tenant_id = tenantId }, cancellationToken: ct));
 
-        if (maxVersion.HasValue)
+        if (currentPlanVersionId.HasValue)
         {
             const string versionSql = @"
 select
@@ -79,11 +80,11 @@ join ged.classification_plan_version v on v.tenant_id = i.tenant_id and v.id = i
 where i.tenant_id = @tenant_id
   and coalesce(i.is_active, true)
   and coalesce(v.reg_status, 'A') = 'A'
-  and v.version_no = @maxVersion
+  and v.id = @currentPlanVersionId
 order by i.code;
 ";
             var versionRows = await conn.QueryAsync<ClassificationPlanItemSelectorRow>(
-                new CommandDefinition(versionSql, new { tenant_id = tenantId, maxVersion = maxVersion.Value }, cancellationToken: ct));
+                new CommandDefinition(versionSql, new { tenant_id = tenantId, currentPlanVersionId }, cancellationToken: ct));
             return versionRows.AsList();
         }
 

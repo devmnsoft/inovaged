@@ -1,0 +1,66 @@
+@{
+    ViewData["Title"] = "Parametrizações";
+}
+<link rel="stylesheet" href="~/css/demais-setores.css" asp-append-version="true" />
+<main class="ds-page">
+    <h1>Parametrizações</h1>
+    <p class="ds-help">DDI permanece sem significado institucional atribuído. A visão desse setor só existe para os tipos que forem associados de propósito. O Anexo II não substitui o Anexo I.</p>
+    <section class="ds-card">
+        <h2>Setores já cadastrados</h2>
+        <ul>
+            @foreach (var department in ViewBag.Departments)
+            {
+                <li>@department.code — @department.name</li>
+            }
+        </ul>
+        <p class="ds-note">Se DDI não aparecer, não há departamento com esse código. O módulo não cria esse significado.</p>
+    </section>
+    <section class="ds-card">
+        <h2>Contrato do tipo de atendimento</h2>
+        <form method="post" action="@Url.Action("SalvarContrato")">
+            @Html.AntiForgeryToken()
+            <label>Sistema<input name="sourceSystem" required /></label>
+            <label>Código externo<input name="rawCode" required /></label>
+            <label>Tipo confirmado<select name="kind"><option>INTERNACAO</option><option>AMBULATORIAL</option><option>URGENCIA</option></select></label>
+            <button type="submit">Registrar contrato</button>
+        </form>
+    </section>
+    <section class="ds-card">
+        <h2>Acesso ao módulo</h2>
+        <form method="post" action="@Url.Action("Conceder")">
+            @Html.AntiForgeryToken()
+            <label>Usuário<input name="userId" required /></label>
+            <label>Setor<select name="sectorCode"><option>FATURAMENTO</option><option>FARMACIA</option><option>DDI</option><option>CME</option><option>SELECIONADO</option></select></label>
+            <label>Permissão<select name="permissionCode">
+                <option>CONSULTAR</option><option>CADASTRAR</option><option>CORRIGIR_VINCULO</option><option>REVISAR_EXTRACAO</option>
+                <option>CONFERIR</option><option>IMPRIMIR</option><option>COMPARTILHAR</option><option>PARAMETRIZAR</option><option>ADMINISTRAR</option>
+            </select></label>
+            <button type="submit">Conceder</button>
+        </form>
+    </section>
+    <section class="ds-card">
+        <h2>Anexo II</h2>
+        <form method="post" action="@Url.Action("HabilitarAnexoIi")">
+            @Html.AntiForgeryToken()
+            <label><input type="checkbox" name="enabled" value="true" /> Habilitar a composição física como perfil separado</label>
+            <button type="submit">Salvar perfil</button>
+        </form>
+    </section>
+    <section class="ds-card">
+        <h2>Origem de incorporação</h2>
+        <form method="post" action="@Url.Action("Origem")">
+            @Html.AntiForgeryToken()
+            <label>Origem<input name="origin" placeholder="https://sistema.exemplo" /></label>
+            <button type="submit">Cadastrar origem</button>
+        </form>
+    </section>
+    <section class="ds-card">
+        <h2>Mapeamento MV</h2>
+        <ul>
+            @foreach (var mapping in ViewBag.Mappings)
+            {
+                <li>@mapping.catalog_code — @mapping.mapping_status. @mapping.note</li>
+            }
+        </ul>
+    </section>
+</main>

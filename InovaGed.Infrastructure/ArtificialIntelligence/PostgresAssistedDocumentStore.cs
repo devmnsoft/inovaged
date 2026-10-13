@@ -48,7 +48,7 @@ set classification_id=@ClassificationId, classification_version_id=v.id, updated
 from ged.classification_plan_version v
 where d.tenant_id=@TenantId and d.id=@DocumentId and d.xmin::text::bigint=@Token and d.current_version_id=@VersionId
   and v.tenant_id=@TenantId
-  and v.id=(select id from ged.classification_plan_version where tenant_id=@TenantId order by version_no desc limit 1)
+  and v.id=(select v_current.id from ged.classification_plan_version v_current where v_current.tenant_id=@TenantId and coalesce(v_current.reg_status, 'A')='A' and v_current.published_at is not null order by v_current.published_at desc, v_current.version_no desc limit 1)
   and exists (
     select 1 from ged.classification_plan_version_item i
     where i.tenant_id=@TenantId and i.version_id=v.id and i.classification_id=@ClassificationId and coalesce(i.is_active,true))

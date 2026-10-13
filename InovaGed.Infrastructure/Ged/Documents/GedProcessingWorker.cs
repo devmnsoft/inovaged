@@ -74,8 +74,9 @@ public sealed class GedProcessingWorker : BackgroundService
                     }
                     break;
                 case "PREVIEW":
-                    // PreviewWorker/PreviewQueue existente processa o cache quando a requisição/serviço especializado enfileira detalhes de storage.
-                    break;
+                    _logger.LogWarning("Job PREVIEW devolvido ao PreviewWorker. JobId={JobId} Tenant={TenantId}", job.Id, job.TenantId);
+                    await repo.ReleaseAsync(job.TenantId, job.Id, _workerId, ct);
+                    return;
                 case "SMART_INDEX":
                     if (job.DocumentId.HasValue)
                     {

@@ -1,6 +1,7 @@
 using Dapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Branding;
 using InovaGed.Web.Security;
@@ -780,7 +781,7 @@ limit 300;
     {
         using var db = await OpenAsync();
 
-        var b = await db.QueryFirstOrDefaultAsync("""
+        var b = await db.QueryFirstOrDefaultAsync($"""
 select
     b.id,
     b.box_no,
@@ -809,14 +810,14 @@ left join ged.physical_location pl
  and pl.id=b.location_id
  and pl.reg_status='A'
 left join lateral (
- select count(distinct d.id) document_count, count(distinct cp.id) classification_count,
+ select count(distinct d.id) document_count, count(distinct ({ArchivalClassificationSql.Label()})) classification_count,
         count(distinct cp.current_retention_text) retention_count,
         count(distinct cp.confidentiality_level) confidentiality_count,
         count(distinct cp.final_destination) destination_count,
         min(d.created_at) period_start, max(d.created_at) period_end
  from ged.batch_item bi join ged.document d on d.tenant_id=bi.tenant_id and d.id=bi.document_id
- left join ged.document_classification dc on dc.tenant_id=d.tenant_id and dc.document_id=d.id and dc.reg_status='A'
- left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id=coalesce(dc.classification_id,d.classification_id)
+ left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id=d.classification_id
+ left join ged.classification_plan_version_item pvi on pvi.tenant_id=d.tenant_id and pvi.version_id=d.classification_version_id and pvi.classification_id=d.classification_id
  where bi.tenant_id=b.tenant_id and bi.box_id=b.id and bi.reg_status='A'
 ) mix on true
 where b.tenant_id=@tid
@@ -898,7 +899,7 @@ where d.tenant_id=@tid
     }
 
     private async Task<dynamic?> LoadBoxLabelAsync(System.Data.IDbConnection db, Guid boxId)
-        => await db.QueryFirstOrDefaultAsync("""
+        => await db.QueryFirstOrDefaultAsync($"""
 select b.id, b.box_no, b.label_code, b.notes, pl.location_code, pl.building, pl.room,
        pl.aisle, pl.rack, pl.shelf, pl.pallet, mix.*,
        (coalesce(mix.classification_count,0)>1 or coalesce(mix.retention_count,0)>1 or
@@ -906,23 +907,23 @@ select b.id, b.box_no, b.label_code, b.notes, pl.location_code, pl.building, pl.
         (mix.period_end::date-mix.period_start::date)>3650) as mixed_content
 from ged.box b left join ged.physical_location pl on pl.tenant_id=b.tenant_id and pl.id=b.location_id and pl.reg_status='A'
 left join lateral (
- select count(distinct d.id) document_count, count(distinct cp.id) classification_count,
+ select count(distinct d.id) document_count, count(distinct ({ArchivalClassificationSql.Label()})) classification_count,
  count(distinct cp.current_retention_text) retention_count, count(distinct cp.confidentiality_level) confidentiality_count,
  count(distinct cp.final_destination) destination_count, min(d.created_at) period_start, max(d.created_at) period_end
  from ged.batch_item bi join ged.document d on d.tenant_id=bi.tenant_id and d.id=bi.document_id
- left join ged.document_classification dc on dc.tenant_id=d.tenant_id and dc.document_id=d.id and dc.reg_status='A'
- left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id=coalesce(dc.classification_id,d.classification_id)
+ left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id=d.classification_id
+ left join ged.classification_plan_version_item pvi on pvi.tenant_id=d.tenant_id and pvi.version_id=d.classification_version_id and pvi.classification_id=d.classification_id
  where bi.tenant_id=b.tenant_id and bi.box_id=b.id and bi.reg_status='A') mix on true
 where b.tenant_id=@tid and b.id=@boxId and b.reg_status='A'
 """, new { tid = TenantId, boxId });
 
     private async Task<dynamic?> LoadDocumentLabelAsync(System.Data.IDbConnection db, Guid docId)
-        => await db.QueryFirstOrDefaultAsync("""
+        => await db.QueryFirstOrDefaultAsync($"""
 select d.id, d.code, d.title, d.status, coalesce(nullif(d.code,''),left(d.id::text,8)) as control_number,
        d.title as subject,
-       concat_ws(' - ', coalesce(pvi.code, cp.code), coalesce(pvi.name, cp.title, cp.description)) as classification,
-       coalesce(pvi.code, cp.code) as classification_code,
-       coalesce(pvi.name, cp.title, cp.description) as classification_name,
+       {ArchivalClassificationSql.Label()} as classification,
+       {ArchivalClassificationSql.Code()} as classification_code,
+       {ArchivalClassificationSql.Name()} as classification_name,
        coalesce(pvi.final_destination, cp.final_destination, '') as current_phase,
        coalesce(pvi.final_destination, cp.final_destination, '') as final_destination,
        to_char(d.created_at,'YYYY') as document_period,
@@ -1029,15 +1030,13 @@ group by b.id, b.batch_no, b.notes, b.reg_date
     {
         using var db = await OpenAsync();
         var schema = await GetClassificationPlanSchemaInfoAsync(db, ct);
-        var classificationCodeExpr = BuildClassificationCodeExpression(schema);
-        var classificationTitleExpr = BuildClassificationTitleExpression(schema);
         var finalDestinationExpr = BuildFinalDestinationExpression(schema);
         var documentClassificationJoinExpr = BuildDocumentClassificationJoinExpression(schema);
         var sql = $"""
 select 'BOX' as LabelKind, b.id as BoxId, coalesce(nullif(b.label_code,''),lpad(b.box_no::text,4,'0')) as ControlNumber,
  coalesce(pl.location_code, concat_ws('.',pl.building,pl.room,pl.aisle,pl.rack,pl.shelf,pl.pallet),'') as Location,
  case when count(distinct d.id)=0 then coalesce(b.notes,'Caixa física') when count(distinct d.title)=1 then max(d.title) else 'Conteúdo misto - revisar classificação' end as Subject,
- case when count(distinct cp.id)=1 then concat_ws(' - ',{classificationCodeExpr},{classificationTitleExpr}) when count(distinct cp.id)>1 then 'Conteúdo misto' else '' end as Classification,
+ case when count(distinct d.id)=0 then '' when count(distinct ({ArchivalClassificationSql.Label()})) > 1 then 'Conteúdo misto' else max({ArchivalClassificationSql.Label()}) end as Classification,
  case when count(distinct d.id)=0 or count(d.created_at)=0 then '' when min(d.created_at)::date=max(d.created_at)::date then to_char(min(d.created_at),'YYYY') else coalesce(concat(to_char(min(d.created_at),'YYYY'),' a ',to_char(max(d.created_at),'YYYY')),'') end as DocumentPeriod,
  {finalDestinationExpr} as CurrentPhase
 from ged.box b left join ged.physical_location pl on pl.tenant_id=b.tenant_id and pl.id=b.location_id and pl.reg_status='A'
@@ -1045,6 +1044,7 @@ left join ged.batch_item bi on bi.tenant_id=b.tenant_id and bi.box_id=b.id and b
 left join ged.document d on d.tenant_id=bi.tenant_id and d.id=bi.document_id
 left join ged.document_classification dc on dc.tenant_id=d.tenant_id and dc.document_id=d.id and dc.reg_status='A'
 left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id={documentClassificationJoinExpr}
+left join ged.classification_plan_version_item pvi on pvi.tenant_id=d.tenant_id and pvi.version_id=d.classification_version_id and pvi.classification_id={documentClassificationJoinExpr}
 where b.tenant_id=@tid and b.id=@boxId and b.reg_status='A'
 group by b.id,b.label_code,b.box_no,b.notes,pl.location_code,pl.building,pl.room,pl.aisle,pl.rack,pl.shelf,pl.pallet
 """;
@@ -1078,7 +1078,13 @@ group by b.id,b.label_code,b.box_no,b.notes,pl.location_code,pl.building,pl.room
         var activityExpr = schema.HasActivityType ? "coalesce(cp.activity_type,'FIM')" : "'FIM'";
         var sql = $"""
 select 'FOLDER' as LabelKind,d.id as DocumentId,b.id as BoxId,coalesce(nullif(d.code,''),left(d.id::text,8)) as ControlNumber,
-coalesce(d.title,'') as Subject,concat_ws(' - ',coalesce(pvi.code, {classificationCodeExpr}),coalesce(pvi.name, {classificationTitleExpr})) as Classification,
+coalesce(d.title,'') as Subject,
+case
+  when d.classification_version_id is not null and pvi.classification_id is null then '{ArchivalClassificationSql.BrokenLink}'
+  when d.classification_version_id is not null then coalesce(nullif(concat_ws(' - ', nullif(pvi.code, ''), nullif(pvi.name, '')), ''), '{ArchivalClassificationSql.Unidentified}')
+  when coalesce({documentClassificationJoinExpr}, null) is null then '{ArchivalClassificationSql.Unclassified}'
+  else coalesce(nullif(concat_ws(' - ', {classificationCodeExpr}, {classificationTitleExpr}), ''), '{ArchivalClassificationSql.Unidentified}')
+end as Classification,
 coalesce(pl.location_code,concat_ws('.',pl.building,pl.room,pl.aisle,pl.rack,pl.shelf,pl.pallet),'') as Location,
 to_char(d.created_at,'YYYY') as DocumentPeriod,{activityExpr} as Activity,coalesce(pvi.final_destination, {finalDestinationExpr}) as CurrentPhase
 from ged.document d left join ged.batch_item bi on bi.tenant_id=d.tenant_id and bi.document_id=d.id and bi.reg_status='A'

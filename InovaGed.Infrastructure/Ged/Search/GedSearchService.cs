@@ -1,5 +1,6 @@
 using System.Data;
 using Dapper;
+using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Search;
 using Microsoft.Extensions.Logging;
@@ -41,7 +42,7 @@ and (@TermLike::text is null or lower(coalesce(d.title,'')) ilike lower(@TermLik
 
             var countSql = "select count(1) from ged.document d left join ged.document_search ds on ds.tenant_id=d.tenant_id and ds.document_id=d.id left join ged.document_classification dc on dc.tenant_id=d.tenant_id and dc.document_id=d.id and dc.reg_status='A' " + baseWhere;
             var dataSql = $@"select d.id as DocumentId, ds.version_id as VersionId, d.title as Title, d.original_file_name as OriginalFileName, d.file_extension as FileExtension,
- f.name as FolderName, f.path as FolderPath, d.folder_id as FolderId, dt.name as DocumentType, cp.code as ClassificationCode, cp.name as ClassificationName,
+ f.name as FolderName, f.path as FolderPath, d.folder_id as FolderId, dt.name as DocumentType, {ArchivalClassificationSql.Code()} as ClassificationCode, {ArchivalClassificationSql.Name()} as ClassificationName,
  coalesce(ds.ocr_status::text,'PENDING') as OcrStatus, d.status::text as DocumentStatus, d.created_at as CreatedAt, u.name as CreatedByName,
  (coalesce(ds.ocr_text,'')<>'') as HasOcr, exists (select 1 from ged.document_classification_suggestion sug where sug.tenant_id=d.tenant_id and sug.document_id=d.id and sug.reg_status='A' and upper(sug.status)='PENDING') as HasSuggestion,
  coalesce(d.is_confidential,false) as IsConfidential, d.visibility as Visibility, left(coalesce(ds.ocr_text,''),200) as OcrSnippet,
@@ -53,6 +54,7 @@ and (@TermLike::text is null or lower(coalesce(d.title,'')) ilike lower(@TermLik
  left join ged.document_type dt on dt.tenant_id=d.tenant_id and dt.id=d.document_type_id
  left join ged.document_classification dc on dc.tenant_id=d.tenant_id and dc.document_id=d.id and dc.reg_status='A'
  left join ged.classification_plan cp on cp.tenant_id=d.tenant_id and cp.id=coalesce(dc.classification_id,d.classification_id)
+ left join ged.classification_plan_version_item pvi on pvi.tenant_id=d.tenant_id and pvi.version_id=d.classification_version_id and pvi.classification_id=coalesce(dc.classification_id,d.classification_id)
  left join ged.app_user u on u.tenant_id=d.tenant_id and u.id=d.created_by
  {baseWhere}
  order by {orderBy} limit @PageSize::int offset @Offset::int";

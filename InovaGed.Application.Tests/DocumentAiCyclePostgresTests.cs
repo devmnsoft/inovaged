@@ -274,7 +274,7 @@ create table if not exists ged.document_classification(
 create table if not exists ged.classification_plan(
   id uuid primary key, tenant_id uuid not null, retention_start_event text, retention_active_days int not null default 0, retention_active_months int not null default 0,
   retention_active_years int not null default 0, retention_archive_days int not null default 0, retention_archive_months int not null default 0, retention_archive_years int not null default 0);
-create table if not exists ged.classification_plan_version(id uuid primary key, tenant_id uuid not null, version_no int not null);
+create table if not exists ged.classification_plan_version(id uuid primary key, tenant_id uuid not null, version_no int not null, published_at timestamptz not null default now(), reg_status char(1) not null default 'A');
 create table if not exists ged.classification_plan_version_item(tenant_id uuid not null, version_id uuid not null, classification_id uuid not null, code text, name text, is_active boolean not null default true);
 create table if not exists ged.loan_request(id uuid primary key, tenant_id uuid not null, document_id uuid not null, notes text, reg_status char(1) not null default 'A');
 create table if not exists ged.app_audit_log(

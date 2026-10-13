@@ -16,6 +16,7 @@ public static class AppPolicies
     public const string GedAccess = "GedAccess";
     public const string Ocr = "OCR";
     public const string HospitalDocumentsAccess = "HospitalDocumentsAccess";
+    public const string DemaisSetores = "DemaisSetores";
     public const string LoansView = "LoansView";
     public const string LoansManage = "LoansManage";
     public const string LoansRequest = "LoansRequest";

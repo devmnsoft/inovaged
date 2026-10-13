@@ -1,4 +1,5 @@
 using Dapper;
+using InovaGed.Application.Classification;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Retention;
 using Microsoft.Extensions.Logging;
@@ -34,14 +35,8 @@ with base as (
       when d.classification_id is not null then 'LEGACY_PLAN'
       else null
     end as rule_source,
-    case
-      when d.classification_version_id is not null then pvi.code
-      else c.code
-    end as classification_code,
-    case
-      when d.classification_version_id is not null then coalesce(nullif(pvi.name, ''), pvi.code)
-      else c.name
-    end as classification_name,
+    {ArchivalClassificationSql.Code("d", "c", "pvi")} as classification_code,
+    {ArchivalClassificationSql.Name("d", "c", "pvi")} as classification_name,
     pv.version_no as plan_version_no,
     pv.title as plan_version_title,
     case

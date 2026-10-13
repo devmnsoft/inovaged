@@ -1,0 +1,47 @@
+.ds-page { color: #1f2933; background: #f4f6f2; }
+.ds-page h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+.ds-help, .ds-note { color: #3d4a42; font-size: .92rem; }
+.ds-context, .ds-card, .ds-panel { background: #fff; border: 1px solid #d5ddd4; border-radius: 8px; padding: 12px 14px; margin: 12px 0; }
+.ds-steps { display: flex; gap: 8px; flex-wrap: wrap; list-style: none; padding: 0; }
+.ds-steps li { border: 1px solid #c5d0c6; border-radius: 999px; padding: 4px 10px; }
+.ds-grid { display: grid; gap: 10px; }
+.ds-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.ds-page button, .ds-page input, .ds-page select, .ds-page textarea { font: inherit; }
+.ds-page button { background: #1f4d3a; color: #fff; border: 0; border-radius: 6px; padding: 8px 12px; }
+.ds-page button:disabled { background: #8aa093; }
+.ds-page input, .ds-page select, .ds-page textarea { border: 1px solid #b7c3b8; border-radius: 6px; padding: 8px; width: 100%; }
+.ds-status { padding: 8px 10px; border-left: 4px solid #1f4d3a; background: #eef5ef; }
+.ds-status[data-kind="erro"] { border-color: #8a3b2b; background: #f8ece8; }
+.ds-workspace { display: grid; grid-template-columns: minmax(220px, 28%) minmax(0, 1fr) minmax(240px, 30%); gap: 12px; min-height: 70vh; }
+.ds-viewer { min-height: 68vh; border: 1px solid #d5ddd4; background: #fff; }
+.ds-list, .ds-analysis { overflow: auto; max-height: 78vh; }
+.ds-tabs { display: none; gap: 6px; margin-bottom: 8px; }
+.ds-doc { display: block; width: 100%; text-align: left; background: #fff; color: #1f2933; border: 1px solid #d5ddd4; margin: 0 0 8px; }
+.ds-doc[aria-current="true"] { border-color: #1f4d3a; }
+.ds-badge { display: inline-block; border: 1px solid #c5d0c6; border-radius: 999px; padding: 1px 8px; font-size: .8rem; }
+.ds-drop { border: 1px dashed #1f4d3a; border-radius: 8px; padding: 16px; background: #f7faf7; }
+.ds-drop.is-over { background: #e7f2ea; }
+.ds-thumb { max-width: 120px; max-height: 90px; display: block; }
+.ds-inline { display: grid; gap: 6px; margin: 0 0 12px; }
+.ds-tabs-always { display: flex; flex-wrap: wrap; }
+.ds-analysis [data-ds-panel-body] { margin-top: 8px; }
+@media (min-width: 769px) {
+  .ds-list, .ds-analysis { resize: horizontal; min-width: 200px; }
+}
+@media (max-width: 768px) {
+  .ds-workspace { grid-template-columns: 1fr; }
+  .ds-tabs { display: flex; }
+  .ds-workspace [data-region] { display: none; }
+  .ds-workspace [data-region].is-active { display: block; }
+  .ds-list, .ds-analysis, .ds-viewer { max-height: none; min-height: 50vh; }
+}
+@media (min-width: 1366px) {
+  .ds-page h1 { font-size: 1.6rem; }
+}
+@media (min-width: 1920px) {
+  .ds-workspace { grid-template-columns: minmax(280px, 24%) minmax(0, 1fr) minmax(320px, 28%); }
+}
+@media (max-width: 360px) {
+  .ds-page { padding: 8px; }
+  .ds-actions, .ds-tabs { flex-direction: column; }
+}

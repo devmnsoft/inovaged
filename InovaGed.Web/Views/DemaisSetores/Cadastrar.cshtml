@@ -1,0 +1,59 @@
+@{
+    ViewData["Title"] = "Cadastrar documentos";
+    var codes = (System.Collections.Generic.IReadOnlyList<string>)(ViewBag.Codes ?? Array.Empty<string>());
+}
+<link rel="stylesheet" href="~/css/demais-setores.css" asp-append-version="true" />
+<main class="ds-page" data-ds-register data-find-url="@Url.Action("BuscarPaciente")" data-send-url="@Url.Action("Enviar")" data-link-url="@Url.Action("VincularExistente")" data-retry-url="@Url.Action("Reenfileirar")" data-open-url="@Url.Action("Consultar")">
+    @Html.AntiForgeryToken()
+    <h1>Cadastrar documentos</h1>
+    <p class="ds-help">O arquivo entra no GED já existente. O nome padronizado vem do catálogo. A integração não é substituída por dados simulados.</p>
+    <ol class="ds-steps"><li>1. Paciente e atendimento</li><li>2. Documentos</li><li>3. Confirmação</li></ol>
+    <section class="ds-card">
+        <h2>Paciente e atendimento</h2>
+        <form data-ds-patient-form class="ds-grid">
+            @Html.AntiForgeryToken()
+            <label>Código do paciente / ID do paciente<input name="externalCode" autocomplete="off" required /></label>
+            <label>Sistema de origem<input name="sourceSystem" value="MV" /></label>
+            <label>Unidade de origem<input name="sourceUnit" /></label>
+            <div class="ds-actions"><button type="button" data-ds-find>Consultar</button></div>
+        </form>
+        <p data-ds-context class="ds-note">Nenhum paciente confirmado.</p>
+        <label>Atendimento<select data-ds-encounters><option value="">Selecione depois da consulta</option></select></label>
+        <p class="ds-note">I, A e U só aparecem como internação, ambulatorial ou urgência depois que o contrato da origem for parametrizado.</p>
+    </section>
+    <section class="ds-card">
+        <h2>Documentos</h2>
+        <label>Nome padronizado
+            <select data-ds-catalog>
+                <option value="">Escolha no catálogo</option>
+                @foreach (var code in codes)
+                {
+                    var item = InovaGed.Application.Sectors.SectorCatalog.Find(code);
+                    if (item is not null)
+                    {
+                        <option value="@item.Code">@item.Order.ToString("00") — @item.Name</option>
+                    }
+                }
+            </select>
+        </label>
+        <label>Setor comum<input name="sectorCode" placeholder="FATURAMENTO, FARMACIA, CME ou DDI" /></label>
+        <label>Data comum do documento<input name="documentDate" type="date" /></label>
+        <label>Emissor clínico<input name="issuerName" /></label>
+        <label>Responsável pela informação<input name="informationOwner" /></label>
+        <label>Observação<textarea name="notes"></textarea></label>
+        <label><input type="checkbox" name="confirmAnotherOccurrence" /> Confirmo outra ocorrência do mesmo tipo, não uma nova versão.</label>
+        <div class="ds-drop" data-ds-drop tabindex="0">Arraste os arquivos para esta área ou escolha abaixo. A prévia aparece quando o navegador consegue mostrá-la.</div>
+        <label>Arquivos<input type="file" data-ds-files multiple accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" /></label>
+        <div class="ds-actions"><button type="button" data-ds-apply>Aplicar valores comuns aos arquivos</button></div>
+        <ul data-ds-file-list></ul>
+        <p class="ds-note">Arquivos acima de 20 MB devem usar o upload em partes do GED e depois o vínculo do documento confirmado. Office fica sujeito à conversão existente; o OCR não é um segundo pipeline.</p>
+    </section>
+    <section class="ds-card">
+        <h2>Confirmação</h2>
+        <div class="ds-actions"><button type="button" data-ds-send disabled="disabled">Gravar no GED</button>
+            <a data-ds-open href="@Url.Action("Consultar")">Abrir documentos deste atendimento</a></div>
+        <p data-ds-status class="ds-status" hidden></p>
+        <ul data-ds-results></ul>
+    </section>
+</main>
+<script src="~/js/demais-setores.js" asp-append-version="true"></script>
