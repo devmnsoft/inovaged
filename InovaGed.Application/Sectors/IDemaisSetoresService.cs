@@ -50,7 +50,7 @@ public sealed record SectorReviewRequest(Guid TenantId, Guid UserId, bool IsFull
 public sealed record SectorCorrectionRequest(Guid TenantId, Guid UserId, bool IsFullAdmin, Guid LinkId, Guid ToEncounterId, string Reason, string Ip, string UserAgent);
 public sealed record SectorSearchRequest(Guid TenantId, Guid UserId, bool IsFullAdmin, Guid EncounterId, string Term, bool IncludeOtherEncounters, int Page = 0);
 public sealed record SectorSearchPage(IReadOnlyList<SectorSearchHit> Hits, int Total, int Page, int PageSize);
-public sealed record SectorSearchHit(Guid DocumentId, Guid VersionId, string Name, string Excerpt, int? Page, string EncounterCode, string TextOrigin);
+public sealed record SectorSearchHit(Guid DocumentId, Guid VersionId, string Name, string Excerpt, int? Page, string EncounterCode, string TextOrigin, Guid EncounterId);
 public sealed record SectorFieldReviewRequest(Guid TenantId, Guid UserId, bool IsFullAdmin, Guid FieldId, string Status, string? Value, string Ip, string UserAgent);
 public sealed record SectorDeliveryRequest(Guid TenantId, Guid UserId, bool IsFullAdmin, Guid EncounterId, string ProfileCode, string? Recipient, IReadOnlyList<Guid> LinkIds, string Ip, string UserAgent);
 public sealed record SectorDeliveryResult(bool Recorded, string Status, string Message, IReadOnlyList<string> Blockers);

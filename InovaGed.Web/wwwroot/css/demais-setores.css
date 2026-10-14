@@ -13,7 +13,11 @@
 .ds-viewer { width: 100%; }
 .ds-tabs { overflow: auto; }
 .ds-page button { background: #1f4d3a; color: #fff; border: 0; border-radius: 6px; padding: 8px 12px; }
-.ds-page button:disabled { background: #8aa093; }
+.ds-page button:disabled { background: #8aa093; color: #f4f6f2; }
+.ds-actions a { display: inline-flex; align-items: center; background: #1f4d3a; color: #fff; border-radius: 6px; padding: 8px 12px; text-decoration: none; }
+.ds-page a[aria-disabled="true"] { color: #24312b; background: #d5ddd6; border-radius: 6px; padding: 8px 12px; text-decoration: none; cursor: not-allowed; }
+.ds-pager { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.ds-page input::placeholder, .ds-page textarea::placeholder { color: #3d4a42; opacity: 1; }
 .ds-page input, .ds-page select, .ds-page textarea { border: 1px solid #b7c3b8; border-radius: 6px; padding: 8px; width: 100%; }
 .ds-status { padding: 8px 10px; border-left: 4px solid #1f4d3a; background: #eef5ef; }
 .ds-status[data-kind="erro"] { border-color: #8a3b2b; background: #f8ece8; }

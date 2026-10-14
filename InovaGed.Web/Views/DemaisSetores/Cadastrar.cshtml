@@ -19,7 +19,7 @@
             <div class="ds-actions"><button type="button" data-ds-find>Consultar</button></div>
         </form>
         <p data-ds-context class="ds-note">Nenhum paciente confirmado.</p>
-        <label>Atendimento<select data-ds-encounters><option value="">Selecione depois da consulta</option></select></label>
+        <label>Atendimento<select data-ds-encounters><option value="">Selecione um atendimento</option></select></label>
         <p class="ds-note">I, A e U só aparecem como internação, ambulatorial ou urgência depois que o contrato da origem for parametrizado.</p>
     </section>
     <section class="ds-card">
@@ -48,7 +48,7 @@
     <section class="ds-card">
         <h2>Confirmação</h2>
         <div class="ds-actions"><button type="button" data-ds-send disabled="disabled">Gravar no GED</button>
-            <a data-ds-open href="@Url.Action("Consultar")">Abrir documentos deste atendimento</a></div>
+            <a data-ds-open aria-disabled="true">Abrir documentos deste atendimento</a></div>
         <p data-ds-status class="ds-status" hidden></p>
         <ul data-ds-results></ul>
     </section>

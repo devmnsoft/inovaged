@@ -293,7 +293,7 @@ where l.tenant_id=@tenantId and l.version_id=@versionId and l.reg_status='A'
         if (!await _sectors.HasPermissionAsync(_currentUser.TenantId, _currentUser.UserId, Admin, SectorPermissions.Consultar, ct))
             return Forbid();
         var result = await _sectors.SearchAsync(new SectorSearchRequest(_currentUser.TenantId, _currentUser.UserId, Admin, encounterId, term, includeOtherEncounters, page), ct);
-        return Json(new { mode = "literal", message = "A busca é literal no atendimento selecionado. Sinônimos cadastrados ampliam o termo. Análise semântica não foi executada e nenhuma página foi estimada.", hits = result.Hits, total = result.Total, page = result.Page, pageSize = result.PageSize });
+        return Json(SearchPayload(result, "A busca é literal no atendimento selecionado. Sinônimos cadastrados ampliam o termo. Análise semântica não foi executada e nenhuma página foi estimada."));
     }
 
     [HttpPost, ValidateAntiForgeryToken]
@@ -493,13 +493,20 @@ on conflict (tenant_id, user_id, sector_code, permission_code) do update set reg
         if (!await SessionAllowsVersionAsync(session, versionId, ct))
             return Html(403, "Esta sessão não inclui o texto pedido.");
         await using var conn = await _db.OpenAsync(ct);
-        var text = await conn.ExecuteScalarAsync<string?>(new CommandDefinition("""
+        var text = await conn.ExecuteScalarAsync<string?>(new CommandDefinition($"""
 select coalesce(v.ocr_text, s.ocr_text, v.content_text, '')
 from ged.sector_document_link l
 join ged.document_version v on v.tenant_id=l.tenant_id and v.id=l.version_id
 left join ged.document_search s on s.tenant_id=l.tenant_id and s.version_id=l.version_id
-where l.tenant_id=@tenantId and l.version_id=@versionId and l.reg_status='A'
-""", new { tenantId = session.TenantId, versionId }, cancellationToken: ct));
+where l.version_id=@askedVersion
+{SectorSessionScope.LinkFilter}
+""", new
+        {
+            tenantId = session.TenantId, patientId = session.PatientId, encounterId = session.EncounterId, expand = false,
+            catalog = session.CatalogCode, documentId = session.DocumentId,
+            versionId = session.Mode == "documento" ? session.VersionId : null,
+            allowedCatalog = session.AllowedCatalogCodes ?? [], askedVersion = versionId
+        }, cancellationToken: ct));
         if (string.IsNullOrWhiteSpace(text))
             return Html(200, "Ainda não há texto desta versão. A leitura pode estar na fila, ter falhado ou não se aplicar a este arquivo. Nada foi inventado.");
         return Html(200, text);
@@ -515,7 +522,7 @@ where l.tenant_id=@tenantId and l.version_id=@versionId and l.reg_status='A'
         if (!await CommandAuthorizedAsync(publicId, ct)) return Html(403, "O comando não apresentou o token desta abertura.");
         ApplyFrameHeaders(session);
         var result = await SessionSearchAsync(session, term, includeOtherEncounters, page, ct);
-        return Json(new { mode = "literal", message = "Busca literal no escopo da abertura. Análise semântica não foi executada. Outros atendimentos só entram quando a navegação entre episódios está permitida.", hits = result.Hits, total = result.Total, page = result.Page, pageSize = result.PageSize });
+        return Json(SearchPayload(result, "Busca literal no escopo da abertura. Análise semântica não foi executada. Outros atendimentos só entram quando a navegação entre episódios está permitida."));
     }
 
     [HttpPost("/DemaisSetores/ConsultaIntegrada/{publicId:guid}/atendimento")]
@@ -737,28 +744,28 @@ select l.id as LinkId, l.document_id as DocumentId, l.version_id as VersionId, t
        l.information_owner as InformationOwner, l.physical_evidence as PhysicalEvidence, l.sector_code as SectorCode,
        t.physical_original as RequiresPhysical
 from ged.sector_document_link l
-join ged.sector_document_type t on t.tenant_id=l.tenant_id and t.catalog_code=l.catalog_code
-join ged.document d on d.tenant_id=l.tenant_id and d.id=l.document_id and coalesce(d.reg_status,'A')='A'
-where l.tenant_id=@tenantId and l.encounter_id=@encounterId and l.patient_id=@patientId and l.reg_status='A'
-  and (@catalog is null or l.catalog_code=@catalog)
-  and (@documentId is null or l.document_id=@documentId)
-  and (@versionId is null or l.version_id=@versionId)
-order by t.catalog_order, l.created_at
-""", new { tenantId = session.TenantId, encounterId = session.EncounterId, patientId = session.PatientId, catalog = session.CatalogCode, documentId = session.DocumentId, versionId = session.Mode == "documento" ? session.VersionId : null }, cancellationToken: ct))).ToArray();
+join ged.sector_document_type t on t.tenant_id=l.tenant_id and t.catalog_code=l.catalog_code and t.active
+where true
+{SectorSessionScope.LinkFilter}
+order by t.catalog_order, l.id
+""", SectorSessionScope.Args(session), cancellationToken: ct))).ToArray();
     }
 
     private async Task<bool> SessionAllowsVersionAsync(SectorSessionAccess session, Guid versionId, CancellationToken ct)
     {
         await using var conn = await _db.OpenAsync(ct);
-        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
+        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition($"""
 select exists(
   select 1 from ged.sector_document_link l
-  join ged.document d on d.tenant_id=l.tenant_id and d.id=l.document_id and coalesce(d.reg_status,'A')='A'
-  where l.tenant_id=@tenantId and l.encounter_id=@encounterId and l.patient_id=@patientId and l.version_id=@versionId and l.reg_status='A'
-    and (@catalog is null or l.catalog_code=@catalog)
-    and (@documentId is null or l.document_id=@documentId)
-    and (@lockedVersion is null or l.version_id=@lockedVersion))
-""", new { tenantId = session.TenantId, encounterId = session.EncounterId, patientId = session.PatientId, versionId, catalog = session.CatalogCode, documentId = session.DocumentId, lockedVersion = session.Mode == "documento" ? session.VersionId : null }, cancellationToken: ct));
+  where l.version_id=@askedVersion
+  {SectorSessionScope.LinkFilter})
+""", new
+        {
+            tenantId = session.TenantId, patientId = session.PatientId, encounterId = session.EncounterId, expand = false,
+            catalog = session.CatalogCode, documentId = session.DocumentId,
+            versionId = session.Mode == "documento" ? session.VersionId : null,
+            allowedCatalog = session.AllowedCatalogCodes ?? [], askedVersion = versionId
+        }, cancellationToken: ct));
     }
 
     private async Task<SectorContextRow?> SessionContextAsync(SectorSessionAccess session, CancellationToken ct)
@@ -835,13 +842,11 @@ select f.id as FieldId, f.link_id as LinkId, f.version_id as VersionId, f.contex
        f.confirmed_value as ConfirmedValue, f.evidence_excerpt as Evidence, f.page_number as PageNumber, f.status as Status,
        f.mechanism as Mechanism, f.source_kind as SourceKind
 from ged.sector_extracted_field f
-join ged.sector_document_link l on l.id=f.link_id and l.tenant_id=f.tenant_id and l.reg_status='A'
-where f.tenant_id=@tenantId and l.encounter_id=@encounterId and l.patient_id=@patientId
-  and (@catalog is null or l.catalog_code=@catalog)
-  and (@documentId is null or l.document_id=@documentId)
-  and (@versionId is null or f.version_id=@versionId)
+join ged.sector_document_link l on l.id=f.link_id and l.tenant_id=f.tenant_id
+where f.version_id=l.version_id
+{SectorSessionScope.LinkFilter}
 order by f.updated_at desc
-""", new { tenantId = session.TenantId, encounterId = session.EncounterId, patientId = session.PatientId, catalog = session.CatalogCode, documentId = session.DocumentId, versionId = session.Mode == "documento" ? session.VersionId : null }, cancellationToken: ct))).ToArray();
+""", SectorSessionScope.Args(session), cancellationToken: ct))).ToArray();
     }
 
     private async Task<IReadOnlyList<SectorFindingRow>> SessionFindingsAsync(SectorSessionAccess session, CancellationToken ct)
@@ -851,13 +856,11 @@ order by f.updated_at desc
 select f.id as FindingId, f.description as Description, f.category as Category, f.evidence_excerpt as Evidence,
        f.page_number as PageNumber, f.review_status as Status, l.version_id as VersionId
 from ged.sector_finding f
-join ged.sector_document_link l on l.id=f.link_id and l.tenant_id=f.tenant_id and l.reg_status='A'
-where f.tenant_id=@tenantId and f.encounter_id=@encounterId and l.patient_id=@patientId
-  and (@catalog is null or l.catalog_code=@catalog)
-  and (@documentId is null or l.document_id=@documentId)
-  and (@versionId is null or l.version_id=@versionId)
+join ged.sector_document_link l on l.id=f.link_id and l.tenant_id=f.tenant_id
+where f.tenant_id=@tenantId
+{SectorSessionScope.LinkFilter}
 order by f.updated_at desc
-""", new { tenantId = session.TenantId, encounterId = session.EncounterId, patientId = session.PatientId, catalog = session.CatalogCode, documentId = session.DocumentId, versionId = session.Mode == "documento" ? session.VersionId : null }, cancellationToken: ct))).ToArray();
+""", SectorSessionScope.Args(session), cancellationToken: ct))).ToArray();
     }
 
     private async Task<IReadOnlyList<SectorChecklistRow>> SessionChecklistAsync(SectorSessionAccess session, CancellationToken ct)
@@ -871,11 +874,20 @@ order by f.updated_at desc
             "select id as Id, enabled as Enabled from ged.sector_profile where tenant_id=@tenantId and code='ANEXO_I' order by version_no desc limit 1",
             new { tenantId = session.TenantId }, cancellationToken: ct));
         var types = await conn.QueryAsync<(string Code, string Name, string Applicability, int Order)>(new CommandDefinition(
-            "select catalog_code as Code, name as Name, applicability as Applicability, catalog_order as Order from ged.sector_document_type where tenant_id=@tenantId and active and (@catalog is null or catalog_code=@catalog) order by catalog_order",
-            new { tenantId = session.TenantId, catalog = session.CatalogCode }, cancellationToken: ct));
-        var received = (await conn.QueryAsync<string>(new CommandDefinition(
-            "select distinct catalog_code from ged.sector_document_link where tenant_id=@tenantId and encounter_id=@encounterId and patient_id=@patientId and reg_status='A'",
-            new { tenantId = session.TenantId, encounterId = session.EncounterId, patientId = session.PatientId }, cancellationToken: ct))).ToHashSet(StringComparer.Ordinal);
+            """
+select catalog_code as Code, name as Name, applicability as Applicability, catalog_order as Order
+from ged.sector_document_type
+where tenant_id=@tenantId and active and (@catalog is null or catalog_code=@catalog)
+  and (cardinality(@allowedCatalog)=0 or catalog_code = any(@allowedCatalog))
+order by catalog_order
+""",
+            SectorSessionScope.Args(session), cancellationToken: ct));
+        var received = (await conn.QueryAsync<string>(new CommandDefinition($"""
+select distinct l.catalog_code
+from ged.sector_document_link l
+where true
+{SectorSessionScope.LinkFilter}
+""", SectorSessionScope.Args(session), cancellationToken: ct))).ToHashSet(StringComparer.Ordinal);
         var conditions = new SectorConditions(encounter.Surgery, encounter.Opme, encounter.HighCost, encounter.Discharged.HasValue);
         return types.Select(type =>
         {
@@ -898,8 +910,8 @@ order by s.admitted_at desc nulls last
 
     private async Task<SectorSearchPage> SessionSearchAsync(SectorSessionAccess session, string? term, bool includeOtherEncounters, int page, CancellationToken ct)
     {
-        const int pageSize = 20;
-        page = Math.Clamp(page, 0, 50);
+        const int pageSize = SectorSessionScope.PageSize;
+        page = SectorSessionScope.NormalizePage(page);
         term = term?.Trim();
         if (string.IsNullOrWhiteSpace(term) || term.Length < 2)
             return new SectorSearchPage([], 0, page, pageSize);
@@ -913,41 +925,51 @@ where t.tenant_id=@tenantId and t.active and (@catalog is null or t.catalog_code
         var patterns = SectorSearchTerms.Patterns(term, catalog).ToArray();
         var args = new
         {
-            tenantId = session.TenantId, patientId = session.PatientId, encounterId = session.EncounterId, publicId = session.PublicId,
+            tenantId = session.TenantId, patientId = session.PatientId, encounterId = session.EncounterId,
             catalog = session.CatalogCode, documentId = session.DocumentId, versionId = session.Mode == "documento" ? session.VersionId : null,
-            expand, patterns, take = pageSize, skip = page * pageSize
+            allowedCatalog = session.AllowedCatalogCodes ?? [], expand, patterns, take = pageSize, skip = page * pageSize
         };
-        var filter = """
+        var filter = $"""
 from ged.sector_document_link l
 join ged.sector_encounter e on e.tenant_id=l.tenant_id and e.id=l.encounter_id and e.patient_id=l.patient_id
-join ged.sector_document_type t on t.tenant_id=l.tenant_id and t.catalog_code=l.catalog_code
-join ged.document d on d.tenant_id=l.tenant_id and d.id=l.document_id and coalesce(d.reg_status,'A')='A'
+join ged.sector_document_type t on t.tenant_id=l.tenant_id and t.catalog_code=l.catalog_code and t.active
 join ged.document_version v on v.tenant_id=l.tenant_id and v.id=l.version_id
-join ged.sector_open_session s on s.public_id=@publicId and s.tenant_id=l.tenant_id
-join ged.sector_integration i on i.id=s.integration_id and i.tenant_id=s.tenant_id and i.active
 left join ged.document_search ds on ds.tenant_id=l.tenant_id and ds.version_id=l.version_id
-where l.tenant_id=@tenantId and l.patient_id=@patientId and l.reg_status='A'
-  and ((not @expand and l.encounter_id=@encounterId) or (@expand and e.patient_id=@patientId))
-  and (@catalog is null or l.catalog_code=@catalog)
-  and (@documentId is null or l.document_id=@documentId)
-  and (@versionId is null or l.version_id=@versionId)
-  and (cardinality(i.catalog_codes)=0 or l.catalog_code = any(i.catalog_codes))
+where true
+{SectorSessionScope.LinkFilter}
   and coalesce(v.ocr_text, ds.ocr_text, v.content_text, '') ilike any(@patterns)
 """;
         var total = await conn.ExecuteScalarAsync<int>(new CommandDefinition("select count(*) " + filter, args, cancellationToken: ct));
-        var rows = await conn.QueryAsync<(Guid DocumentId, Guid VersionId, string Name, string Text, string EncounterCode, string? OcrStatus)>(new CommandDefinition("""
+        var rows = await conn.QueryAsync<(Guid DocumentId, Guid VersionId, string Name, string Text, string EncounterCode, string? OcrStatus, Guid EncounterId)>(new CommandDefinition("""
 select l.document_id as DocumentId, l.version_id as VersionId, t.name as Name,
        coalesce(v.ocr_text, ds.ocr_text, v.content_text, '') as Text,
-       e.external_code as EncounterCode, null as OcrStatus
-""" + filter + " order by l.document_date nulls last limit @take offset @skip", args, cancellationToken: ct));
+       e.external_code as EncounterCode, null as OcrStatus, e.id as EncounterId
+""" + filter + " order by l.document_date nulls last, t.catalog_order, l.id limit @take offset @skip", args, cancellationToken: ct));
         var hits = rows.Select(row =>
         {
             var index = SectorSearchTerms.FirstIndex(row.Text, patterns);
             var start = Math.Max(0, index - 60);
             var excerpt = index < 0 ? "" : row.Text.Substring(start, Math.Min(180, row.Text.Length - start));
-            return new SectorSearchHit(row.DocumentId, row.VersionId, row.Name, excerpt, SectorTextLocator.PageAt(row.Text, index), row.EncounterCode, "texto da versão no escopo da abertura");
+            return new SectorSearchHit(row.DocumentId, row.VersionId, row.Name, excerpt, SectorTextLocator.PageAt(row.Text, index), row.EncounterCode, "texto da versão no escopo da abertura", row.EncounterId);
         }).ToArray();
         return new SectorSearchPage(hits, total, page, pageSize);
+    }
+
+    private static object SearchPayload(SectorSearchPage result, string message)
+    {
+        var reachable = (SectorSessionScope.MaxPageIndex + 1L) * result.PageSize;
+        return new
+        {
+            mode = "literal",
+            message,
+            hits = result.Hits,
+            total = result.Total,
+            page = result.Page,
+            pageSize = result.PageSize,
+            pageLimit = SectorSessionScope.MaxPageIndex,
+            reachable,
+            truncated = result.Total > reachable
+        };
     }
 
     private static string[] SplitList(string? value)

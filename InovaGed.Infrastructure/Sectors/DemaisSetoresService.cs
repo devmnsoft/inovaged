@@ -528,8 +528,8 @@ values (gen_random_uuid(), @TenantId, @LinkId, @fromId, @ToEncounterId, @Reason,
     public async Task<SectorSearchPage> SearchAsync(SectorSearchRequest request, CancellationToken ct)
     {
         var term = request.Term?.Trim();
-        const int pageSize = 20;
-        var page = Math.Clamp(request.Page, 0, 50);
+        const int pageSize = SectorSessionScope.PageSize;
+        var page = SectorSessionScope.NormalizePage(request.Page);
         if (string.IsNullOrWhiteSpace(term) || term.Length < 2)
             return new SectorSearchPage([], 0, page, pageSize);
         var codes = await VisibleCatalogCodesAsync(request.TenantId, request.UserId, request.IsFullAdmin, ct);
@@ -556,12 +556,12 @@ where l.tenant_id=@tenantId and l.reg_status='A' and t.catalog_code = any(@codes
 """;
         var args = new { tenantId = request.TenantId, userId = request.UserId, permissionCode = "Documents.View", write = false, hour = DateTime.UtcNow.Hour, encounterId = request.EncounterId, include = request.IncludeOtherEncounters, codes = codes.ToArray(), patterns, take = pageSize, skip = page * pageSize };
         var total = await conn.ExecuteScalarAsync<int>(new CommandDefinition("select count(*) " + filter, args, cancellationToken: ct));
-        var rows = await conn.QueryAsync<(Guid DocumentId, Guid VersionId, string Name, string Text, string EncounterCode, string? OcrStatus, DateOnly? DocumentDate)>(new CommandDefinition($"""
+        var rows = await conn.QueryAsync<(Guid DocumentId, Guid VersionId, string Name, string Text, string EncounterCode, string? OcrStatus, DateOnly? DocumentDate, Guid EncounterId)>(new CommandDefinition($"""
 select l.document_id as DocumentId, l.version_id as VersionId, t.name as Name,
        coalesce(v.ocr_text, s.ocr_text, v.content_text, '') as Text,
-       e.external_code as EncounterCode, oj.status as OcrStatus, l.document_date as DocumentDate
+       e.external_code as EncounterCode, oj.status as OcrStatus, l.document_date as DocumentDate, e.id as EncounterId
 {filter}
-order by l.document_date nulls last, t.catalog_order
+order by l.document_date nulls last, t.catalog_order, l.id
 limit @take offset @skip
 """, args, cancellationToken: ct));
 
@@ -571,7 +571,7 @@ limit @take offset @skip
             var start = Math.Max(0, index - 60);
             var excerpt = index < 0 ? "" : row.Text.Substring(start, Math.Min(180, row.Text.Length - start));
             var origin = string.Equals(row.OcrStatus, "COMPLETED", StringComparison.OrdinalIgnoreCase) ? "OCR existente" : "texto da versão, origem não separada";
-            return new SectorSearchHit(row.DocumentId, row.VersionId, row.Name, excerpt, SectorTextLocator.PageAt(row.Text, index), row.EncounterCode, origin);
+            return new SectorSearchHit(row.DocumentId, row.VersionId, row.Name, excerpt, SectorTextLocator.PageAt(row.Text, index), row.EncounterCode, origin, row.EncounterId);
         }).ToArray();
         return new SectorSearchPage(hits, total, page, pageSize);
     }

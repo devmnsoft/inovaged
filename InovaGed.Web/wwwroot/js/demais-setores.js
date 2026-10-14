@@ -19,6 +19,40 @@
     return root.querySelector("[name='" + name + "']");
   }
 
+  function formatWhen(value, empty) {
+    if (!value) return empty;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+
+  function encounterLabel(item) {
+    return item.external_code + " · " + (item.raw_kind || "sem código") + " · " + (item.kind || "tipo não mapeado")
+      + " · " + formatWhen(item.admitted_at, "entrada não informada")
+      + " · " + formatWhen(item.discharged_at, "sem alta")
+      + " · " + (item.status || "situação não informada");
+  }
+
+  function resetEncounter(placeholder) {
+    current = null;
+    send.disabled = true;
+    const list = root.querySelector("[data-ds-encounters]");
+    list.replaceChildren();
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = placeholder;
+    list.appendChild(option);
+    const open = root.querySelector("[data-ds-open]");
+    if (open) {
+      open.removeAttribute("href");
+      open.setAttribute("aria-disabled", "true");
+    }
+  }
+
+  root.querySelector("[data-ds-open]")?.addEventListener("click", function (event) {
+    if (event.currentTarget.getAttribute("aria-disabled") === "true") event.preventDefault();
+  });
+
   async function confirmContextChange() {
     if (files.length === 0) return true;
     return window.confirm("Trocar o paciente ou o atendimento descarta os arquivos preparados nesta tela. Eles ainda não foram enviados.");
@@ -32,40 +66,50 @@
     const controller = new AbortController();
     root._finder?.abort();
     root._finder = controller;
-    current = null;
-    send.disabled = true;
+    resetEncounter("Carregando atendimentos…");
     setStatus("Consultando o paciente na origem informada.", "info");
     const body = new FormData(root.querySelector("[data-ds-patient-form]"));
     try {
       const response = await fetch(root.dataset.findUrl, { method: "POST", body, headers: { RequestVerificationToken: token }, signal: controller.signal });
+      const type = response.headers.get("content-type") || "";
+      if (!type.includes("json")) throw new Error("not-json");
       const payload = await response.json();
       if (myGeneration !== generation) return;
-      if (payload.status !== "Found") {
-        setStatus(payload.message || "A consulta não retornou paciente.", "erro");
-        root.querySelector("[data-ds-encounters]").replaceChildren();
+      if (payload.status !== "Found" || !payload.patient) {
+        resetEncounter("Selecione um atendimento");
+        root.querySelector("[data-ds-context]").textContent = payload.status === "NotFound"
+          ? (payload.message || "Paciente não encontrado.")
+          : payload.status === "Unavailable"
+            ? (payload.message || "A origem está indisponível.")
+            : payload.status === "Failed"
+              ? (payload.message || "A consulta falhou.")
+              : (payload.message || "A consulta não retornou paciente.");
+        setStatus(root.querySelector("[data-ds-context]").textContent, "erro");
         return;
       }
+      const encounters = payload.encounters || [];
       current = { patientId: payload.patient.id, encounterId: null };
       const list = root.querySelector("[data-ds-encounters]");
       list.replaceChildren();
       const empty = document.createElement("option");
       empty.value = "";
-      empty.textContent = "Selecione o atendimento";
+      empty.textContent = encounters.length ? "Selecione um atendimento" : "Nenhum atendimento disponível";
       list.appendChild(empty);
-      (payload.encounters || []).forEach(function (item) {
+      encounters.forEach(function (item) {
         const option = document.createElement("option");
         option.value = item.id;
-        const kind = item.kind || "tipo externo não mapeado";
-        const admitted = item.admitted_at || "entrada não informada";
-        const discharged = item.discharged_at || "sem alta";
-        option.textContent = item.external_code + " · " + (item.raw_kind || "sem código") + " · " + kind + " · " + admitted + " · " + discharged + " · " + (item.status || "situação não informada");
+        option.textContent = encounterLabel(item);
         list.appendChild(option);
       });
-      root.querySelector("[data-ds-context]").textContent = "Paciente " + payload.patient.external_code + " — " + payload.patient.display_name + ". Confirme o atendimento antes de enviar.";
-      setStatus(payload.message, "info");
+      list.value = "";
+      root.querySelector("[data-ds-context]").textContent = encounters.length
+        ? "Paciente " + payload.patient.external_code + " — " + payload.patient.display_name + ". Selecione um atendimento antes de enviar."
+        : "Paciente " + payload.patient.external_code + " — " + payload.patient.display_name + ". Não há atendimentos para abrir.";
+      setStatus(payload.message || "Paciente localizado.", encounters.length ? "info" : "erro");
     } catch (error) {
       if (error.name === "AbortError" || myGeneration !== generation) return;
-      setStatus("A consulta não foi concluída. Os arquivos preparados permanecem nesta tela.", "erro");
+      resetEncounter("Selecione um atendimento");
+      setStatus("A consulta não foi concluída. A resposta não pôde ser lida e a seleção anterior foi desfeita.", "erro");
     }
   });
 
@@ -76,8 +120,13 @@
     current = current ? { patientId: current.patientId, encounterId: event.target.value || null } : null;
     send.disabled = !current?.encounterId;
     const open = root.querySelector("[data-ds-open]");
-    if (open && current?.patientId && current.encounterId)
+    if (open && current?.patientId && current.encounterId) {
       open.href = root.dataset.openUrl + "?patientId=" + encodeURIComponent(current.patientId) + "&encounterId=" + encodeURIComponent(current.encounterId);
+      open.setAttribute("aria-disabled", "false");
+    } else if (open) {
+      open.removeAttribute("href");
+      open.setAttribute("aria-disabled", "true");
+    }
   });
 
   function addFiles(list) {
@@ -334,11 +383,20 @@
   const frame = workspace.querySelector("[data-ds-frame]");
   if (page?.dataset.publicId && window.location.hash.indexOf("protecao=") >= 0) {
     const token = new URLSearchParams(window.location.hash.replace(/^#/, "")).get("protecao");
-    if (token) sessionStorage.setItem("ds-protecao-" + page.dataset.publicId, token);
+    if (token) writeStore("ds-protecao-" + page.dataset.publicId, token);
     history.replaceState(null, "", window.location.pathname + window.location.search);
   }
+  function readStore(key) {
+    try { return sessionStorage.getItem(key) || ""; } catch { return ""; }
+  }
+  function writeStore(key, value) {
+    try { sessionStorage.setItem(key, value); } catch { /* a página segue sem o token local quando o navegador bloqueia o armazenamento */ }
+  }
+  function removeStore(key) {
+    try { sessionStorage.removeItem(key); } catch { /* sem armazenamento local */ }
+  }
   const protection = function () {
-    return page?.dataset.publicId ? (sessionStorage.getItem("ds-protecao-" + page.dataset.publicId) || "") : "";
+    return page?.dataset.publicId ? readStore("ds-protecao-" + page.dataset.publicId) : "";
   };
   page?.querySelectorAll("[data-ds-protection]").forEach(function (input) { input.value = protection(); });
   const viewerStatus = workspace.querySelector("[data-ds-viewer-status]");
@@ -413,52 +471,142 @@
   }
 
   const search = workspace.querySelector("[data-ds-search]");
-  search?.addEventListener("submit", async function (event) {
-    event.preventDefault();
+  const hits = workspace.querySelector("[data-ds-hits]");
+  const pager = workspace.querySelector("[data-ds-pager]");
+  let searchGeneration = 0;
+  let searchState = { term: "", scope: "" };
+
+  function searchScope() {
+    const box = search?.querySelector("[name='includeOtherEncounters']");
+    return box && box.checked ? "1" : "0";
+  }
+
+  async function runSearch(requestedPage, reset) {
+    if (!search || !hits) return;
+    const my = ++searchGeneration;
     const token = page.querySelector("input[name=__RequestVerificationToken]")?.value || "";
+    const term = (search.querySelector("[name='term']")?.value || "").trim();
+    const scope = searchScope();
+    const pageNumber = reset || term !== searchState.term || scope !== searchState.scope ? 0 : requestedPage;
+    searchState = { term: term, scope: scope };
+    const pageInput = search.querySelector("[data-ds-page]");
+    if (pageInput) pageInput.value = String(pageNumber);
     const body = new FormData(search);
+    body.set("page", String(pageNumber));
     body.append("__RequestVerificationToken", token);
     body.append("protecao", protection());
     if (page.dataset.embedded !== "1")
-      body.append("encounterId", page.dataset.encounterId || "");
-    const hits = workspace.querySelector("[data-ds-hits]");
+      body.set("encounterId", page.dataset.encounterId || "");
     hits.replaceChildren();
     const waiting = document.createElement("li");
     waiting.textContent = "Buscando no atendimento selecionado.";
     hits.appendChild(waiting);
+    if (pager) pager.hidden = true;
     try {
       const response = await fetch(page.dataset.searchUrl, { method: "POST", body, credentials: "same-origin", headers: { RequestVerificationToken: token, "X-InovaGed-Protecao": protection(), "X-InovaGed-Contexto": page.dataset.publicId || "" } });
+      if (my !== searchGeneration) return;
+      const type = response.headers.get("content-type") || "";
+      if (!response.ok || !type.includes("application/json")) {
+        hits.replaceChildren();
+        const failed = document.createElement("li");
+        failed.textContent = response.status === 401 || response.status === 403
+          ? "A sessão expirou ou a origem do comando não é a desta abertura. Abra novamente em uma página própria do InovaGed. Os filtros desta tela permanecem."
+          : "A pesquisa não foi concluída. A resposta não veio em formato utilizável. Os filtros permanecem.";
+        hits.appendChild(failed);
+        return;
+      }
       const payload = await response.json();
+      if (my !== searchGeneration) return;
       hits.replaceChildren();
       const note = document.createElement("li");
-      note.textContent = (payload.message || "Busca literal concluída.") + (typeof payload.total === "number" ? " Resultados neste escopo: " + payload.total + "." : "");
+      const total = typeof payload.total === "number" ? payload.total : 0;
+      const size = payload.pageSize || 20;
+      const current = typeof payload.page === "number" ? payload.page : pageNumber;
+      const shown = (payload.hits || []).length;
+      const from = shown === 0 ? 0 : current * size + 1;
+      const to = shown === 0 ? 0 : current * size + shown;
+      note.textContent = (payload.message || "Busca literal concluída.") + " Resultados neste escopo: " + total + ".";
       hits.appendChild(note);
       (payload.hits || []).forEach(function (hit) {
         const item = document.createElement("li");
         const button = document.createElement("button");
         button.type = "button";
-        button.textContent = hit.name + " · atendimento " + hit.encounterCode + (hit.page ? " · página " + hit.page : " · página não informada");
-        button.dataset.dsOpen = "";
-        button.dataset.url = page.dataset.fileUrl + "?versionId=" + encodeURIComponent(hit.versionId);
-        if (hit.page) button.dataset.page = hit.page;
-        button.dataset.version = hit.versionId;
-        button.addEventListener("click", function () { openDocument(button); });
+        const other = hit.encounterCode && page.dataset.encounterCode && hit.encounterCode !== page.dataset.encounterCode;
+        button.textContent = hit.name + " · atendimento " + hit.encounterCode + (hit.page ? " · página " + hit.page : " · página não informada") + (other ? " · outro episódio" : "");
         const excerpt = document.createElement("p");
-        excerpt.textContent = (hit.excerpt || "Sem trecho localizado.") + " · " + (hit.textOrigin || "");
+        excerpt.textContent = (hit.excerpt || "Sem trecho localizado.") + " · " + (hit.textOrigin || "correspondência literal");
+        if (!other) {
+          button.dataset.url = page.dataset.fileUrl + "?versionId=" + encodeURIComponent(hit.versionId);
+          if (hit.page) button.dataset.page = hit.page;
+          button.dataset.version = hit.versionId;
+          button.addEventListener("click", function () { openDocument(button); });
+        } else if (page.dataset.embedded !== "1" && hit.encounterId) {
+          button.addEventListener("click", function () {
+            const target = "/DemaisSetores/Consultar?patientId=" + encodeURIComponent(page.dataset.patientId || "") + "&encounterId=" + encodeURIComponent(hit.encounterId) + "&versaoId=" + encodeURIComponent(hit.versionId);
+            window.location.assign(target);
+          });
+          excerpt.textContent += " Este resultado abre o atendimento correspondente, sem permanecer no episódio anterior.";
+        } else if (page.dataset.embedded === "1" && page.dataset.allowSwitch === "1") {
+          button.addEventListener("click", function () {
+            if (page.dataset.publicId) writeStore("ds-abrir-" + page.dataset.publicId, hit.versionId);
+            const form = new FormData();
+            form.append("encounterCode", String(hit.encounterCode).slice(0, 80));
+            form.append("protecao", protection());
+            const antiforgery = page.querySelector("input[name=__RequestVerificationToken]")?.value || "";
+            form.append("__RequestVerificationToken", antiforgery);
+            fetch(page.dataset.switchUrl, { method: "POST", body: form, credentials: "same-origin", headers: { "X-InovaGed-Protecao": protection(), "X-InovaGed-Contexto": page.dataset.publicId || "", RequestVerificationToken: antiforgery } }).then(function (switchResponse) {
+              if (switchResponse.ok) window.location.assign(window.location.pathname);
+              else excerpt.textContent = "A troca de atendimento não foi autorizada. O visualizador permanece no episódio atual.";
+            });
+          });
+          excerpt.textContent += " A abertura permite ir a esse atendimento. O documento só abre depois da troca autorizada.";
+        } else {
+          button.disabled = true;
+          excerpt.textContent += " Este resultado é de outro atendimento. O visualizador permanece no episódio atual.";
+        }
         item.append(button, excerpt);
         hits.appendChild(item);
       });
-      if ((payload.hits || []).length === 0) {
+      if (shown === 0) {
         const empty = document.createElement("li");
         empty.textContent = "Nenhuma ocorrência autorizada neste escopo.";
         hits.appendChild(empty);
       }
+      if (pager) {
+        pager.hidden = total === 0;
+        const range = pager.querySelector("[data-ds-range]");
+        const limitNote = payload.truncated ? " Há resultados além das " + (payload.reachable || 1020) + " posições navegáveis. O total acima os inclui. Refine o termo ou o escopo para alcançá-los." : "";
+        if (range) range.textContent = shown === 0 ? "Nenhum resultado nesta página." : "Mostrando " + from + "–" + to + " de " + total + "." + limitNote;
+        const prev = pager.querySelector("[data-ds-prev]");
+        const next = pager.querySelector("[data-ds-next]");
+        if (prev) prev.disabled = current <= 0;
+        if (next) next.disabled = shown === 0 || (current + 1) * size >= total || current >= (payload.pageLimit || 50);
+      }
     } catch {
-      waiting.textContent = "A busca não foi concluída. O atendimento selecionado permanece o mesmo.";
+      if (my !== searchGeneration) return;
+      hits.replaceChildren();
+      const failed = document.createElement("li");
+      failed.textContent = "A busca não foi concluída. Os filtros permanecem e o atendimento selecionado não foi trocado.";
+      hits.appendChild(failed);
     }
+  }
+
+  search?.addEventListener("submit", function (event) {
+    event.preventDefault();
+    runSearch(0, true);
+  });
+  pager?.querySelector("[data-ds-prev]")?.addEventListener("click", function () {
+    const current = Number(search?.querySelector("[data-ds-page]")?.value || "0");
+    runSearch(Math.max(0, current - 1), false);
+  });
+  pager?.querySelector("[data-ds-next]")?.addEventListener("click", function () {
+    const current = Number(search?.querySelector("[data-ds-page]")?.value || "0");
+    runSearch(current + 1, false);
   });
 
-  const auto = workspace.dataset.autoVersion;
+  const pendingOpen = page?.dataset.publicId ? readStore("ds-abrir-" + page.dataset.publicId) : "";
+  const auto = pendingOpen || workspace.dataset.autoVersion;
+  if (pendingOpen && page?.dataset.publicId) removeStore("ds-abrir-" + page.dataset.publicId);
   if (auto) {
     const button = workspace.querySelector("[data-version='" + auto + "']");
     if (button) openDocument(button);
@@ -469,38 +617,93 @@
     event.currentTarget.textContent = hidden ? "Mostrar análise" : "Recolher análise";
   });
   const lookup = page?.querySelector("[data-ds-consult-lookup]");
+  let lookupGeneration = 0;
+  function formatWhen(value, empty) {
+    if (!value) return empty;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+  function resetLookup(placeholder, message) {
+    const list = lookup?.querySelector("[data-ds-encounters]");
+    const open = lookup?.querySelector("[data-ds-context-open]");
+    const status = lookup?.querySelector("[data-ds-context]");
+    if (list) {
+      list.replaceChildren();
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = placeholder;
+      list.appendChild(option);
+      list.value = "";
+    }
+    if (open) {
+      open.removeAttribute("href");
+      open.setAttribute("aria-disabled", "true");
+    }
+    if (status && message) status.textContent = message;
+  }
+  lookup?.querySelector("[data-ds-context-open]")?.addEventListener("click", function (event) {
+    if (event.currentTarget.getAttribute("aria-disabled") === "true") event.preventDefault();
+  });
   lookup?.querySelector("[data-ds-find]")?.addEventListener("click", async function () {
-    const my = ++request;
+    const my = ++lookupGeneration;
+    resetLookup("Carregando atendimentos…", "Consultando a origem informada.");
     const token = page.querySelector("input[name=__RequestVerificationToken]")?.value || "";
     const body = new FormData(lookup.querySelector("[data-ds-patient-form]"));
     const status = lookup.querySelector("[data-ds-context]");
     try {
       const response = await fetch(page.dataset.findUrl, { method: "POST", body, headers: { RequestVerificationToken: token } });
+      const type = response.headers.get("content-type") || "";
+      if (!type.includes("json")) throw new Error("not-json");
       const payload = await response.json();
-      if (my !== request) return;
-      const list = lookup.querySelector("[data-ds-encounters]");
-      list.replaceChildren();
-      if (payload.status !== "Found") {
-        status.textContent = payload.message || "A consulta não retornou paciente.";
+      if (my !== lookupGeneration) return;
+      if (payload.status !== "Found" || !payload.patient) {
+        const message = payload.status === "Unavailable"
+          ? (payload.message || "A origem está indisponível. Nenhum atendimento foi mantido.")
+          : payload.status === "NotFound"
+            ? (payload.message || "Paciente não encontrado.")
+            : payload.status === "Failed"
+              ? (payload.message || "A consulta falhou. Nenhum atendimento foi mantido.")
+              : (payload.message || "A consulta não retornou paciente.");
+        resetLookup("Selecione um atendimento", message);
         return;
       }
-      status.textContent = "Paciente " + payload.patient.external_code + " — " + payload.patient.display_name + ". Confirme o atendimento.";
-      (payload.encounters || []).forEach(function (item) {
+      const encounters = payload.encounters || [];
+      const list = lookup.querySelector("[data-ds-encounters]");
+      list.replaceChildren();
+      const empty = document.createElement("option");
+      empty.value = "";
+      empty.textContent = encounters.length ? "Selecione um atendimento" : "Nenhum atendimento disponível";
+      list.appendChild(empty);
+      encounters.forEach(function (item) {
         const option = document.createElement("option");
         option.value = item.id;
         option.dataset.patient = payload.patient.id;
-        option.textContent = item.external_code + " · " + (item.raw_kind || "sem código") + " · " + (item.kind || "tipo não mapeado") + " · " + (item.admitted_at || "entrada não informada") + " · " + (item.discharged_at || "sem alta");
+        option.textContent = item.external_code + " · " + (item.raw_kind || "sem código") + " · " + (item.kind || "tipo não mapeado")
+          + " · " + formatWhen(item.admitted_at, "entrada não informada")
+          + " · " + formatWhen(item.discharged_at, "sem alta")
+          + " · " + (item.status || "situação não informada");
         list.appendChild(option);
       });
+      list.value = "";
+      status.textContent = encounters.length
+        ? "Paciente " + payload.patient.external_code + " — " + payload.patient.display_name + ". Selecione um atendimento para habilitar a abertura."
+        : "Paciente " + payload.patient.external_code + " — " + payload.patient.display_name + ". Não há atendimentos disponíveis.";
     } catch {
-      if (my === request) status.textContent = "A consulta não foi concluída. O atendimento anterior permanece.";
+      if (my === lookupGeneration) resetLookup("Selecione um atendimento", "A consulta não foi concluída. A resposta não pôde ser lida e a abertura anterior foi desabilitada.");
     }
   });
   lookup?.querySelector("[data-ds-encounters]")?.addEventListener("change", function (event) {
     const option = event.target.selectedOptions[0];
-    const open = lookup.querySelector("[data-ds-open]");
-    if (!open || !option?.value) return;
+    const open = lookup.querySelector("[data-ds-context-open]");
+    if (!open) return;
+    if (!option?.value) {
+      open.removeAttribute("href");
+      open.setAttribute("aria-disabled", "true");
+      return;
+    }
     open.href = "/DemaisSetores/Consultar?patientId=" + encodeURIComponent(option.dataset.patient || "") + "&encounterId=" + encodeURIComponent(option.value);
+    open.setAttribute("aria-disabled", "false");
   });
   const partner = page?.dataset.partnerOrigin;
   if (page?.dataset.embedded === "1" && partner) {
@@ -512,7 +715,8 @@
     notify({ tipo: "ds-carregado" });
     window.addEventListener("message", function (event) {
       if (!partnerUrl || event.origin !== partnerUrl.origin) return;
-      if (!event.data || typeof event.data !== "object") return;
+      if (event.source !== window.parent) return;
+      if (!event.data || typeof event.data !== "object" || Array.isArray(event.data)) return;
       if (event.data.tipo === "ds-altura") return;
       if (event.data.tipo !== "ds-atendimento" || typeof event.data.codigoAtendimento !== "string") return;
       if (page.dataset.allowSwitch !== "1") { notify({ tipo: "ds-expirado" }); return; }

@@ -87,7 +87,8 @@ public sealed record SectorSessionAccess(
     bool AllowEncounterSwitch,
     string Origin,
     string CorrelationId,
-    DateTimeOffset ExpiresAt);
+    DateTimeOffset ExpiresAt,
+    string[] AllowedCatalogCodes);
 
 public sealed record SectorIntegrationRegistration(
     Guid TenantId,

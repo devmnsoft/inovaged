@@ -24,7 +24,7 @@
         Layout = "~/Views/Shared/_DemaisSetoresFrame.cshtml";
 }
 <link rel="stylesheet" href="~/css/demais-setores.css" asp-append-version="true" />
-<main class="ds-page" data-ds-consult data-embedded="@(embedded ? "1" : "0")" data-public-id="@publicId" data-partner-origin="@ViewBag.PartnerOrigin" data-allow-switch="@(ViewBag.AllowSwitch == true ? "1" : "0")" data-encounter-id="@encounterId" data-find-url="@Url.Action("BuscarPaciente")" data-switch-url="@switchUrl" data-search-url="@searchUrl" data-text-url="@textUrl" data-file-url="@(publicId is Guid fileId ? Url.Action(fileAction, new { publicId = fileId }) : Url.Action(fileAction))">
+<main class="ds-page" data-ds-consult data-embedded="@(embedded ? "1" : "0")" data-public-id="@publicId" data-partner-origin="@ViewBag.PartnerOrigin" data-allow-switch="@(ViewBag.AllowSwitch == true ? "1" : "0")" data-patient-id="@context?.PatientId" data-encounter-id="@encounterId" data-encounter-code="@context?.EncounterCode" data-find-url="@Url.Action("BuscarPaciente")" data-switch-url="@switchUrl" data-search-url="@searchUrl" data-text-url="@textUrl" data-file-url="@(publicId is Guid fileId ? Url.Action(fileAction, new { publicId = fileId }) : Url.Action(fileAction))">
     @Html.AntiForgeryToken()
     <h1>Consultar e analisar</h1>
     <p class="ds-help">A leitura reutiliza o OCR do GED. Campo sugerido não é informação validada. A conta não está integrada: ausência no prontuário não significa item não faturado.</p>
@@ -40,8 +40,8 @@
             <div class="ds-actions"><button type="button" data-ds-find>Consultar paciente</button></div>
         </form>
         <p data-ds-context class="ds-note">Busque pelo ID externo ou CPF e confirme o paciente antes de escolher o atendimento.</p>
-        <label>Atendimento<select data-ds-encounters><option value="">Selecione depois da consulta</option></select></label>
-        <div class="ds-actions"><a data-ds-open href="@Url.Action("Consultar")">Abrir o atendimento confirmado</a></div>
+        <label>Atendimento<select data-ds-encounters><option value="">Selecione um atendimento</option></select></label>
+        <div class="ds-actions"><a data-ds-context-open aria-disabled="true">Abrir o atendimento confirmado</a></div>
         }
         @if (context is null)
         {
@@ -138,8 +138,13 @@
                 <input type="hidden" name="page" value="0" data-ds-page />
                 <button type="submit">Buscar texto</button>
             </form>
-            <p class="ds-note">A busca é literal. Sinônimos cadastrados no tipo ampliam o termo. Análise semântica não é executada e página sem marcação no texto não é estimada.</p>
+            <p class="ds-note">A busca é literal. Sinônimos cadastrados no tipo ampliam o termo. Análise semântica não é executada e página sem marcação no texto não é estimada. Cada página tem 20 resultados. A navegação alcança 51 páginas, até 1.020 resultados. O total continua visível quando houver mais, e a interface pede para refinar a pesquisa.</p>
             <ul data-ds-hits></ul>
+            <nav class="ds-pager" data-ds-pager hidden aria-label="Páginas da pesquisa">
+                <button type="button" data-ds-prev>Anterior</button>
+                <p data-ds-range class="ds-note"></p>
+                <button type="button" data-ds-next>Próxima</button>
+            </nav>
         </section>
         <section id="ds-pdf" data-region="pdf">
             <h2>Visualizador</h2>

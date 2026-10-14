@@ -65,13 +65,15 @@ select s.public_id as PublicId, s.tenant_id as TenantId, s.patient_id as Patient
        s.catalog_code as CatalogCode, s.document_id as DocumentId, s.version_id as VersionId, s.mode as Mode,
        s.scope_kind as ScopeKind,
        (s.allow_encounter_switch and i.allow_encounter_switch and s.scope_kind='atendimento') as AllowEncounterSwitch,
-       s.origin as Origin, s.correlation_id as CorrelationId, s.expires_at as ExpiresAt
+       s.origin as Origin, s.correlation_id as CorrelationId, s.expires_at as ExpiresAt,
+       i.catalog_codes as AllowedCatalogCodes
 from ged.sector_open_session s
 join ged.sector_integration i on i.id=s.integration_id and i.tenant_id=s.tenant_id and i.active
 join ged.sector_patient p on p.id=s.patient_id and p.tenant_id=s.tenant_id
   and p.source_system=i.source_system and p.source_unit=i.source_unit
 join ged.sector_encounter e on e.id=s.encounter_id and e.tenant_id=s.tenant_id and e.patient_id=s.patient_id
 where s.cookie_hash=@hash and s.public_id=@publicId and s.revoked_at is null and s.expires_at>now()
+  and s.origin = any(i.origins)
   and (
     (s.scope_kind='atendimento' and i.allow_encounter_list and s.document_id is null and s.version_id is null)
     or (s.scope_kind='tipo' and s.catalog_code is not null and s.document_id is null
@@ -93,7 +95,7 @@ where s.cookie_hash=@hash and s.public_id=@publicId and s.revoked_at is null and
         var expires = row.ExpiresAt.Kind == DateTimeKind.Unspecified
             ? new DateTimeOffset(DateTime.SpecifyKind(row.ExpiresAt, DateTimeKind.Utc))
             : new DateTimeOffset(row.ExpiresAt.ToUniversalTime());
-        return new SectorSessionAccess(row.PublicId, row.TenantId, row.PatientId, row.EncounterId, row.CatalogCode, row.DocumentId, row.VersionId, row.Mode, row.ScopeKind, row.AllowEncounterSwitch, row.Origin, row.CorrelationId, expires);
+        return new SectorSessionAccess(row.PublicId, row.TenantId, row.PatientId, row.EncounterId, row.CatalogCode, row.DocumentId, row.VersionId, row.Mode, row.ScopeKind, row.AllowEncounterSwitch, row.Origin, row.CorrelationId, expires, row.AllowedCatalogCodes ?? []);
     }
 
     public static async Task<bool> SwitchAsync(NpgsqlConnection conn, string? cookieValue, Guid publicId, string encounterCode, CancellationToken ct)
@@ -106,6 +108,7 @@ from ged.sector_integration i, ged.sector_encounter e
 where s.cookie_hash=@hash and s.public_id=@publicId and s.revoked_at is null and s.expires_at>now()
   and s.scope_kind='atendimento' and s.allow_encounter_switch and s.document_id is null and s.version_id is null
   and i.id=s.integration_id and i.tenant_id=s.tenant_id and i.active and i.allow_encounter_switch and i.allow_encounter_list
+  and s.origin = any(i.origins)
   and e.tenant_id=s.tenant_id and e.patient_id=s.patient_id and e.external_code=@code
   and exists (
     select 1 from ged.sector_patient p
@@ -172,6 +175,7 @@ where tenant_id=@tenantId and integration_id=@integrationId and consumed_at is n
         public string Origin { get; set; } = "";
         public string CorrelationId { get; set; } = "";
         public DateTime ExpiresAt { get; set; }
+        public string[] AllowedCatalogCodes { get; set; } = [];
     }
 
     private sealed class CodeRow

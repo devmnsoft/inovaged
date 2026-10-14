@@ -52,6 +52,8 @@ Em HTTPS o cookie da abertura é `SameSite=None; Secure` e `Partitioned`. Em HTT
 
 A sessão é somente leitura. Conferência, correção e revisão continuam na consulta autenticada, com permissão explícita. Comandos da sessão, como pesquisa e troca de atendimento, exigem o token entregue no fragmento da primeira abertura, a origem da concessão ou da própria aplicação, e o identificador daquela sessão. O cookie global de autenticação permanece `SameSite=Lax`. O `Referer` não autentica. `frame-ancestors` usa somente a origem concedida.
 
+A lista de tipos da integração é relida a cada requisição da sessão. Lista vazia significa todos os tipos ativos daquele tenant. Lista preenchida restringe listagem, arquivo, texto, campos, achados, checklist e pesquisa a esses códigos. Documento ou vínculo inativo sai do escopo. A mesma regra vale para acesso direto pelo identificador da versão. Remover a origem cadastrada invalida a próxima leitura e a troca de atendimento. Alterar os tipos não exige nova sessão para passar a valer.
+
 O escopo fica fixo na abertura:
 
 - `documento`: documento e versão permanecem os da concessão.
