@@ -32,8 +32,10 @@ public sealed class AccountController : Controller
     }
 
     [HttpGet]
-    public IActionResult Login(string? returnUrl = null)
+    public IActionResult Login(string? returnUrl = null, string? motivo = null)
     {
+        if (motivo == "documento")
+            ViewData["EntryNotice"] = "Entre para consultar este documento.";
         return View(new LoginVM { ReturnUrl = returnUrl });
     }
 

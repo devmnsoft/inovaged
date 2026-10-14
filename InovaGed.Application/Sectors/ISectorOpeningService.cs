@@ -3,6 +3,8 @@ namespace InovaGed.Application.Sectors;
 public interface ISectorOpeningService
 {
     Task<SectorOpeningResponse> OpenAsync(SectorOpeningRequest request, CancellationToken ct);
+    Task<SectorEntryIssue> CreateEntryAsync(SectorEntryDraft draft, CancellationToken ct);
+    Task<SectorEntryContinuation> ContinueEntryAsync(Guid ticketId, Guid tenantId, Guid userId, bool isFullAdmin, CancellationToken ct);
     Task<SectorConsumedOpening?> ConsumeAsync(string code, CancellationToken ct);
     Task<SectorSessionAccess?> ReadSessionAsync(string? cookieValue, Guid publicId, CancellationToken ct);
     Task<bool> SwitchEncounterAsync(string? cookieValue, Guid publicId, string encounterCode, CancellationToken ct);
@@ -22,6 +24,10 @@ public static class SectorOpeningCodes
     public const string Several = "varias_ocorrencias";
     public const string Denied = "acesso_negado";
     public const string Opened = "abertura_concedida";
+    public const string Ambiguous = "tipo_ambiguo";
+    public const string Contradictory = "tipo_contraditorio";
+    public const string Repeated = "abertura_repetida";
+    public const string RateLimited = "limite_excedido";
 }
 
 public static class SectorOpeningLink
@@ -45,7 +51,8 @@ public sealed record SectorOpeningRequest(
     Guid? DocumentId,
     Guid? VersionId,
     string? Mode,
-    string? Origin);
+    string? Origin,
+    string? IdempotencyKey = null);
 
 public sealed record SectorOpeningResponse(
     bool Accepted,

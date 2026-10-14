@@ -425,13 +425,54 @@ on conflict (tenant_id, user_id, sector_code, permission_code) do update set reg
         return Page(error is null ? 200 : 400, error ?? "Integração desativada. Códigos ainda não usados foram inutilizados e as sessões abertas foram revogadas.");
     }
 
+    [HttpGet("/DemaisSetores/Integrar")]
+    [AllowAnonymous]
+    public async Task<IActionResult> Integrar(CancellationToken ct)
+    {
+        ApplyRestrictedHeaders();
+        var query = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in Request.Query)
+            query[item.Key] = item.Value.ToString();
+        var parsed = SectorEntryContract.Parse(query);
+        if (!parsed.IsValid || parsed.Draft is null)
+            return Redirect("/DemaisSetores/EntradaRecusada");
+        var issued = await _opening.CreateEntryAsync(parsed.Draft, ct);
+        if (!issued.Accepted || issued.TicketId is null)
+            return Redirect("/DemaisSetores/EntradaRecusada");
+        return Redirect("/DemaisSetores/Continuar/" + issued.TicketId.Value.ToString("D"));
+    }
+
+    [HttpGet("/DemaisSetores/EntradaRecusada")]
+    [AllowAnonymous]
+    public IActionResult EntradaRecusada()
+    {
+        ApplyRestrictedHeaders();
+        return Html(400, "Este link não pode ser usado.");
+    }
+
+    [HttpGet("/DemaisSetores/Continuar/{ticketId:guid}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> Continuar(Guid ticketId, CancellationToken ct)
+    {
+        ApplyRestrictedHeaders();
+        if (User.Identity?.IsAuthenticated != true)
+        {
+            var back = "/DemaisSetores/Continuar/" + ticketId.ToString("D");
+            return Redirect("/Account/Login?returnUrl=" + Uri.EscapeDataString(back) + "&motivo=documento");
+        }
+        var continued = await _opening.ContinueEntryAsync(ticketId, _currentUser.TenantId, _currentUser.UserId, Admin, ct);
+        if (continued.Redirect && !string.IsNullOrWhiteSpace(continued.PageUrl) && continued.PageUrl.StartsWith("/DemaisSetores/Abrir/", StringComparison.Ordinal))
+            return Redirect(continued.PageUrl);
+        return Html(continued.Status, continued.Message);
+    }
+
     [HttpGet("/DemaisSetores/Abrir/{code}")]
     [AllowAnonymous]
     public async Task<IActionResult> Abrir(string code, CancellationToken ct)
     {
         var consumed = await _opening.ConsumeAsync(code, ct);
         if (consumed is null)
-            return Html(401, "A abertura expirou, já foi usada ou foi revogada. Solicite um novo link ao sistema de origem.");
+            return Html(401, "A abertura expirou, já foi usada ou foi revogada. Solicite um novo link ao sistema de origem. Abra em uma nova janela para continuar.");
         Response.Cookies.Append(SectorOpeningService.CookieNameFor(consumed.PublicId), consumed.CookieValue, OpeningCookie(consumed.ExpiresAt));
         return Redirect($"/DemaisSetores/ConsultaIntegrada/{consumed.PublicId:D}#protecao={consumed.ProtectionToken}");
     }
@@ -442,7 +483,8 @@ on conflict (tenant_id, user_id, sector_code, permission_code) do update set reg
     {
         var session = await ReadOpeningAsync(publicId, ct);
         if (session is null)
-            return Html(401, "A consulta deste prontuário não está autorizada neste navegador. O documento não é público. Abra o link em uma página própria do InovaGed, no mesmo endereço da aplicação. Se o código já foi usado dentro de um quadro com cookies de terceiros bloqueados, peça uma nova abertura ao sistema de origem.");
+            return Html(401, "A consulta deste prontuário não está autorizada neste navegador. O documento não é público. Abra em uma nova janela para continuar. Se o código já foi usado dentro de um quadro com cookies de terceiros bloqueados, peça uma nova abertura ao sistema de origem.");
+        ApplyRestrictedHeaders();
         ApplyFrameHeaders(session);
         var documents = await SessionDocumentsAsync(session, ct);
         ViewBag.Embedded = true;
@@ -463,7 +505,7 @@ on conflict (tenant_id, user_id, sector_code, permission_code) do update set reg
         ViewBag.Fields = await SessionFieldsAsync(session, ct);
         ViewBag.Findings = await SessionFindingsAsync(session, ct);
         ViewBag.Checklist = await SessionChecklistAsync(session, ct);
-        ViewBag.AutoVersion = session.VersionId ?? (documents.Length == 1 ? documents[0].VersionId : (Guid?)null);
+        ViewBag.AutoVersion = session.VersionId ?? (session.Mode == "documento" && documents.Length == 1 ? documents[0].VersionId : (Guid?)null);
         ViewBag.FileAction = "ArquivoIntegrado";
         ViewBag.CatalogCode = session.CatalogCode;
         return View("Consultar");
@@ -475,7 +517,7 @@ on conflict (tenant_id, user_id, sector_code, permission_code) do update set reg
     {
         var session = await ReadOpeningAsync(publicId, ct);
         if (session is null)
-            return Html(401, "A sessão desta abertura expirou ou o navegador não enviou o cookie deste prontuário. O arquivo não é público. Abra a página própria da aplicação.");
+            return Html(401, "A sessão desta abertura expirou ou o navegador não enviou o cookie deste prontuário. O arquivo não é público. Abra em uma nova janela para continuar.");
         ApplyFrameHeaders(session);
         if (!await SessionAllowsVersionAsync(session, versionId, ct))
             return Html(403, "Esta sessão não inclui o documento pedido.");
@@ -682,7 +724,8 @@ order by f.updated_at desc
         return await conn.QuerySingleOrDefaultAsync<SectorContextRow>(new CommandDefinition("""
 select p.id as PatientId, p.external_code as PatientCode, p.display_name as DisplayName,
        e.external_code as EncounterCode, e.raw_kind as RawKind, e.kind as Kind,
-       e.admitted_at as AdmittedAt, e.discharged_at as DischargedAt, e.status as Status
+       e.admitted_at as AdmittedAt, e.discharged_at as DischargedAt, e.status as Status,
+       p.confirmed_at as ConfirmedAt
 from ged.sector_encounter e
 join ged.sector_patient p on p.id=e.patient_id and p.tenant_id=e.tenant_id
 where e.tenant_id=@tenantId and e.id=@encounterId
@@ -723,6 +766,12 @@ order by s.admitted_at desc nulls last
             var state = received.Contains(type.Code) ? "recebido" : required ? "pendente" : "não exigido neste contexto";
             return new SectorChecklistRow(type.Order, type.Name, state, required);
         }).ToArray();
+    }
+
+    private void ApplyRestrictedHeaders()
+    {
+        Response.Headers["Referrer-Policy"] = "no-referrer";
+        Response.Headers["Cache-Control"] = "private, no-store";
     }
 
     private ContentResult Page(int status, string message) => Html(status, message);
@@ -774,7 +823,8 @@ select exists(
         return await conn.QuerySingleOrDefaultAsync<SectorContextRow>(new CommandDefinition("""
 select p.id as PatientId, p.external_code as PatientCode, p.display_name as DisplayName,
        e.external_code as EncounterCode, e.raw_kind as RawKind, e.kind as Kind,
-       e.admitted_at as AdmittedAt, e.discharged_at as DischargedAt, e.status as Status
+       e.admitted_at as AdmittedAt, e.discharged_at as DischargedAt, e.status as Status,
+       p.confirmed_at as ConfirmedAt
 from ged.sector_encounter e
 join ged.sector_patient p on p.id=e.patient_id and p.tenant_id=e.tenant_id
 where e.tenant_id=@tenantId and e.id=@encounterId and e.patient_id=@patientId
@@ -985,5 +1035,5 @@ public sealed record SectorDocumentRow(Guid LinkId, Guid DocumentId, Guid Versio
 public sealed record SectorFieldRow(Guid FieldId, Guid LinkId, Guid VersionId, string ContextCode, string SuggestedValue, string? ConfirmedValue, string Evidence, int? PageNumber, string Status, string? Mechanism, string? SourceKind);
 public sealed record SectorFindingRow(Guid FindingId, string Description, string Category, string? Evidence, int? PageNumber, string Status, Guid? VersionId);
 public sealed record SectorChecklistRow(int Order, string Name, string State, bool Required);
-public sealed record SectorContextRow(Guid PatientId, string PatientCode, string DisplayName, string EncounterCode, string? RawKind, string? Kind, DateTimeOffset? AdmittedAt, DateTimeOffset? DischargedAt, string? Status);
+public sealed record SectorContextRow(Guid PatientId, string PatientCode, string DisplayName, string EncounterCode, string? RawKind, string? Kind, DateTimeOffset? AdmittedAt, DateTimeOffset? DischargedAt, string? Status, DateTimeOffset? ConfirmedAt = null);
 public sealed record SectorEncounterOption(Guid Id, string Code, string? Kind, string? Status, DateTimeOffset? AdmittedAt = null, DateTimeOffset? DischargedAt = null);

@@ -8,7 +8,8 @@ public enum ClinicalSourceStatus
     Failed
 }
 
-public sealed record ExternalPatient(string SourceSystem, string? SourceUnit, string ExternalCode, string DisplayName);
+public sealed record ExternalIdentifier(string Kind, string Code);
+public sealed record ExternalPatient(string SourceSystem, string? SourceUnit, string ExternalCode, string DisplayName, IReadOnlyList<ExternalIdentifier>? Identifiers = null);
 public sealed record ExternalEncounter(string ExternalCode, string? RawKind, DateTimeOffset? AdmittedAt, DateTimeOffset? DischargedAt, string? Status);
 
 public sealed record ClinicalSourceResult(

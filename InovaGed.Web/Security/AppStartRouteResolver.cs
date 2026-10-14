@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using InovaGed.Application.Sectors;
 
 namespace InovaGed.Web.Security;
 
@@ -31,6 +32,9 @@ public static class AppStartRouteResolver
         var path = returnUrl.Split('?', '#')[0];
         if (string.IsNullOrWhiteSpace(path))
             return false;
+
+        if (SectorEntryContract.IsContinuePath(returnUrl))
+            return true;
 
         if (IsFullAdmin(user))
             return true;

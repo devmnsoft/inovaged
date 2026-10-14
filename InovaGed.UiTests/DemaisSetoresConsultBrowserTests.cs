@@ -242,6 +242,34 @@ public sealed class DemaisSetoresConsultBrowserTests
 </body></html>
 """;
 
+    [Fact]
+    public async Task Chromium_partner_page_builds_a_template_and_keeps_two_frames()
+    {
+        var root = FindRepoRoot();
+        var html = await File.ReadAllTextAsync(Path.Combine(root, "tools", "parceiro-demais-setores", "index.html"));
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
+        var page = await browser.NewPageAsync();
+        var errors = new List<string>();
+        page.PageError += (_, error) => errors.Add(error);
+        await page.SetContentAsync(html);
+        await page.FillAsync("#paciente", "000120");
+        await page.FillAsync("#documento", "Prescrição Médica");
+        await page.ClickAsync("#montar");
+        var model = await page.InputValueAsync("#modelo");
+        Assert.Contains("tipoIdentificador=ID", model, StringComparison.Ordinal);
+        Assert.Contains("paciente=000120", model, StringComparison.Ordinal);
+        Assert.Contains("codigoAtendimento=000088", model, StringComparison.Ordinal);
+        Assert.Contains("Prescri", model, StringComparison.Ordinal);
+        Assert.DoesNotContain("chave", model, StringComparison.OrdinalIgnoreCase);
+        await page.FillAsync("#pagina", "/DemaisSetores/Abrir/pagina");
+        await page.FillAsync("#quadro", "/DemaisSetores/Abrir/quadro");
+        await page.ClickAsync("#incorporar");
+        Assert.Contains("/DemaisSetores/Abrir/pagina", await page.GetAttributeAsync("#frame-a", "src"), StringComparison.Ordinal);
+        Assert.Contains("/DemaisSetores/Abrir/quadro", await page.GetAttributeAsync("#frame-b", "src"), StringComparison.Ordinal);
+        Assert.Empty(errors);
+    }
+
     private static string FindRepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

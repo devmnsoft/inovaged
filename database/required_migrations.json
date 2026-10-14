@@ -1006,5 +1006,12 @@
     "area": "DemaisSetores",
     "required": true,
     "description": "Isola cada abertura por identificador público e exige permissão para navegar entre atendimentos."
+  },
+  {
+    "name": "2026_10_28_demais_setores_entrada",
+    "path": "database/migrations/2026_10_28_demais_setores_entrada.sql",
+    "area": "DemaisSetores",
+    "required": true,
+    "description": "Entrada opaca por URL, identidade confirmada e emissão atômica do par de aberturas."
   }
 ]

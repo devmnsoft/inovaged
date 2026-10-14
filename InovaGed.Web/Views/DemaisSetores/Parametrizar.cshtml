@@ -88,6 +88,51 @@
         </form>
         <p class="ds-note">Desativar inutiliza códigos pendentes e revoga sessões. Gravar de novo reativa a integração, sem recuperar essas aberturas. <a href="@Url.Action("Parceiro")">Abrir a página de teste do parceiro</a>. A chave não volta a ser exibida.</p>
     </section>
+    <section class="ds-card" id="assistente-integracao">
+        <h2>Assistente de URL</h2>
+        <p class="ds-help">O modelo abaixo ainda exige autorização. Ele não é uma concessão temporária e não contém a chave.</p>
+        <div class="ds-grid">
+            <label>Identificador da integração<input id="ds-url-integracao" value="parceiro-exemplo" /></label>
+            <label>Tipo do identificador
+                <select id="ds-url-tipo"><option value="ID">ID do paciente</option><option value="CPF">CPF</option></select>
+            </label>
+            <label>Paciente<input id="ds-url-paciente" value="000120" /></label>
+            <label>Código do atendimento<input id="ds-url-atendimento" value="000088" /></label>
+            <label>Nome do documento<input id="ds-url-documento" value="Prescrição Médica" /></label>
+            <label>Modo
+                <select id="ds-url-modo"><option value="consulta">consulta</option><option value="documento">documento</option></select>
+            </label>
+        </div>
+        <p><button type="button" id="ds-url-montar">Montar modelo</button></p>
+        <p class="ds-note">Modelo de URL parametrizada. Ainda exige login ou uma abertura de servidor. CPF nesta URL pode permanecer no histórico do navegador e em logs de infraestrutura. O redirecionamento não apaga registros já feitos por proxy ou servidor. Prefira a chamada de servidor quando o parceiro puder usá-la.</p>
+        <textarea id="ds-url-modelo" readonly rows="3"></textarea>
+        <h3>URL temporária concedida</h3>
+        <p class="ds-note">A resposta do backend traz urlAbertura e urlIncorporacao com prazo em validade. Esses endereços servem uma vez. Não copie um código vencido como se fosse um link permanente.</p>
+        <h3>Código de iframe</h3>
+        <textarea id="ds-url-iframe" readonly rows="3"></textarea>
+        <h3>Chamada de servidor</h3>
+        <pre>POST /api/integracoes/demais-setores/aberturas
+X-InovaGed-Integracao: parceiro-exemplo
+X-InovaGed-Chave: (chave cadastrada, fora da URL)
+X-InovaGed-Idempotencia: exemplo-0001
+
+{"paciente":{"tipoIdentificador":"ID","identificador":"000120"},"codigoAtendimento":"000088","nomeDocumento":"Prescrição Médica","modo":"consulta","origemIncorporacao":"https://parceiro.exemplo"}</pre>
+        <p class="ds-note">Diagnóstico: a chave não volta a ser exibida. integracao_nao_autorizada não informa se o prontuário existe. Uma repetição com a mesma idempotência não reenvia os códigos.</p>
+    </section>
+    <script>
+        document.getElementById("ds-url-montar").addEventListener("click", function () {
+            var params = new URLSearchParams();
+            params.set("integracao", document.getElementById("ds-url-integracao").value.trim());
+            params.set("tipoIdentificador", document.getElementById("ds-url-tipo").value);
+            params.set("paciente", document.getElementById("ds-url-paciente").value.trim());
+            params.set("codigoAtendimento", document.getElementById("ds-url-atendimento").value.trim());
+            params.set("nomeDocumento", document.getElementById("ds-url-documento").value.trim());
+            params.set("modo", document.getElementById("ds-url-modo").value);
+            var path = "/DemaisSetores/Integrar?" + params.toString();
+            document.getElementById("ds-url-modelo").value = location.origin + path;
+            document.getElementById("ds-url-iframe").value = "<iframe src=\"" + location.origin + "/DemaisSetores/Abrir/<codigo-opaco>\" title=\"Documento do atendimento\"></iframe>";
+        });
+    </script>
     <section class="ds-card">
         <h2>Anexo II</h2>
         <form method="post" action="@Url.Action("HabilitarAnexoIi")">

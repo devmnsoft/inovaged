@@ -428,13 +428,14 @@ create table ged.sector_open_code (
     id uuid primary key, tenant_id uuid not null, code_hash char(64) not null unique, session_id uuid,
     patient_id uuid not null, encounter_id uuid not null, catalog_code text, document_id uuid, version_id uuid,
     mode text not null, scope_kind text not null, allow_encounter_switch boolean not null default false,
-    origin text not null, integration_id uuid not null, correlation_id text not null, expires_at timestamptz not null, consumed_at timestamptz);
+    origin text not null, integration_id uuid not null, correlation_id text not null, expires_at timestamptz not null,
+    consumed_at timestamptz, granted_catalog text[], created_at timestamptz not null default now());
 create table ged.sector_open_session (
     id uuid primary key, tenant_id uuid not null, integration_id uuid not null, cookie_hash char(64) not null unique,
     public_id uuid not null unique, patient_id uuid not null, encounter_id uuid not null, catalog_code text,
     document_id uuid, version_id uuid, mode text not null, scope_kind text not null,
     allow_encounter_switch boolean not null default false, origin text not null, correlation_id text not null,
-    expires_at timestamptz not null, revoked_at timestamptz, protection_hash char(64),
+    expires_at timestamptz not null, revoked_at timestamptz, protection_hash char(64), granted_catalog text[],
     constraint scope_ok check (scope_kind in ('documento','tipo','atendimento')));
 create table ged.sector_document_type (
     tenant_id uuid not null, catalog_code text not null, name text not null, active boolean not null default true,

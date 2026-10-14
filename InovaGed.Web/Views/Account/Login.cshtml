@@ -70,6 +70,10 @@
                     <span class="login-card-icon" aria-hidden="true"><app-icon name="users" size="24" decorative="true" /></span>
                     <h2>Acesse seu ambiente</h2>
                     <p>Entre com seu e-mail ou CPF para continuar.</p>
+                    @if (ViewData["EntryNotice"] is string entryNotice)
+                    {
+                        <p>@entryNotice</p>
+                    }
                 </header>
 
                 <form id="loginForm" asp-action="Login" method="post" novalidate aria-busy="false">

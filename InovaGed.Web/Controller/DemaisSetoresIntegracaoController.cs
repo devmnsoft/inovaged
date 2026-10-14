@@ -31,7 +31,8 @@ public sealed class DemaisSetoresIntegracaoController : ControllerBase
             body.DocumentoId,
             body.VersaoId,
             body.Modo,
-            body.OrigemIncorporacao), ct);
+            body.OrigemIncorporacao,
+            Request.Headers["X-InovaGed-Idempotencia"].ToString()), ct);
         var payload = new
         {
             codigo = opened.Code,

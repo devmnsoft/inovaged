@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Parceiro sintético — Demais setores</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; background: #f4f1ea; color: #1d1a16; }
+    label { display: block; margin: 8px 0; }
+    input, select, textarea { width: min(100%, 42rem); }
+    .modelo { background: #fff8e8; padding: 12px; }
+    .temporaria { background: #e7f5ee; padding: 12px; }
+    iframe { width: min(100%, 42rem); height: 180px; background: #fff; border: 1px solid #8a8175; }
+  </style>
+</head>
+<body>
+  <h1>Parceiro sintético</h1>
+  <p>Esta página não usa a sessão administrativa do InovaGed e não envia chave. Publique-a em outra origem para exercitar o iframe.</p>
+  <label>Endereço do InovaGed <input id="host" value="https://inovaged.exemplo" /></label>
+  <label>Integração <input id="integracao" value="parceiro-exemplo" /></label>
+  <label>Tipo <select id="tipo"><option>ID</option><option>CPF</option></select></label>
+  <label>Paciente <input id="paciente" value="000120" /></label>
+  <label>Código do atendimento <input id="atendimento" value="000088" /></label>
+  <label>Nome do documento <input id="documento" value="Prescrição Médica" /></label>
+  <label>Modo <select id="modo"><option>consulta</option><option>documento</option></select></label>
+  <p><button type="button" id="montar">Montar modelo</button></p>
+  <section class="modelo">
+    <h2>Modelo de URL parametrizada</h2>
+    <p>Ainda exige autorização. Não é concessão.</p>
+    <textarea id="modelo" readonly rows="3"></textarea>
+    <p><a id="abrir" href="#" target="_blank" rel="noopener">Abrir o modelo em outra janela</a></p>
+  </section>
+  <section class="temporaria">
+    <h2>URL temporária concedida</h2>
+    <p>Cole aqui somente um código já devolvido pelo backend, com prazo curto. Não reutilize código vencido.</p>
+    <label>Página <input id="pagina" placeholder="/DemaisSetores/Abrir/codigo" /></label>
+    <label>Iframe <input id="quadro" placeholder="/DemaisSetores/Abrir/outro-codigo" /></label>
+    <p><button type="button" id="incorporar">Atualizar os dois quadros</button></p>
+    <iframe id="frame-a" title="Abertura A"></iframe>
+    <iframe id="frame-b" title="Abertura B"></iframe>
+    <p>Se o navegador bloquear o cookie, use o link da página própria. O arquivo não fica público.</p>
+  </section>
+  <script>
+    document.getElementById("montar").addEventListener("click", function () {
+      var host = document.getElementById("host").value.replace(/\/$/, "");
+      var params = new URLSearchParams();
+      params.set("integracao", document.getElementById("integracao").value.trim());
+      params.set("tipoIdentificador", document.getElementById("tipo").value);
+      params.set("paciente", document.getElementById("paciente").value.trim());
+      params.set("codigoAtendimento", document.getElementById("atendimento").value.trim());
+      params.set("nomeDocumento", document.getElementById("documento").value.trim());
+      params.set("modo", document.getElementById("modo").value);
+      var url = host + "/DemaisSetores/Integrar?" + params.toString();
+      document.getElementById("modelo").value = url;
+      document.getElementById("abrir").href = url;
+    });
+    document.getElementById("incorporar").addEventListener("click", function () {
+      var host = document.getElementById("host").value.replace(/\/$/, "");
+      function src(value) {
+        if (!value) return "about:blank";
+        if (value.indexOf("/DemaisSetores/Abrir/") !== 0 && value.indexOf(host + "/DemaisSetores/Abrir/") !== 0) return "about:blank";
+        return value.indexOf("http") === 0 ? value : host + value;
+      }
+      document.getElementById("frame-a").src = src(document.getElementById("pagina").value.trim());
+      document.getElementById("frame-b").src = src(document.getElementById("quadro").value.trim());
+    });
+  </script>
+</body>
+</html>

@@ -17,7 +17,8 @@ public static class SectorOpeningExchange
 select c.id as Id, c.tenant_id as TenantId, c.patient_id as PatientId, c.encounter_id as EncounterId,
        c.catalog_code as CatalogCode, c.document_id as DocumentId, c.version_id as VersionId,
        c.mode as Mode, c.scope_kind as ScopeKind, c.allow_encounter_switch as AllowEncounterSwitch,
-       c.origin as Origin, c.integration_id as IntegrationId, c.correlation_id as CorrelationId, c.expires_at as ExpiresAt
+       c.origin as Origin, c.integration_id as IntegrationId, c.correlation_id as CorrelationId, c.expires_at as ExpiresAt,
+       c.granted_catalog as GrantedCatalog
 from ged.sector_open_code c
 join ged.sector_integration i on i.id=c.integration_id and i.tenant_id=c.tenant_id and i.active
 join ged.sector_patient p on p.id=c.patient_id and p.tenant_id=c.tenant_id
@@ -34,17 +35,18 @@ for update of c
         await conn.ExecuteAsync(new CommandDefinition("""
 insert into ged.sector_open_session
  (id, tenant_id, integration_id, cookie_hash, public_id, patient_id, encounter_id, catalog_code, document_id, version_id,
-  mode, scope_kind, allow_encounter_switch, origin, correlation_id, expires_at, protection_hash)
+  mode, scope_kind, allow_encounter_switch, origin, correlation_id, expires_at, protection_hash, granted_catalog)
 values
  (@sessionId, @tenantId, @integrationId, @cookieHash, @publicId, @patientId, @encounterId, @catalog, @documentId, @versionId,
-  @mode, @scopeKind, @allowSwitch, @origin, @correlation, @expires, @protectionHash)
+  @mode, @scopeKind, @allowSwitch, @origin, @correlation, @expires, @protectionHash, @grantedCatalog)
 """, new
         {
             sessionId, tenantId = row.TenantId, integrationId = row.IntegrationId, cookieHash = Hash(cookie), publicId,
             patientId = row.PatientId, encounterId = row.EncounterId, catalog = row.CatalogCode,
             documentId = row.DocumentId, versionId = row.VersionId, mode = row.Mode, scopeKind = row.ScopeKind,
             allowSwitch = row.AllowEncounterSwitch && row.ScopeKind == "atendimento",
-            origin = row.Origin, correlation = row.CorrelationId, expires = row.ExpiresAt, protectionHash = Hash(protection)
+            origin = row.Origin, correlation = row.CorrelationId, expires = row.ExpiresAt, protectionHash = Hash(protection),
+            grantedCatalog = row.GrantedCatalog
         }, tx, cancellationToken: ct));
         var linked = await conn.ExecuteAsync(new CommandDefinition("""
 update ged.sector_open_code
@@ -66,7 +68,11 @@ select s.public_id as PublicId, s.tenant_id as TenantId, s.patient_id as Patient
        s.scope_kind as ScopeKind,
        (s.allow_encounter_switch and i.allow_encounter_switch and s.scope_kind='atendimento') as AllowEncounterSwitch,
        s.origin as Origin, s.correlation_id as CorrelationId, s.expires_at as ExpiresAt,
-       i.catalog_codes as AllowedCatalogCodes
+       case
+         when s.granted_catalog is null then i.catalog_codes
+         when cardinality(i.catalog_codes)=0 then s.granted_catalog
+         else coalesce((select array_agg(x) from unnest(s.granted_catalog) as x where x = any(i.catalog_codes)), '{}')
+       end as AllowedCatalogCodes
 from ged.sector_open_session s
 join ged.sector_integration i on i.id=s.integration_id and i.tenant_id=s.tenant_id and i.active
 join ged.sector_patient p on p.id=s.patient_id and p.tenant_id=s.tenant_id
@@ -78,6 +84,7 @@ where s.cookie_hash=@hash and s.public_id=@publicId and s.revoked_at is null and
     (s.scope_kind='atendimento' and i.allow_encounter_list and s.document_id is null and s.version_id is null)
     or (s.scope_kind='tipo' and s.catalog_code is not null and s.document_id is null
         and (cardinality(i.catalog_codes)=0 or s.catalog_code = any(i.catalog_codes))
+        and (s.granted_catalog is null or s.catalog_code = any(s.granted_catalog))
         and exists (
           select 1 from ged.sector_document_type t
           where t.tenant_id=s.tenant_id and t.catalog_code=s.catalog_code and t.active))
@@ -88,7 +95,9 @@ where s.cookie_hash=@hash and s.public_id=@publicId and s.revoked_at is null and
           where l.tenant_id=s.tenant_id and l.encounter_id=s.encounter_id and l.patient_id=s.patient_id
             and l.document_id=s.document_id and l.version_id=s.version_id and l.reg_status='A'
             and (s.catalog_code is null or l.catalog_code=s.catalog_code)
-            and (cardinality(i.catalog_codes)=0 or l.catalog_code = any(i.catalog_codes))))
+            and (cardinality(i.catalog_codes)=0 or l.catalog_code = any(i.catalog_codes))
+            and (s.granted_catalog is null or l.catalog_code = any(s.granted_catalog))
+        ))
   )
 """, new { hash = Hash(cookieValue), publicId }, cancellationToken: ct));
         if (row is null || row.PublicId == Guid.Empty) return null;
@@ -194,5 +203,6 @@ where tenant_id=@tenantId and integration_id=@integrationId and consumed_at is n
         public Guid IntegrationId { get; set; }
         public string CorrelationId { get; set; } = "";
         public DateTimeOffset ExpiresAt { get; set; }
+        public string[]? GrantedCatalog { get; set; }
     }
 }

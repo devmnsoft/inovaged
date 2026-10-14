@@ -162,12 +162,22 @@ where p.tenant_id=@tenantId and p.code='ANEXO_II' and p.version_no=1
 
         await using var conn = await _db.OpenAsync(ct);
         var patientId = await conn.ExecuteScalarAsync<Guid>(new CommandDefinition("""
-insert into ged.sector_patient (id, tenant_id, source_system, source_unit, external_code, display_name, identifier_kind)
-values (gen_random_uuid(), @tenantId, @system, @unit, @code, @name, @kind)
+insert into ged.sector_patient (id, tenant_id, source_system, source_unit, external_code, display_name, identifier_kind, confirmed_at)
+values (gen_random_uuid(), @tenantId, @system, @unit, @code, @name, @kind, now())
 on conflict (tenant_id, source_system, source_unit, identifier_kind, external_code)
-do update set display_name=excluded.display_name, updated_at=now()
+do update set display_name=excluded.display_name, updated_at=now(), confirmed_at=now(), canonical_patient_id=null
 returning id
 """, new { tenantId, system = source.Patient.SourceSystem, unit = source.Patient.SourceUnit ?? "", code = source.Patient.ExternalCode, name = source.Patient.DisplayName, kind }, cancellationToken: ct));
+        foreach (var extra in source.Patient.Identifiers ?? Array.Empty<ExternalIdentifier>())
+        {
+            if (!string.Equals(extra.Kind, "CPF", StringComparison.OrdinalIgnoreCase) && !string.Equals(extra.Kind, "ID", StringComparison.OrdinalIgnoreCase))
+                continue;
+            var extraKind = string.Equals(extra.Kind, "CPF", StringComparison.OrdinalIgnoreCase) ? "CPF" : "ID";
+            var extraCode = extraKind == "CPF" ? SectorCpf.Normalize(extra.Code) : SectorPatientCode.Normalize(extra.Code);
+            if (extraCode is null || (extraKind == kind && extraCode == source.Patient.ExternalCode))
+                continue;
+            await SectorIdentityStore.LinkAsync(conn, tenantId, patientId, source.Patient.SourceSystem, source.Patient.SourceUnit ?? "", extraKind, extraCode, ct);
+        }
         await AuditAsync(tenantId, null, "FILE_PREVIEW", patientId, kind == "CPF" ? "Consulta de paciente por CPF, sem registrar o número." : "Consulta de paciente pelo identificador externo.", null, null, ct);
 
         var contract = (await conn.QueryAsync<(string Raw, string Kind)>(new CommandDefinition(
@@ -178,11 +188,11 @@ returning id
         {
             var mappedKind = SectorKindMap.Resolve(encounter.RawKind, contract);
             await conn.ExecuteAsync(new CommandDefinition("""
-insert into ged.sector_encounter (id, tenant_id, patient_id, external_code, raw_kind, kind, admitted_at, discharged_at, status)
-values (gen_random_uuid(), @tenantId, @patientId, @code, @raw, @mappedKind, @admitted, @discharged, @status)
+insert into ged.sector_encounter (id, tenant_id, patient_id, external_code, raw_kind, kind, admitted_at, discharged_at, status, confirmed_at)
+values (gen_random_uuid(), @tenantId, @patientId, @code, @raw, @mappedKind, @admitted, @discharged, @status, now())
 on conflict (tenant_id, patient_id, external_code)
 do update set raw_kind=excluded.raw_kind, kind=excluded.kind, admitted_at=excluded.admitted_at,
-              discharged_at=excluded.discharged_at, status=excluded.status, updated_at=now()
+              discharged_at=excluded.discharged_at, status=excluded.status, updated_at=now(), confirmed_at=now()
 """, new { tenantId, patientId, code = encounter.ExternalCode, raw = encounter.RawKind, mappedKind, admitted = encounter.AdmittedAt, discharged = encounter.DischargedAt, status = encounter.Status }, cancellationToken: ct));
         }
 

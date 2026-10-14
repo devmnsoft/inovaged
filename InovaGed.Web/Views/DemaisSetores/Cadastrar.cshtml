@@ -6,7 +6,7 @@
 <main class="ds-page" data-ds-register data-find-url="@Url.Action("BuscarPaciente")" data-start-url="@Url.Action("IniciarEnvio")" data-part-url="@Url.Action("ParteEnvio")" data-status-url="@Url.Action("SituacaoEnvio")" data-cancel-url="@Url.Action("CancelarEnvio")" data-complete-url="@Url.Action("ConcluirEnvio")" data-link-url="@Url.Action("VincularExistente")" data-retry-url="@Url.Action("Reenfileirar")" data-open-url="@Url.Action("Consultar")">
     @Html.AntiForgeryToken()
     <h1>Cadastrar documentos</h1>
-    <p class="ds-help">Confirme o paciente e o atendimento, escolha o nome do catálogo e grave os arquivos. O envio grande segue em partes, até @ViewBag.MaxMb MB quando esse limite estiver configurado. Leitura e extração acontecem depois da gravação.</p>
+    <p class="ds-help">Como usar: confirme o paciente e o atendimento, escolha o nome do catálogo e grave os arquivos. O envio grande segue em partes, até @ViewBag.MaxMb MB quando esse limite estiver configurado. Leitura e extração acontecem depois da gravação.</p>
     <ol class="ds-steps"><li>1. Paciente e atendimento</li><li>2. Documentos</li><li>3. Confirmação</li></ol>
     <section class="ds-card">
         <h2>Paciente e atendimento</h2>

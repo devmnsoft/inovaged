@@ -27,7 +27,7 @@
 <main class="ds-page" data-ds-consult data-embedded="@(embedded ? "1" : "0")" data-public-id="@publicId" data-partner-origin="@ViewBag.PartnerOrigin" data-allow-switch="@(ViewBag.AllowSwitch == true ? "1" : "0")" data-patient-id="@context?.PatientId" data-encounter-id="@encounterId" data-encounter-code="@context?.EncounterCode" data-find-url="@Url.Action("BuscarPaciente")" data-switch-url="@switchUrl" data-search-url="@searchUrl" data-text-url="@textUrl" data-file-url="@(publicId is Guid fileId ? Url.Action(fileAction, new { publicId = fileId }) : Url.Action(fileAction))">
     @Html.AntiForgeryToken()
     <h1>Consultar e analisar</h1>
-    <p class="ds-help">A leitura reutiliza o OCR do GED. Campo sugerido não é informação validada. A conta não está integrada: ausência no prontuário não significa item não faturado.</p>
+    <p class="ds-help">Como usar: confirme o atendimento, escolha o documento e leia o PDF, o texto e os dados sugeridos. Campo sugerido não é informação validada. A conta não está integrada: ausência no prontuário não significa item não faturado.</p>
     <section class="ds-context" data-ds-consult-lookup>
         @if (!embedded)
         {
@@ -52,6 +52,10 @@
             <p><strong>@context.DisplayName</strong> · código @context.PatientCode</p>
             <p>Atendimento @context.EncounterCode · código externo @(context.RawKind ?? "não informado") · tipo @(context.Kind ?? "ainda não mapeado") · @(context.Status ?? "situação não informada")</p>
             <p class="ds-note">Entrada @(context.AdmittedAt?.ToString("dd/MM/yyyy HH:mm") ?? "não informada") · alta @(context.DischargedAt?.ToString("dd/MM/yyyy HH:mm") ?? "não informada")</p>
+            @if (context.ConfirmedAt is DateTimeOffset confirmed)
+            {
+                <p class="ds-note">Identidade confirmada na origem em @confirmed.ToLocalTime().ToString("dd/MM/yyyy HH:mm"). Esta data não amplia a autorização da sessão.</p>
+            }
             <details>
                 <summary>Detalhes administrativos</summary>
                 <p class="ds-note">Paciente interno @context.PatientId · atendimento interno @(encounterId?.ToString() ?? "") · escopo @(ViewBag.ScopeKind ?? "consulta interna")</p>
@@ -126,7 +130,11 @@
             }
             @if (documents.Count == 0)
             {
-                <p>Nenhum documento visível para este atendimento.</p>
+                <p>Não há documento deste tipo no atendimento. Outro atendimento não foi aberto.</p>
+            }
+            else if (!string.IsNullOrWhiteSpace((string?)ViewBag.CatalogCode) && documents.Count(item => item.CatalogCode == (string)ViewBag.CatalogCode) > 1)
+            {
+                <p>Há mais de um documento deste tipo.</p>
             }
             <h3>Pesquisar neste atendimento</h3>
             <form data-ds-search class="ds-grid">

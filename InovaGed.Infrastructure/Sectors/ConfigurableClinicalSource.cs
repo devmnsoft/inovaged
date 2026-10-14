@@ -33,7 +33,11 @@ public sealed class ConfigurableClinicalSource : IClinicalSource
             if (body is null || !string.Equals(body.Status, "encontrado", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(body.Codigo))
                 return new ClinicalSourceResult(ClinicalSourceStatus.NotFound, ClinicalSourceMessages.NotFound, null, []);
             var encounters = (body.Atendimentos ?? []).Select(item => new ExternalEncounter(item.Codigo ?? "", item.TipoExterno, item.Entrada, item.Alta, item.Situacao)).ToArray();
-            return new ClinicalSourceResult(ClinicalSourceStatus.Found, "Paciente localizado na origem configurada.", new ExternalPatient(sourceSystem ?? "MV", sourceUnit, body.Codigo, body.Nome ?? body.Codigo), encounters);
+            var identifiers = (body.Identificadores ?? [])
+                .Where(item => !string.IsNullOrWhiteSpace(item.Tipo) && !string.IsNullOrWhiteSpace(item.Codigo))
+                .Select(item => new ExternalIdentifier(item.Tipo!.Trim(), item.Codigo!.Trim()))
+                .ToArray();
+            return new ClinicalSourceResult(ClinicalSourceStatus.Found, "Paciente localizado na origem configurada.", new ExternalPatient(sourceSystem ?? "MV", sourceUnit, body.Codigo, body.Nome ?? body.Codigo, identifiers), encounters);
         }, ct);
 
     public Task<ClinicalDocumentResult> ListDocumentsAsync(Guid tenantId, string? sourceSystem, string? sourceUnit, string patientCode, string encounterCode, CancellationToken ct)
@@ -145,7 +149,14 @@ public sealed class ConfigurableClinicalSource : IClinicalSource
         public string? Status { get; set; }
         public string? Codigo { get; set; }
         public string? Nome { get; set; }
+        public IdentifierPayload[]? Identificadores { get; set; }
         public EncounterPayload[]? Atendimentos { get; set; }
+    }
+
+    private sealed class IdentifierPayload
+    {
+        public string? Tipo { get; set; }
+        public string? Codigo { get; set; }
     }
 
     private sealed class EncounterPayload

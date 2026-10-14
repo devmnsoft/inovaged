@@ -2,9 +2,21 @@
 
 Este contrato é do InovaGed. Ele não descreve um endpoint nativo do MV/Soul. A origem clínica continua desligada até `ClinicalSource:Enabled`, `BaseUrl` e `PatientPath` serem configurados com um contrato publicado. A chave dessa origem fica na variável de ambiente `INOVAGED_CLINICAL_SOURCE_KEY` e não entra em log nem em JavaScript.
 
+## Entrada por URL
+
+Sistemas que só conseguem abrir um endereço HTTPS usam:
+
+`GET /DemaisSetores/Integrar?integracao=parceiro-exemplo&tipoIdentificador=ID&paciente=000120&codigoAtendimento=000088&nomeDocumento=Prescri%C3%A7%C3%A3o%20M%C3%A9dica&modo=consulta`
+
+Parâmetros obrigatórios: `integracao`, `tipoIdentificador` (`ID` ou `CPF`), `paciente`, `codigoAtendimento`. Opcionais: `nomeDocumento` (até 160 caracteres, com espaço e acento), `modo` (`consulta` ou `documento`), `codigoDocumento` (até 16), `documentoId` e `versaoId`. Outro parâmetro torna o link inválido. Zeros à esquerda do ID e do atendimento são preservados. CPF é normalizado e validado; não autentica.
+
+O tenant, o sistema e a unidade vêm do cadastro da integração. A resposta dessa entrada não traz conteúdo clínico. Ela grava o contexto no servidor, devolve um identificador opaco e redireciona para `/DemaisSetores/Continuar/{ticket}`. A página de entrada envia `Referrer-Policy: no-referrer` e `Cache-Control: private, no-store`. A query não é registrada pelo aplicativo. Isso não apaga logs que o proxy ou o servidor já tenham gravado. URL com CPF pode ficar no histórico do navegador. Quando o parceiro tiver backend, use a chamada de servidor.
+
+Se ninguém estiver autenticado, a continuação vai para o login com retorno somente em `/DemaisSetores/Continuar/{ticket}`. CPF e atendimento não voltam na ReturnUrl. Depois do login valem a permissão do usuário e a restrição da integração. O link temporário resultante é `/DemaisSetores/Abrir/{codigo}`.
+
 ## Autenticação
 
-A chamada é de servidor para servidor.
+A chamada de servidor continua disponível.
 
 - `POST /api/integracoes/demais-setores/aberturas`
 - Cabeçalho `X-InovaGed-Integracao`: identificador cadastrado
@@ -82,6 +94,16 @@ A origem do corpo precisa estar cadastrada na integração. O `frame-ancestors` 
 | `documento_ausente` | Não há documento elegível. O contexto pode ser aberto. |
 | `varias_ocorrencias` | Há mais de um documento e nenhum foi escolhido. |
 | `acesso_negado` | Origem ou tipo fora do cadastro da integração. |
+| `tipo_ambiguo` | O nome corresponde a mais de um tipo ativo. Nenhum é escolhido. |
+| `tipo_contraditorio` | Código e nome apontam para tipos diferentes. |
+| `abertura_repetida` | A mesma chave `X-InovaGed-Idempotencia` já gerou uma abertura. Os códigos não são reenviados. |
+| `limite_excedido` | Mais de 30 aberturas da integração no último minuto. |
+
+A página e o quadro são gravados na mesma transação, com a mesma correlação. Se a auditoria falhar depois da gravação, a abertura continua concedida e o erro fica no log. `documentoId` ou `versaoId` mantêm o escopo no documento encontrado. Eles não abrem o atendimento inteiro. Vários documentos do mesmo tipo geram `varias_ocorrencias` e a lista para seleção. Vários tipos com o mesmo nome geram `tipo_ambiguo`.
+
+Identidade e atendimento já confirmados na origem podem ser abertos sem uma nova consulta clínica. Sem essa confirmação, a origem precisa responder. Indisponibilidade não cria paciente nem atribui atendimento só pelo parâmetro recebido. ID e CPF só apontam para a mesma identidade quando a origem devolve os dois identificadores. Nome parecido não une prontuários. Não há cliente MV/Soul homologado.
+
+O iframe sem cookie mostra que o arquivo não é público e pede abertura em uma nova janela. O código já consumido não é reutilizado. O quadro usa o layout sem menu administrativo. A consulta incorporada permanece somente leitura.
 
 ## Sessão e mensagens
 
