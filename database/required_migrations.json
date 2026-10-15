@@ -1013,5 +1013,12 @@
     "area": "DemaisSetores",
     "required": true,
     "description": "Entrada opaca por URL, identidade confirmada e emissão atômica do par de aberturas."
+  },
+  {
+    "name": "2026_10_29_demais_setores_user_session",
+    "path": "database/migrations/2026_10_29_demais_setores_user_session.sql",
+    "area": "DemaisSetores",
+    "required": true,
+    "description": "Preserva o usuário autorizador nas aberturas e sessões por login para revalidação documental."
   }
 ]

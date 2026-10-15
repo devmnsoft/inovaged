@@ -6,7 +6,12 @@ using InovaGed.Application.Sectors;
 using InovaGed.Application.Tests.Ged;
 using InovaGed.Domain.Primitives;
 using InovaGed.Infrastructure.Sectors;
+using InovaGed.Infrastructure.Security;
 using InovaGed.Web.Security;
+using InovaGed.Web.Controllers;
+using InovaGed.Application.Identity;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 
@@ -131,6 +136,10 @@ insert into ged.sector_document_link (id, tenant_id, patient_id, encounter_id, d
             var byCpf = await SectorIdentityStore.FindAsync(db, tenant, "MV", "1", "CPF", "52998224725", "000088", CancellationToken.None);
             Assert.Equal(patient, byCpf!.PatientId);
             Assert.Equal(encounter, byCpf.EncounterId);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => SectorIdentityStore.LinkAsync(db, tenant, otherPatient, "MV", "1", "CPF", "52998224725", CancellationToken.None));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => SectorIdentityStore.LinkAsync(db, otherTenant, patient, "MV", "1", "ID", "new-alias", CancellationToken.None));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => SectorIdentityStore.LinkAsync(db, tenant, cpfPatient, "MV", "1", "ID", "new-alias", CancellationToken.None));
+            Assert.Equal(patient, (await SectorIdentityStore.FindAsync(db, tenant, "MV", "1", "CPF", "52998224725", "000088", CancellationToken.None))!.PatientId);
             var otherUnit = await SectorIdentityStore.FindAsync(db, tenant, "MV", "2", "ID", "000120", "000088", CancellationToken.None);
             Assert.Equal(otherPatient, otherUnit!.PatientId);
             Assert.NotEqual(encounter, otherUnit.EncounterId);
@@ -142,7 +151,7 @@ insert into ged.sector_document_link (id, tenant_id, patient_id, encounter_id, d
 
             var sectors = new Sectors();
             var audit = new Audit();
-            var service = new SectorOpeningService(new Factory(builder.ConnectionString), sectors, audit, NullLogger<SectorOpeningService>.Instance);
+            var service = new SectorOpeningService(new Factory(builder.ConnectionString), sectors, audit, NullLogger<SectorOpeningService>.Instance, new AbacAuthorizationService(new Factory(builder.ConnectionString)));
             Assert.Null(await service.RegisterIntegrationAsync(new SectorIntegrationRegistration(tenant, Guid.NewGuid(), "parceiro-exemplo", "segredo-de-teste-123", "MV", "1", ["https://parceiro.exemplo"], ["DS23"], true, false, 15), CancellationToken.None));
 
             var opened = await service.OpenAsync(Request("ID", "000120", "000088", "Receituário", null, null, "consulta"), CancellationToken.None);
@@ -223,6 +232,15 @@ from ged.sector_open_code where correlation_id=@correlation
             Assert.Equal(2, await db.ExecuteScalarAsync<int>("select count(*) from ged.sector_open_code where correlation_id=@id", new { id = audited.CorrelationId }));
 
             var integrationId = await db.ExecuteScalarAsync<Guid>("select id from ged.sector_integration where client_id='parceiro-exemplo' and tenant_id=@tenant", new { tenant });
+            await db.ExecuteAsync("update ged.sector_patient set confirmed_at=null where id=@patient", new { patient });
+            sectors.BeforeFind = () => db.ExecuteAsync("update ged.sector_integration set catalog_codes='{DS08}' where id=@integrationId", new { integrationId });
+            var raced = await service.OpenAsync(Request("ID", "000120", "000088", null, "DS23", null, "consulta", "race"), CancellationToken.None);
+            Assert.Equal(SectorOpeningCodes.Denied, raced.Code);
+            Assert.Null(raced.PageUrl);
+            Assert.Equal(0, await db.ExecuteScalarAsync<int>("select count(*) from ged.sector_open_code where correlation_id=@correlation", new { correlation = raced.CorrelationId }));
+            sectors.BeforeFind = null;
+            await db.ExecuteAsync("update ged.sector_integration set catalog_codes='{DS23}' where id=@integrationId", new { integrationId });
+            await db.ExecuteAsync("update ged.sector_patient set confirmed_at=now() where id=@patient", new { patient });
             for (var i = 0; i < 30; i++)
             {
                 await db.ExecuteAsync("""
@@ -246,10 +264,62 @@ values (gen_random_uuid(), @otherTenant, 'parceiro-exemplo', repeat('c', 64), 'M
             await db.ExecuteAsync("update ged.sector_open_request set created_at = now() - interval '2 minutes'");
             var issued = await service.CreateEntryAsync(new SectorEntryDraft("parceiro-exemplo", "ID", "000120", "000088", "Receituário", null, null, null, "consulta"), CancellationToken.None);
             Assert.True(issued.Accepted);
-            var continued = await service.ContinueEntryAsync(issued.TicketId!.Value, tenant, Guid.NewGuid(), true, CancellationToken.None);
+            var user = Guid.NewGuid();
+            var role = Guid.NewGuid();
+            await db.ExecuteAsync("""
+insert into ged.app_user(id, tenant_id) values (@user, @tenant);
+insert into ged.role(id, tenant_id) values (@role, @tenant);
+insert into ged.app_role(id, tenant_id) values (@role, @tenant);
+insert into ged.user_role(user_id, role_id) values (@user, @role);
+insert into ged.permission(code) values ('Documents.View');
+insert into ged.role_permission(tenant_id, role_id, permission_code) values (@tenant, @role, 'Documents.View');
+-- The second document has a visible type but an ACL that excludes this user.
+insert into ged.document_acl(document_id, user_id, can_read, can_write) values (@secondDocument, @excluded, true, false);
+""", new { user, role, tenant, secondDocument, excluded = Guid.NewGuid() });
+            var continued = await service.ContinueEntryAsync(issued.TicketId!.Value, tenant, user, true, CancellationToken.None);
             Assert.True(continued.Redirect);
             Assert.StartsWith("/DemaisSetores/Abrir/", continued.PageUrl, StringComparison.Ordinal);
             Assert.DoesNotContain("000120", continued.PageUrl, StringComparison.Ordinal);
+            var userSession = await service.ConsumeAsync(continued.PageUrl!.Split('/').Last(), CancellationToken.None);
+            Assert.NotNull(userSession);
+            var access = await service.ReadSessionAsync(userSession!.CookieValue, userSession.PublicId, CancellationToken.None);
+            Assert.Equal(user, access!.AuthorizingUserId);
+            Assert.Equal("", access.Origin);
+            Assert.Contains(document, access.AuthorizedDocumentIds!);
+            Assert.DoesNotContain(secondDocument, access.AuthorizedDocumentIds!);
+            Assert.Equal(user, audit.LastUser);
+            var permitted = await db.QueryAsync<Guid>($"select l.document_id from ged.sector_document_link l where true {SectorSessionScope.LinkFilter}", SectorSessionScope.Args(access));
+            Assert.Equal(new[] { document }, permitted);
+            var deniedTicket = await service.CreateEntryAsync(new SectorEntryDraft("parceiro-exemplo", "ID", "000120", "000088", null, "DS23", secondDocument, secondVersion, "documento"), CancellationToken.None);
+            var deniedByAcl = await service.ContinueEntryAsync(deniedTicket.TicketId!.Value, tenant, user, true, CancellationToken.None);
+            Assert.False(deniedByAcl.Redirect);
+            Assert.Null(deniedByAcl.PageUrl);
+            foreach (var identity in new[]
+            {
+                new SessionUser(false, tenant, user),
+                new SessionUser(true, tenant, Guid.NewGuid()),
+                new SessionUser(true, otherTenant, user)
+            })
+            {
+                var controller = new DemaisSetoresController(sectors, service, null!, null!, identity, new Factory(builder.ConnectionString), null!, new AbacAuthorizationService(new Factory(builder.ConnectionString)));
+                var http = new DefaultHttpContext();
+                http.User = new ClaimsPrincipal(identity.IsAuthenticated ? new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, identity.UserId.ToString())], "test") : new ClaimsIdentity());
+                http.Request.Headers.Cookie = SectorOpeningService.CookieNameFor(userSession.PublicId) + "=" + userSession.CookieValue;
+                controller.ControllerContext = new ControllerContext { HttpContext = http };
+                var response = Assert.IsType<ContentResult>(await controller.ConsultaIntegrada(userSession.PublicId, CancellationToken.None));
+                Assert.Equal(401, http.Response.StatusCode);
+                Assert.DoesNotContain("Paciente sintético", response.Content ?? "");
+            }
+            await db.ExecuteAsync("update ged.app_user set is_active=false where id=@user", new { user });
+            Assert.Null(await service.ReadSessionAsync(userSession.CookieValue, userSession.PublicId, CancellationToken.None));
+            await db.ExecuteAsync("update ged.app_user set is_active=true where id=@user", new { user });
+            sectors.EnterAllowed = false;
+            Assert.Null(await service.ReadSessionAsync(userSession.CookieValue, userSession.PublicId, CancellationToken.None));
+            sectors.EnterAllowed = true;
+            await db.ExecuteAsync("delete from ged.role_permission where role_id=@role", new { role });
+            var revoked = await service.ReadSessionAsync(userSession.CookieValue, userSession.PublicId, CancellationToken.None);
+            Assert.Empty(revoked!.AuthorizedDocumentIds!);
+            Assert.Empty(await db.QueryAsync<Guid>($"select l.document_id from ged.sector_document_link l where true {SectorSessionScope.LinkFilter}", SectorSessionScope.Args(revoked)));
             var consumed = await service.ContinueEntryAsync(issued.TicketId.Value, tenant, Guid.NewGuid(), true, CancellationToken.None);
             Assert.False(consumed.Redirect);
             Assert.Equal("Este link não pode ser usado.", consumed.Message);
@@ -279,11 +349,32 @@ values (gen_random_uuid(), @otherTenant, 'parceiro-exemplo', repeat('c', 64), 'M
             await db.OpenAsync();
             await db.ExecuteAsync("create schema if not exists ged");
             var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "database", "migrations"));
-            foreach (var file in new[] { "2026_10_25_demais_setores.sql", "2026_10_26_demais_setores_acesso.sql", "2026_10_27_demais_setores_sessao.sql", "2026_10_28_demais_setores_entrada.sql" })
+            foreach (var file in new[] { "2026_10_25_demais_setores.sql", "2026_10_26_demais_setores_acesso.sql", "2026_10_27_demais_setores_sessao.sql", "2026_10_28_demais_setores_entrada.sql", "2026_10_29_demais_setores_user_session.sql" })
             {
                 var sql = await File.ReadAllTextAsync(Path.Combine(root, file));
+                if (file == "2026_10_29_demais_setores_user_session.sql")
+                    await db.ExecuteAsync("""
+insert into ged.sector_open_session
+  (id,tenant_id,integration_id,cookie_hash,public_id,patient_id,encounter_id,mode,origin,correlation_id,expires_at)
+values (gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),repeat('a',64),gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),'consulta','https://partner.test','legacy',now()+interval '10 minutes');
+insert into ged.sector_open_code
+  (id,tenant_id,integration_id,code_hash,patient_id,encounter_id,mode,origin,correlation_id,expires_at)
+values (gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),repeat('a',64),gen_random_uuid(),gen_random_uuid(),'consulta','https://partner.test','legacy',now()+interval '10 minutes');
+""");
                 await db.ExecuteAsync(sql);
+                if (file == "2026_10_29_demais_setores_user_session.sql")
+                {
+                    Assert.True(await db.ExecuteScalarAsync<bool>("select revoked_at is not null from ged.sector_open_session where correlation_id='legacy'"));
+                    Assert.True(await db.ExecuteScalarAsync<bool>("select consumed_at is not null from ged.sector_open_code where correlation_id='legacy'"));
+                    await db.ExecuteAsync("""
+insert into ged.sector_open_session
+  (id,tenant_id,integration_id,cookie_hash,public_id,patient_id,encounter_id,mode,origin,correlation_id,expires_at)
+values (gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),repeat('b',64),gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),'consulta','https://partner.test','new-backend',now()+interval '10 minutes');
+""");
+                }
                 await db.ExecuteAsync(sql);
+                if (file == "2026_10_29_demais_setores_user_session.sql")
+                    Assert.True(await db.ExecuteScalarAsync<bool>("select revoked_at is null from ged.sector_open_session where correlation_id='new-backend'"));
             }
             Assert.True(await db.ExecuteScalarAsync<bool>("select exists(select 1 from information_schema.columns where table_schema='ged' and table_name='sector_patient' and column_name='confirmed_at')"));
             Assert.True(await db.ExecuteScalarAsync<bool>("select to_regclass('ged.sector_entry_ticket') is not null"));
@@ -326,13 +417,13 @@ create table ged.sector_open_code (
     patient_id uuid not null, encounter_id uuid not null, catalog_code text, document_id uuid, version_id uuid,
     mode text not null, scope_kind text not null, allow_encounter_switch boolean not null default false,
     origin text not null, integration_id uuid not null, correlation_id text not null, expires_at timestamptz not null,
-    consumed_at timestamptz, granted_catalog text[], created_at timestamptz not null default now());
+    consumed_at timestamptz, granted_catalog text[], authorizing_user_id uuid, created_at timestamptz not null default now());
 create table ged.sector_open_session (
     id uuid primary key, tenant_id uuid not null, integration_id uuid not null, cookie_hash char(64) not null unique,
     public_id uuid not null unique, patient_id uuid not null, encounter_id uuid not null, catalog_code text,
     document_id uuid, version_id uuid, mode text not null, scope_kind text not null,
     allow_encounter_switch boolean not null default false, origin text not null, correlation_id text not null,
-    expires_at timestamptz not null, revoked_at timestamptz, protection_hash char(64), granted_catalog text[]);
+    expires_at timestamptz not null, revoked_at timestamptz, protection_hash char(64), granted_catalog text[], authorizing_user_id uuid);
 create table ged.sector_open_request (
     id uuid primary key, tenant_id uuid not null, integration_id uuid not null, idempotency_key text,
     correlation_id text not null, page_code_hash char(64) not null, frame_code_hash char(64) not null,
@@ -347,7 +438,14 @@ create table ged.sector_document_type (
     synonyms text[] not null default '{}', primary key (tenant_id, catalog_code));
 create table ged.sector_document_synonym (
     tenant_id uuid not null, catalog_code text not null, synonym text not null, unique (tenant_id, synonym));
-create table ged.document (tenant_id uuid not null, id uuid not null, reg_status char(1) not null default 'A', primary key (tenant_id, id));
+create table ged.document (tenant_id uuid not null, id uuid not null, reg_status char(1) not null default 'A', is_confidential boolean not null default false, primary key (tenant_id, id));
+create table ged.app_user(id uuid primary key, tenant_id uuid not null, is_active boolean default true, is_locked boolean default false, reg_status char(1) default 'A');
+create table ged.role(id uuid primary key, tenant_id uuid);
+create table ged.app_role(id uuid primary key, tenant_id uuid);
+create table ged.user_role(user_id uuid, role_id uuid);
+create table ged.permission(code text primary key, reg_status char(1) default 'A');
+create table ged.role_permission(tenant_id uuid, role_id uuid, permission_code text, reg_status char(1) default 'A');
+create table ged.document_acl(document_id uuid, user_id uuid, role_id uuid, can_read boolean, can_write boolean);
 create table ged.sector_document_link (
     id uuid primary key, tenant_id uuid not null, patient_id uuid not null, encounter_id uuid not null,
     document_id uuid not null, version_id uuid not null, catalog_code text not null, reg_status char(1) not null default 'A');
@@ -366,12 +464,20 @@ create table ged.sector_document_link (
         }
     }
 
+    private sealed record SessionUser(bool IsAuthenticated, Guid TenantId, Guid UserId) : ICurrentUser
+    {
+        public string Email => "synthetic@example.test";
+        public IReadOnlyList<string> Roles => [];
+    }
+
     private sealed class Audit : IAuditWriter
     {
         public bool Throw;
+        public Guid? LastUser;
         public Task<Result> WriteAsync(AuditWriteCommand command, CancellationToken ct)
         {
             if (Throw) throw new InvalidOperationException("auditoria");
+            LastUser = command.UserId;
             return Task.FromResult(Result.Ok());
         }
 
@@ -382,16 +488,19 @@ create table ged.sector_document_link (
     private sealed class Sectors : IDemaisSetoresService
     {
         public int Calls;
+        public Func<Task>? BeforeFind;
+        public bool EnterAllowed = true;
         public ClinicalSourceResult Next = new(ClinicalSourceStatus.NotFound, "Paciente não localizado.", null, []);
-        public Task<bool> CanEnterAsync(Guid tenantId, Guid userId, bool isFullAdmin, CancellationToken ct) => Task.FromResult(true);
+        public Task<bool> CanEnterAsync(Guid tenantId, Guid userId, bool isFullAdmin, CancellationToken ct) => Task.FromResult(EnterAllowed);
         public Task<bool> HasPermissionAsync(Guid tenantId, Guid userId, bool isFullAdmin, string permission, CancellationToken ct) => Task.FromResult(true);
         public Task EnsureTenantAsync(Guid tenantId, CancellationToken ct) => Task.CompletedTask;
         public Task<ClinicalSourceResult> FindPatientAsync(Guid tenantId, string? externalCode, string? sourceSystem, string? sourceUnit, CancellationToken ct)
             => FindPatientAsync(tenantId, externalCode, sourceSystem, sourceUnit, "ID", ct);
-        public Task<ClinicalSourceResult> FindPatientAsync(Guid tenantId, string? externalCode, string? sourceSystem, string? sourceUnit, string identifierKind, CancellationToken ct)
+        public async Task<ClinicalSourceResult> FindPatientAsync(Guid tenantId, string? externalCode, string? sourceSystem, string? sourceUnit, string identifierKind, CancellationToken ct)
         {
             Calls++;
-            return Task.FromResult(Next);
+            if (BeforeFind is not null) await BeforeFind();
+            return Next;
         }
         public Task<SectorGrantView?> ReadGrantAsync(string token, Guid versionId, CancellationToken ct) => throw new NotSupportedException();
         public Task<SectorUploadTicket> PrepareUploadAsync(Guid tenantId, Guid userId, bool isFullAdmin, Guid patientId, Guid encounterId, string catalogCode, string fileName, long totalBytes, CancellationToken ct) => throw new NotSupportedException();

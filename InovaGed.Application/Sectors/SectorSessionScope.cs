@@ -16,7 +16,8 @@ public static class SectorSessionScope
   and (@catalog is null or l.catalog_code=@catalog)
   and (@documentId is null or l.document_id=@documentId)
   and (@versionId is null or l.version_id=@versionId)
-  and (cardinality(@allowedCatalog)=0 or l.catalog_code = any(@allowedCatalog))
+  and l.catalog_code = any(@allowedCatalog)
+  and (not @requireUserAuthorization or l.document_id = any(@authorizedDocuments))
   and exists (
         select 1 from ged.document scope_d
         where scope_d.tenant_id=l.tenant_id and scope_d.id=l.document_id and coalesce(scope_d.reg_status,'A')='A')
@@ -35,6 +36,8 @@ public static class SectorSessionScope
             documentId = session.DocumentId,
             versionId = versionId ?? (session.Mode == "documento" ? session.VersionId : null),
             allowedCatalog = session.AllowedCatalogCodes ?? [],
+            requireUserAuthorization = session.AuthorizingUserId.HasValue,
+            authorizedDocuments = session.AuthorizedDocumentIds ?? [],
             take,
             skip
         };

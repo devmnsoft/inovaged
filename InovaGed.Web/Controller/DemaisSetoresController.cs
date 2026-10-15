@@ -547,7 +547,8 @@ where l.version_id=@askedVersion
             tenantId = session.TenantId, patientId = session.PatientId, encounterId = session.EncounterId, expand = false,
             catalog = session.CatalogCode, documentId = session.DocumentId,
             versionId = session.Mode == "documento" ? session.VersionId : null,
-            allowedCatalog = session.AllowedCatalogCodes ?? [], askedVersion = versionId
+            allowedCatalog = session.AllowedCatalogCodes ?? [], askedVersion = versionId,
+            requireUserAuthorization = session.AuthorizingUserId.HasValue, authorizedDocuments = session.AuthorizedDocumentIds ?? []
         }, cancellationToken: ct));
         if (string.IsNullOrWhiteSpace(text))
             return Html(200, "Ainda não há texto desta versão. A leitura pode estar na fila, ter falhado ou não se aplicar a este arquivo. Nada foi inventado.");
@@ -813,7 +814,8 @@ select exists(
             tenantId = session.TenantId, patientId = session.PatientId, encounterId = session.EncounterId, expand = false,
             catalog = session.CatalogCode, documentId = session.DocumentId,
             versionId = session.Mode == "documento" ? session.VersionId : null,
-            allowedCatalog = session.AllowedCatalogCodes ?? [], askedVersion = versionId
+            allowedCatalog = session.AllowedCatalogCodes ?? [], askedVersion = versionId,
+            requireUserAuthorization = session.AuthorizingUserId.HasValue, authorizedDocuments = session.AuthorizedDocumentIds ?? []
         }, cancellationToken: ct));
     }
 
@@ -832,7 +834,12 @@ where e.tenant_id=@tenantId and e.id=@encounterId and e.patient_id=@patientId
     }
 
     private async Task<SectorSessionAccess?> ReadOpeningAsync(Guid publicId, CancellationToken ct)
-        => await _opening.ReadSessionAsync(Request.Cookies[SectorOpeningService.CookieNameFor(publicId)], publicId, ct);
+    {
+        var session = await _opening.ReadSessionAsync(Request.Cookies[SectorOpeningService.CookieNameFor(publicId)], publicId, ct);
+        if (session?.AuthorizingUserId is Guid userId
+            && (User.Identity?.IsAuthenticated != true || _currentUser.TenantId != session.TenantId || _currentUser.UserId != userId)) return null;
+        return session;
+    }
 
     private CookieOptions OpeningCookie(DateTimeOffset expires)
     {
@@ -928,7 +935,7 @@ order by f.updated_at desc
 select catalog_code as Code, name as Name, applicability as Applicability, catalog_order as Order
 from ged.sector_document_type
 where tenant_id=@tenantId and active and (@catalog is null or catalog_code=@catalog)
-  and (cardinality(@allowedCatalog)=0 or catalog_code = any(@allowedCatalog))
+  and catalog_code = any(@allowedCatalog)
 order by catalog_order
 """,
             SectorSessionScope.Args(session), cancellationToken: ct));
@@ -977,7 +984,8 @@ where t.tenant_id=@tenantId and t.active and (@catalog is null or t.catalog_code
         {
             tenantId = session.TenantId, patientId = session.PatientId, encounterId = session.EncounterId,
             catalog = session.CatalogCode, documentId = session.DocumentId, versionId = session.Mode == "documento" ? session.VersionId : null,
-            allowedCatalog = session.AllowedCatalogCodes ?? [], expand, patterns, take = pageSize, skip = page * pageSize
+            allowedCatalog = session.AllowedCatalogCodes ?? [], expand, patterns, take = pageSize, skip = page * pageSize,
+            requireUserAuthorization = session.AuthorizingUserId.HasValue, authorizedDocuments = session.AuthorizedDocumentIds ?? []
         };
         var filter = $"""
 from ged.sector_document_link l

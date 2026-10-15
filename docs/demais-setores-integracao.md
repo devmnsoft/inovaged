@@ -66,6 +66,18 @@ A sessão é somente leitura. Conferência, correção e revisão continuam na c
 
 A lista de tipos da integração é relida a cada requisição da sessão. Lista vazia significa todos os tipos ativos daquele tenant. Lista preenchida restringe listagem, arquivo, texto, campos, achados, checklist e pesquisa a esses códigos. Documento ou vínculo inativo sai do escopo. A mesma regra vale para acesso direto pelo identificador da versão. Remover a origem cadastrada invalida a próxima leitura e a troca de atendimento. Alterar os tipos não exige nova sessão para passar a valer.
 
+Essa convenção de lista vazia vale somente para a configuração da integração. O resultado efetivo da autorização sempre contém os códigos ativos permitidos, já intersectados com a concessão original. `SectorCatalogAccess` distingue `AllActive`, `Restricted` e `None`; em consultas, um array vazio nega todos os documentos. Se uma concessão limitada a DS23 passar a intersectar uma integração limitada a DS08, a sessão é recusada, inclusive para trocar atendimento. A continuação resolve os tipos visíveis pelo serviço no servidor, independentemente do booleano administrativo recebido pelo chamador.
+
+A emissão relê a integração sob bloqueio transacional. Se situação, credencial, origem, tipos, sistema, unidade, prazo ou opções de escopo mudaram desde a resolução do contexto, os dois códigos deixam de ser emitidos e a abertura precisa ser reiniciada. O vínculo de alias também é transacional: exige paciente canônico confirmado na mesma origem, unidade e tenant; conflito ou cadeia de identidades provoca erro e rollback.
+
+A abertura por login preserva `authorizing_user_id` no código e na sessão. A cada leitura o servidor revalida usuário ativo/desbloqueado, tenant, entrada no módulo, tipos visíveis e autorização documental canônica (ABAC e ACL). O filtro compartilhado exige a lista de documentos autorizados para sessões de usuário; uma lista não resolvida ou vazia nega conteúdo. A concessão emitida por backend autenticado mantém seu contrato de integração, sem assumir a identidade de um usuário.
+
+A sessão por login exige também o cookie de autenticação do mesmo usuário e tenant. Logout impede seu uso; um novo login desse mesmo usuário pode retomá-la dentro da validade, sujeito à revalidação. Revogar usuário, módulo, tipos ou acesso documental vale na próxima requisição. A continuação abre em página própria, com origem vazia e `frame-ancestors 'none'`, sem escolher uma origem parceira por ordenação. A incorporação pela API continua vinculada à origem explicitamente validada.
+
+A migration incremental `2026_10_29_demais_setores_user_session.sql` acrescenta a identidade autorizadora. Na primeira execução invalida os códigos e sessões temporários anteriores, incluindo os de backend, pois as antigas concessões administrativas não têm proveniência distinguível. Preserva o histórico e não revoga novas aberturas em reaplicações. Reabra os contextos pelo fluxo autorizado depois do upgrade.
+
+O gate completo ainda depende da seleção explícita de origem para URL incorporada, administração/retenção dos tickets, recuperação idempotente e fallback funcional de iframe. Os testes PostgreSQL e de controller não substituem a homologação de login e cookies em navegador de outra origem.
+
 O escopo fica fixo na abertura:
 
 - `documento`: documento e versão permanecem os da concessão.

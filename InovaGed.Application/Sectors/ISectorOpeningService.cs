@@ -95,7 +95,17 @@ public sealed record SectorSessionAccess(
     string Origin,
     string CorrelationId,
     DateTimeOffset ExpiresAt,
-    string[] AllowedCatalogCodes);
+    string[] AllowedCatalogCodes,
+    bool AllActiveCatalog = false,
+    Guid? AuthorizingUserId = null,
+    Guid[]? AuthorizedDocumentIds = null)
+{
+    public SectorCatalogAccess CatalogAccess => AllowedCatalogCodes.Length == 0
+        ? SectorCatalogAccess.None
+        : AllActiveCatalog ? SectorCatalogAccess.AllActive : SectorCatalogAccess.Restricted;
+}
+
+public enum SectorCatalogAccess { None, Restricted, AllActive }
 
 public sealed record SectorIntegrationRegistration(
     Guid TenantId,

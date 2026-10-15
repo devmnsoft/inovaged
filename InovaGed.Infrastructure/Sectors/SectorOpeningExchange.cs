@@ -18,7 +18,7 @@ select c.id as Id, c.tenant_id as TenantId, c.patient_id as PatientId, c.encount
        c.catalog_code as CatalogCode, c.document_id as DocumentId, c.version_id as VersionId,
        c.mode as Mode, c.scope_kind as ScopeKind, c.allow_encounter_switch as AllowEncounterSwitch,
        c.origin as Origin, c.integration_id as IntegrationId, c.correlation_id as CorrelationId, c.expires_at as ExpiresAt,
-       c.granted_catalog as GrantedCatalog
+       c.granted_catalog as GrantedCatalog, c.authorizing_user_id as AuthorizingUserId
 from ged.sector_open_code c
 join ged.sector_integration i on i.id=c.integration_id and i.tenant_id=c.tenant_id and i.active
 join ged.sector_patient p on p.id=c.patient_id and p.tenant_id=c.tenant_id
@@ -35,10 +35,10 @@ for update of c
         await conn.ExecuteAsync(new CommandDefinition("""
 insert into ged.sector_open_session
  (id, tenant_id, integration_id, cookie_hash, public_id, patient_id, encounter_id, catalog_code, document_id, version_id,
-  mode, scope_kind, allow_encounter_switch, origin, correlation_id, expires_at, protection_hash, granted_catalog)
+  mode, scope_kind, allow_encounter_switch, origin, correlation_id, expires_at, protection_hash, granted_catalog, authorizing_user_id)
 values
  (@sessionId, @tenantId, @integrationId, @cookieHash, @publicId, @patientId, @encounterId, @catalog, @documentId, @versionId,
-  @mode, @scopeKind, @allowSwitch, @origin, @correlation, @expires, @protectionHash, @grantedCatalog)
+  @mode, @scopeKind, @allowSwitch, @origin, @correlation, @expires, @protectionHash, @grantedCatalog, @authorizingUserId)
 """, new
         {
             sessionId, tenantId = row.TenantId, integrationId = row.IntegrationId, cookieHash = Hash(cookie), publicId,
@@ -46,7 +46,7 @@ values
             documentId = row.DocumentId, versionId = row.VersionId, mode = row.Mode, scopeKind = row.ScopeKind,
             allowSwitch = row.AllowEncounterSwitch && row.ScopeKind == "atendimento",
             origin = row.Origin, correlation = row.CorrelationId, expires = row.ExpiresAt, protectionHash = Hash(protection),
-            grantedCatalog = row.GrantedCatalog
+            grantedCatalog = row.GrantedCatalog, authorizingUserId = row.AuthorizingUserId
         }, tx, cancellationToken: ct));
         var linked = await conn.ExecuteAsync(new CommandDefinition("""
 update ged.sector_open_code
@@ -65,21 +65,22 @@ where id=@id and consumed_at is null
         var row = await conn.QuerySingleOrDefaultAsync<SessionRow>(new CommandDefinition("""
 select s.public_id as PublicId, s.tenant_id as TenantId, s.patient_id as PatientId, s.encounter_id as EncounterId,
        s.catalog_code as CatalogCode, s.document_id as DocumentId, s.version_id as VersionId, s.mode as Mode,
-       s.scope_kind as ScopeKind,
+       s.scope_kind as ScopeKind, s.authorizing_user_id as AuthorizingUserId,
        (s.allow_encounter_switch and i.allow_encounter_switch and s.scope_kind='atendimento') as AllowEncounterSwitch,
        s.origin as Origin, s.correlation_id as CorrelationId, s.expires_at as ExpiresAt,
-       case
-         when s.granted_catalog is null then i.catalog_codes
-         when cardinality(i.catalog_codes)=0 then s.granted_catalog
-         else coalesce((select array_agg(x) from unnest(s.granted_catalog) as x where x = any(i.catalog_codes)), '{}')
-       end as AllowedCatalogCodes
+       (s.granted_catalog is null and cardinality(i.catalog_codes)=0) as AllActiveCatalog,
+       array(select t.catalog_code from ged.sector_document_type t
+             where t.tenant_id=s.tenant_id and t.active
+               and (cardinality(i.catalog_codes)=0 or t.catalog_code=any(i.catalog_codes))
+               and (s.granted_catalog is null or t.catalog_code=any(s.granted_catalog))
+             order by t.catalog_code) as AllowedCatalogCodes
 from ged.sector_open_session s
 join ged.sector_integration i on i.id=s.integration_id and i.tenant_id=s.tenant_id and i.active
 join ged.sector_patient p on p.id=s.patient_id and p.tenant_id=s.tenant_id
   and p.source_system=i.source_system and p.source_unit=i.source_unit
 join ged.sector_encounter e on e.id=s.encounter_id and e.tenant_id=s.tenant_id and e.patient_id=s.patient_id
 where s.cookie_hash=@hash and s.public_id=@publicId and s.revoked_at is null and s.expires_at>now()
-  and s.origin = any(i.origins)
+  and ((s.origin='' and s.authorizing_user_id is not null) or s.origin = any(i.origins))
   and (
     (s.scope_kind='atendimento' and i.allow_encounter_list and s.document_id is null and s.version_id is null)
     or (s.scope_kind='tipo' and s.catalog_code is not null and s.document_id is null
@@ -100,11 +101,11 @@ where s.cookie_hash=@hash and s.public_id=@publicId and s.revoked_at is null and
         ))
   )
 """, new { hash = Hash(cookieValue), publicId }, cancellationToken: ct));
-        if (row is null || row.PublicId == Guid.Empty) return null;
+        if (row is null || row.PublicId == Guid.Empty || row.AllowedCatalogCodes.Length == 0) return null;
         var expires = row.ExpiresAt.Kind == DateTimeKind.Unspecified
             ? new DateTimeOffset(DateTime.SpecifyKind(row.ExpiresAt, DateTimeKind.Utc))
             : new DateTimeOffset(row.ExpiresAt.ToUniversalTime());
-        return new SectorSessionAccess(row.PublicId, row.TenantId, row.PatientId, row.EncounterId, row.CatalogCode, row.DocumentId, row.VersionId, row.Mode, row.ScopeKind, row.AllowEncounterSwitch, row.Origin, row.CorrelationId, expires, row.AllowedCatalogCodes ?? []);
+        return new SectorSessionAccess(row.PublicId, row.TenantId, row.PatientId, row.EncounterId, row.CatalogCode, row.DocumentId, row.VersionId, row.Mode, row.ScopeKind, row.AllowEncounterSwitch, row.Origin, row.CorrelationId, expires, row.AllowedCatalogCodes ?? [], row.AllActiveCatalog, row.AuthorizingUserId);
     }
 
     public static async Task<bool> SwitchAsync(NpgsqlConnection conn, string? cookieValue, Guid publicId, string encounterCode, CancellationToken ct)
@@ -117,8 +118,13 @@ from ged.sector_integration i, ged.sector_encounter e
 where s.cookie_hash=@hash and s.public_id=@publicId and s.revoked_at is null and s.expires_at>now()
   and s.scope_kind='atendimento' and s.allow_encounter_switch and s.document_id is null and s.version_id is null
   and i.id=s.integration_id and i.tenant_id=s.tenant_id and i.active and i.allow_encounter_switch and i.allow_encounter_list
-  and s.origin = any(i.origins)
+  and ((s.origin='' and s.authorizing_user_id is not null) or s.origin = any(i.origins))
   and e.tenant_id=s.tenant_id and e.patient_id=s.patient_id and e.external_code=@code
+  and exists (
+    select 1 from ged.sector_document_type t
+    where t.tenant_id=s.tenant_id and t.active
+      and (cardinality(i.catalog_codes)=0 or t.catalog_code=any(i.catalog_codes))
+      and (s.granted_catalog is null or t.catalog_code=any(s.granted_catalog)))
   and exists (
     select 1 from ged.sector_patient p
     where p.id=s.patient_id and p.tenant_id=s.tenant_id
@@ -171,6 +177,7 @@ where tenant_id=@tenantId and integration_id=@integrationId and consumed_at is n
 
     private sealed class SessionRow
     {
+        public Guid? AuthorizingUserId { get; set; }
         public Guid PublicId { get; set; }
         public Guid TenantId { get; set; }
         public Guid PatientId { get; set; }
@@ -185,10 +192,12 @@ where tenant_id=@tenantId and integration_id=@integrationId and consumed_at is n
         public string CorrelationId { get; set; } = "";
         public DateTime ExpiresAt { get; set; }
         public string[] AllowedCatalogCodes { get; set; } = [];
+        public bool AllActiveCatalog { get; set; }
     }
 
     private sealed class CodeRow
     {
+        public Guid? AuthorizingUserId { get; set; }
         public Guid Id { get; set; }
         public Guid TenantId { get; set; }
         public Guid PatientId { get; set; }

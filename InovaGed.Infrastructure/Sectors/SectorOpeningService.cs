@@ -4,6 +4,7 @@ using Dapper;
 using InovaGed.Application.Audit;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Sectors;
+using InovaGed.Application.Security;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -18,13 +19,15 @@ public sealed class SectorOpeningService : ISectorOpeningService
     private readonly IDemaisSetoresService _sectors;
     private readonly IAuditWriter _audit;
     private readonly ILogger<SectorOpeningService> _logger;
+    private readonly IAbacAuthorizationService? _authorization;
 
-    public SectorOpeningService(IDbConnectionFactory db, IDemaisSetoresService sectors, IAuditWriter audit, ILogger<SectorOpeningService> logger)
+    public SectorOpeningService(IDbConnectionFactory db, IDemaisSetoresService sectors, IAuditWriter audit, ILogger<SectorOpeningService> logger, IAbacAuthorizationService? authorization = null)
     {
         _db = db;
         _sectors = sectors;
         _audit = audit;
         _logger = logger;
+        _authorization = authorization;
     }
 
     public async Task<SectorOpeningResponse> OpenAsync(SectorOpeningRequest request, CancellationToken ct)
@@ -103,7 +106,7 @@ where id=@ticketId and consumed_at is null and expires_at>now()
             return new SectorEntryContinuation(false, null, 400, "Este link não pode ser usado.");
         if (ticket.TenantId != tenantId)
             return new SectorEntryContinuation(false, null, 403, "A integração não permite consultar este documento.");
-        if (!await _sectors.CanEnterAsync(tenantId, userId, isFullAdmin, ct))
+        if (!await UserIsActiveAsync(conn, tenantId, userId, ct) || !await _sectors.CanEnterAsync(tenantId, userId, false, ct))
             return new SectorEntryContinuation(false, null, 403, "Seu usuário não consulta o módulo Demais setores.");
 
         var integration = await conn.QuerySingleOrDefaultAsync<IntegrationRow>(new CommandDefinition("""
@@ -113,23 +116,19 @@ select id as Id, tenant_id as TenantId, client_id as ClientId, secret_hash as Se
 from ged.sector_integration
 where id=@id and tenant_id=@tenantId and active
 """, new { id = ticket.IntegrationId, tenantId }, cancellationToken: ct));
-        if (integration is null || integration.Origins.Length == 0)
+        if (integration is null)
             return new SectorEntryContinuation(false, null, 403, "A integração não permite consultar este documento.");
 
-        string[]? granted = null;
-        if (!isFullAdmin)
-        {
-            var visible = await _sectors.VisibleCatalogCodesAsync(tenantId, userId, false, ct);
-            granted = integration.CatalogCodes.Length == 0
-                ? visible.ToArray()
-                : visible.Where(code => integration.CatalogCodes.Contains(code, StringComparer.Ordinal)).ToArray();
-            if (granted.Length == 0)
-                return new SectorEntryContinuation(false, null, 403, "A integração não permite consultar este documento.");
-        }
+        var visible = await _sectors.VisibleCatalogCodesAsync(tenantId, userId, false, ct);
+        var granted = integration.CatalogCodes.Length == 0
+            ? visible.ToArray()
+            : visible.Where(code => integration.CatalogCodes.Contains(code, StringComparer.Ordinal)).ToArray();
+        if (granted.Length == 0)
+            return new SectorEntryContinuation(false, null, 403, "A integração não permite consultar este documento.");
 
-        var origin = integration.Origins.OrderBy(item => item, StringComparer.OrdinalIgnoreCase).First();
+        var origin = "";
         var request = new SectorOpeningRequest(integration.ClientId, "continuacao", ticket.IdentifierKind, ticket.IdentifierValue, integration.SourceSystem, integration.SourceUnit, ticket.EncounterCode, ticket.DocumentName, ticket.DocumentCode, ticket.DocumentId, ticket.VersionId, ticket.Mode, origin);
-        var opened = await GrantAsync(conn, integration, request, Guid.NewGuid().ToString("N"), granted, ticket.Id, origin, ct);
+        var opened = await GrantAsync(conn, integration, request, Guid.NewGuid().ToString("N"), granted, ticket.Id, origin, ct, userId);
         if (!string.IsNullOrWhiteSpace(opened.PageUrl))
             return new SectorEntryContinuation(true, opened.PageUrl, 200, opened.Message);
         var status = opened.Code == SectorOpeningCodes.Unauthorized ? 401 : 422;
@@ -156,7 +155,21 @@ where id=@id and tenant_id=@tenantId and active
     public async Task<SectorSessionAccess?> ReadSessionAsync(string? cookieValue, Guid publicId, CancellationToken ct)
     {
         await using var conn = await _db.OpenAsync(ct);
-        return await SectorOpeningExchange.ReadAsync(conn, cookieValue, publicId, ct);
+        var session = await SectorOpeningExchange.ReadAsync(conn, cookieValue, publicId, ct);
+        if (session?.AuthorizingUserId is not Guid userId) return session;
+        if (_authorization is null || !await UserIsActiveAsync(conn, session.TenantId, userId, ct)
+            || !await _sectors.CanEnterAsync(session.TenantId, userId, false, ct)) return null;
+        var visible = await _sectors.VisibleCatalogCodesAsync(session.TenantId, userId, false, ct);
+        var catalog = session.AllowedCatalogCodes.Intersect(visible, StringComparer.Ordinal).ToArray();
+        if (catalog.Length == 0) return null;
+        var candidates = (await conn.QueryAsync<Guid>(new CommandDefinition("""
+select distinct l.document_id from ged.sector_document_link l
+where l.tenant_id=@tenantId and l.patient_id=@patientId and l.reg_status='A'
+  and l.catalog_code=any(@catalog)
+""", new { tenantId = session.TenantId, patientId = session.PatientId, catalog }, cancellationToken: ct))).ToArray();
+        var documents = await _authorization.FilterDocumentsAsync(session.TenantId, userId, candidates, "VIEW", ct);
+        if (session.DocumentId.HasValue && !documents.Contains(session.DocumentId.Value)) return null;
+        return session with { AllowedCatalogCodes = catalog, AllActiveCatalog = false, AuthorizedDocumentIds = documents.ToArray() };
     }
 
     public async Task<bool> SwitchEncounterAsync(string? cookieValue, Guid publicId, string encounterCode, CancellationToken ct)
@@ -166,12 +179,13 @@ where id=@id and tenant_id=@tenantId and active
         await using var conn = await _db.OpenAsync(ct);
         var changed = await SectorOpeningExchange.SwitchAsync(conn, cookieValue, publicId, encounterCode, ct);
         if (changed)
-            await Audit(before.TenantId, before.PatientId, "FILE_PREVIEW", "Atendimento da abertura alterado com permissão explícita. Correlacao " + before.CorrelationId + ".", before.CorrelationId, ct);
+            await Audit(before.TenantId, before.PatientId, "FILE_PREVIEW", "Atendimento da abertura alterado com permissão explícita. Correlacao " + before.CorrelationId + ".", before.CorrelationId, ct, before.AuthorizingUserId);
         return changed;
     }
 
     public async Task<bool> AuthorizeCommandAsync(string? cookieValue, Guid publicId, string? protectionToken, CancellationToken ct)
     {
+        if (await ReadSessionAsync(cookieValue, publicId, ct) is null) return false;
         await using var conn = await _db.OpenAsync(ct);
         return await SectorOpeningExchange.AuthorizeAsync(conn, cookieValue, publicId, protectionToken, ct);
     }
@@ -220,7 +234,7 @@ set secret_hash=excluded.secret_hash, source_system=excluded.source_system, sour
         return null;
     }
 
-    private async Task<SectorOpeningResponse> GrantAsync(NpgsqlConnection conn, IntegrationRow integration, SectorOpeningRequest request, string correlation, string[]? grantedCatalog, Guid? ticketId, string origin, CancellationToken ct)
+    private async Task<SectorOpeningResponse> GrantAsync(NpgsqlConnection conn, IntegrationRow integration, SectorOpeningRequest request, string correlation, string[]? grantedCatalog, Guid? ticketId, string origin, CancellationToken ct, Guid? authorizingUserId = null)
     {
         if (!SectorEntryContract.IdempotencyKey(request.IdempotencyKey, out var idempotency))
             return await Fail(conn, integration, SectorOpeningCodes.Invalid, "A chave de idempotência não é válida.", correlation, ticketId, true, ct);
@@ -323,6 +337,14 @@ where l.tenant_id=@tenantId and l.encounter_id=@encounterId and l.patient_id=@pa
             documentId = request.DocumentId, versionId = request.VersionId, allowed
         }, cancellationToken: ct))).ToArray();
 
+        if (authorizingUserId.HasValue)
+        {
+            if (_authorization is null)
+                return Refuse(SectorOpeningCodes.Denied, "A autorização documental está indisponível.", correlation);
+            var authorized = await _authorization.FilterDocumentsAsync(integration.TenantId, authorizingUserId.Value, rows.Select(x => x.DocumentId).Distinct().ToArray(), "VIEW", ct);
+            rows = rows.Where(x => authorized.Contains(x.DocumentId)).ToArray();
+        }
+
         var locksDocument = request.DocumentId.HasValue || request.VersionId.HasValue;
         Guid? documentId = null;
         Guid? versionId = null;
@@ -383,7 +405,44 @@ select exists(
         await using var tx = await conn.BeginTransactionAsync(ct);
         try
         {
-            await conn.ExecuteAsync(new CommandDefinition("select id from ged.sector_integration where id=@id for update", new { id = integration.Id }, tx, cancellationToken: ct));
+            var current = await conn.QuerySingleOrDefaultAsync<IntegrationRow>(new CommandDefinition("""
+select id as Id, tenant_id as TenantId, client_id as ClientId, secret_hash as SecretHash,
+       source_system as SourceSystem, source_unit as SourceUnit, origins as Origins,
+       catalog_codes as CatalogCodes, allow_encounter_list as AllowEncounterList,
+       allow_encounter_switch as AllowEncounterSwitch, max_minutes as MaxMinutes, active as Active
+from ged.sector_integration
+where id=@id and tenant_id=@tenantId
+for update
+""", new { id = integration.Id, tenantId = integration.TenantId }, tx, cancellationToken: ct));
+            if (current is null || !current.Active
+                || current.ClientId != integration.ClientId || current.SecretHash != integration.SecretHash
+                || current.SourceSystem != integration.SourceSystem || current.SourceUnit != integration.SourceUnit
+                || current.AllowEncounterList != integration.AllowEncounterList
+                || current.AllowEncounterSwitch != integration.AllowEncounterSwitch
+                || current.MaxMinutes != integration.MaxMinutes
+                || !current.Origins.OrderBy(x => x, StringComparer.Ordinal).SequenceEqual(integration.Origins.OrderBy(x => x, StringComparer.Ordinal))
+                || !current.CatalogCodes.OrderBy(x => x, StringComparer.Ordinal).SequenceEqual(integration.CatalogCodes.OrderBy(x => x, StringComparer.Ordinal))
+                || (!authorizingUserId.HasValue && !OriginAllowed(current.Origins, origin, out _)))
+            {
+                await tx.RollbackAsync(ct);
+                return Refuse(SectorOpeningCodes.Denied, "A configuração da integração mudou. Inicie uma nova abertura.", correlation);
+            }
+            if (authorizingUserId is Guid actor)
+            {
+                if (!await UserIsActiveAsync(conn, integration.TenantId, actor, ct, tx)
+                    || !await _sectors.CanEnterAsync(integration.TenantId, actor, false, ct))
+                {
+                    await tx.RollbackAsync(ct);
+                    return Refuse(SectorOpeningCodes.Denied, "O usuário não está autorizado para esta abertura.", correlation);
+                }
+                var visibleNow = await _sectors.VisibleCatalogCodesAsync(integration.TenantId, actor, false, ct);
+                if (grantedCatalog is null || grantedCatalog.Any(x => !visibleNow.Contains(x, StringComparer.Ordinal))
+                    || (_authorization is not null && (await _authorization.FilterDocumentsAsync(integration.TenantId, actor, rows.Select(x => x.DocumentId).Distinct().ToArray(), "VIEW", ct)).Count != rows.Select(x => x.DocumentId).Distinct().Count()))
+                {
+                    await tx.RollbackAsync(ct);
+                    return Refuse(SectorOpeningCodes.Denied, "As permissões mudaram. Inicie uma nova abertura.", correlation);
+                }
+            }
             if (idempotency is not null)
             {
                 var previous = await conn.ExecuteScalarAsync<string?>(new CommandDefinition("""
@@ -405,8 +464,8 @@ where integration_id=@id and created_at > now() - interval '60 seconds'
                 await tx.RollbackAsync(ct);
                 return await Fail(conn, integration, SectorOpeningCodes.RateLimited, "O limite de aberturas desta integração foi atingido. Aguarde um minuto e tente de novo.", correlation, ticketId, false, ct);
             }
-            await InsertCodeAsync(conn, tx, integration, pageCode, patientId, encounterId, catalog, documentId, versionId, storedMode, scopeKind, allowSwitch, origin, correlation, expires, grantedCatalog, ct);
-            await InsertCodeAsync(conn, tx, integration, frameCode, patientId, encounterId, catalog, documentId, versionId, storedMode, scopeKind, allowSwitch, origin, correlation, expires, grantedCatalog, ct);
+            await InsertCodeAsync(conn, tx, integration, pageCode, patientId, encounterId, catalog, documentId, versionId, storedMode, scopeKind, allowSwitch, origin, correlation, expires, grantedCatalog, ct, authorizingUserId);
+            await InsertCodeAsync(conn, tx, integration, frameCode, patientId, encounterId, catalog, documentId, versionId, storedMode, scopeKind, allowSwitch, origin, correlation, expires, grantedCatalog, ct, authorizingUserId);
             await conn.ExecuteAsync(new CommandDefinition("""
 insert into ged.sector_open_request
  (id, tenant_id, integration_id, idempotency_key, correlation_id, page_code_hash, frame_code_hash)
@@ -442,7 +501,7 @@ select correlation_id from ged.sector_open_request where integration_id=@id and 
 
         try
         {
-            await Audit(integration.TenantId, integration.Id, "FILE_PREVIEW", "Abertura temporária concedida. Correlacao " + correlation + ".", correlation, ct);
+            await Audit(integration.TenantId, integration.Id, "FILE_PREVIEW", "Abertura temporária concedida. Correlacao " + correlation + ".", correlation, ct, authorizingUserId);
         }
         catch (Exception ex)
         {
@@ -452,17 +511,17 @@ select correlation_id from ged.sector_open_request where integration_id=@id and 
         return new SectorOpeningResponse(true, code, message, SectorOpeningLink.Path(pageCode), SectorOpeningLink.Path(frameCode), expires, scope, correlation, rows.Length);
     }
 
-    private static async Task InsertCodeAsync(NpgsqlConnection conn, NpgsqlTransaction tx, IntegrationRow integration, string code, Guid patientId, Guid encounterId, string? catalog, Guid? documentId, Guid? versionId, string mode, string scopeKind, bool allowSwitch, string origin, string correlation, DateTimeOffset expires, string[]? grantedCatalog, CancellationToken ct)
+    private static async Task InsertCodeAsync(NpgsqlConnection conn, NpgsqlTransaction tx, IntegrationRow integration, string code, Guid patientId, Guid encounterId, string? catalog, Guid? documentId, Guid? versionId, string mode, string scopeKind, bool allowSwitch, string origin, string correlation, DateTimeOffset expires, string[]? grantedCatalog, CancellationToken ct, Guid? authorizingUserId)
     {
         await conn.ExecuteAsync(new CommandDefinition("""
 insert into ged.sector_open_code
- (id, tenant_id, code_hash, patient_id, encounter_id, catalog_code, document_id, version_id, mode, scope_kind, allow_encounter_switch, origin, integration_id, correlation_id, expires_at, granted_catalog)
+ (id, tenant_id, code_hash, patient_id, encounter_id, catalog_code, document_id, version_id, mode, scope_kind, allow_encounter_switch, origin, integration_id, correlation_id, expires_at, granted_catalog, authorizing_user_id)
 values
- (gen_random_uuid(), @tenantId, @hash, @patientId, @encounterId, @catalog, @documentId, @versionId, @mode, @scopeKind, @allowSwitch, @origin, @integrationId, @correlation, @expires, @grantedCatalog)
+ (gen_random_uuid(), @tenantId, @hash, @patientId, @encounterId, @catalog, @documentId, @versionId, @mode, @scopeKind, @allowSwitch, @origin, @integrationId, @correlation, @expires, @grantedCatalog, @authorizingUserId)
 """, new
         {
             tenantId = integration.TenantId, hash = Hash(code), patientId, encounterId, catalog, documentId, versionId, mode, scopeKind, allowSwitch, origin,
-            integrationId = integration.Id, correlation, expires, grantedCatalog
+            integrationId = integration.Id, correlation, expires, grantedCatalog, authorizingUserId
         }, tx, cancellationToken: ct));
     }
 
@@ -523,8 +582,14 @@ where id=@ticketId and consumed_at is null
     private static SectorOpeningResponse Refuse(string code, string message, string correlation)
         => new(false, code, message, null, null, null, null, correlation, 0);
 
-    private async Task Audit(Guid tenantId, Guid entityId, string action, string summary, string? correlation, CancellationToken ct)
-        => await _audit.WriteAsync(new AuditWriteCommand(tenantId, null, action, "sector_document", entityId, summary, null, null, correlation, null), ct);
+    private async Task Audit(Guid tenantId, Guid entityId, string action, string summary, string? correlation, CancellationToken ct, Guid? userId = null)
+        => await _audit.WriteAsync(new AuditWriteCommand(tenantId, userId, action, "sector_document", entityId, summary, null, null, correlation, null), ct);
+
+    private static Task<bool> UserIsActiveAsync(NpgsqlConnection conn, Guid tenantId, Guid userId, CancellationToken ct, NpgsqlTransaction? tx = null)
+        => conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
+select exists(select 1 from ged.app_user where tenant_id=@tenantId and id=@userId
+  and coalesce(is_active,true) and coalesce(reg_status,'A')='A' and not coalesce(is_locked,false))
+""", new { tenantId, userId }, tx, cancellationToken: ct));
 
     private static bool OriginAllowed(string[] origins, string? presented, out string origin)
     {

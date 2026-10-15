@@ -3186,3 +3186,4 @@ COMMIT;
 \ir migrations/2026_10_26_demais_setores_acesso.sql
 \ir migrations/2026_10_27_demais_setores_sessao.sql
 \ir migrations/2026_10_28_demais_setores_entrada.sql
+\ir migrations/2026_10_29_demais_setores_user_session.sql

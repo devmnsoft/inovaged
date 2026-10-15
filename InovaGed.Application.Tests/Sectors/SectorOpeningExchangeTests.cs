@@ -214,7 +214,7 @@ insert into ged.sector_finding (id, tenant_id, link_id) values
 """, new { tenant, patient, encounter, otherEncounter, integration, document23, document08, documentSame, version23, version08, versionSame, link23, link08, linkSame });
 
             SectorSessionAccess Access(string[] catalog, Guid? tenantId = null, Guid? patientId = null, Guid? versionId = null, string mode = "consulta")
-                => new(Guid.NewGuid(), tenantId ?? tenant, patientId ?? patient, encounter, null, null, versionId, mode, versionId is null ? "atendimento" : "documento", false, "https://parceiro.exemplo", "corr", DateTimeOffset.UtcNow.AddMinutes(10), catalog);
+                => new(Guid.NewGuid(), tenantId ?? tenant, patientId ?? patient, encounter, null, null, versionId, mode, versionId is null ? "atendimento" : "documento", false, "https://parceiro.exemplo", "corr", DateTimeOffset.UtcNow.AddMinutes(10), catalog.Length == 0 ? ["DS08", "DS23"] : catalog);
 
             Assert.Equal(new[] { "DS23", "DS23" }, await Codes(db, Access(["DS23"])));
             Assert.Equal(new[] { "DS23" }, await FieldCodes(db, Access(["DS23"])));
@@ -265,8 +265,22 @@ insert into ged.sector_finding (id, tenant_id, link_id) values
             Assert.Equal(new[] { "DS08" }, await Codes(db, afterChange));
             await db.ExecuteAsync("update ged.sector_integration set catalog_codes='{}' where id=@integration", new { integration });
             var allTypes = await SectorOpeningExchange.ReadAsync(db, pageSession.CookieValue, pageSession.PublicId, CancellationToken.None);
-            Assert.Empty(allTypes!.AllowedCatalogCodes);
+            Assert.Equal(new[] { "DS08", "DS23" }, allTypes!.AllowedCatalogCodes);
             Assert.Equal(3, (await Codes(db, allTypes)).Length);
+            var denied = allTypes with { AllowedCatalogCodes = [] };
+            Assert.Empty(await Codes(db, denied));
+            Assert.Empty(await FieldCodes(db, denied));
+            Assert.Empty(await FindingCodes(db, denied));
+            Assert.Empty(await ChecklistCodes(db, denied));
+            Assert.Empty(await Received(db, denied));
+            Assert.False(await Allows(db, denied, version23));
+            Assert.False(await Allows(db, denied, version08));
+
+            await db.ExecuteAsync("update ged.sector_open_session set granted_catalog='{DS23}' where public_id=@id", new { id = frameSession.PublicId });
+            await db.ExecuteAsync("update ged.sector_integration set catalog_codes='{DS08}' where id=@integration", new { integration });
+            Assert.Null(await SectorOpeningExchange.ReadAsync(db, frameSession.CookieValue, frameSession.PublicId, CancellationToken.None));
+            Assert.False(await SectorOpeningExchange.SwitchAsync(db, frameSession.CookieValue, frameSession.PublicId, "ATD-2", CancellationToken.None));
+            await db.ExecuteAsync("update ged.sector_integration set catalog_codes='{}' where id=@integration", new { integration });
             Assert.True(await SectorOpeningExchange.SwitchAsync(db, pageSession.CookieValue, pageSession.PublicId, "ATD-2", CancellationToken.None));
             await db.ExecuteAsync("update ged.sector_integration set origins='{https://outra.origem}' where id=@integration", new { integration });
             Assert.Null(await SectorOpeningExchange.ReadAsync(db, pageSession.CookieValue, pageSession.PublicId, CancellationToken.None));
@@ -349,7 +363,7 @@ order by l.id", SectorSessionScope.Args(session))).ToArray();
 select catalog_code
 from ged.sector_document_type
 where tenant_id=@tenantId and active and (@catalog is null or catalog_code=@catalog)
-  and (cardinality(@allowedCatalog)=0 or catalog_code = any(@allowedCatalog))
+  and catalog_code = any(@allowedCatalog)
 order by catalog_order
 """, SectorSessionScope.Args(session))).ToArray();
 
@@ -373,7 +387,8 @@ select exists(
             tenantId = session.TenantId, patientId = session.PatientId, encounterId = session.EncounterId, expand = false,
             catalog = session.CatalogCode, documentId = session.DocumentId,
             versionId = session.Mode == "documento" ? session.VersionId : null,
-            allowedCatalog = session.AllowedCatalogCodes ?? [], askedVersion = asked
+            allowedCatalog = session.AllowedCatalogCodes ?? [], askedVersion = asked,
+            requireUserAuthorization = session.AuthorizingUserId.HasValue, authorizedDocuments = session.AuthorizedDocumentIds ?? []
         });
 
     private static string PageSql() => $"""
@@ -393,7 +408,8 @@ limit @take offset @skip
         {
             tenantId = session.TenantId, patientId = session.PatientId, encounterId = session.EncounterId, expand = false,
             catalog = session.CatalogCode, documentId = session.DocumentId, versionId = (Guid?)null,
-            allowedCatalog = session.AllowedCatalogCodes ?? [], pattern, take, skip
+            allowedCatalog = session.AllowedCatalogCodes ?? [], pattern, take, skip,
+            requireUserAuthorization = session.AuthorizingUserId.HasValue, authorizedDocuments = session.AuthorizedDocumentIds ?? []
         };
 
     private static async Task InsertCode(NpgsqlConnection db, string code, Guid tenant, Guid patient, Guid encounter, Guid integration, string scope, string? catalog, Guid? documentId, Guid? versionId, bool allowSwitch)
@@ -429,13 +445,13 @@ create table ged.sector_open_code (
     patient_id uuid not null, encounter_id uuid not null, catalog_code text, document_id uuid, version_id uuid,
     mode text not null, scope_kind text not null, allow_encounter_switch boolean not null default false,
     origin text not null, integration_id uuid not null, correlation_id text not null, expires_at timestamptz not null,
-    consumed_at timestamptz, granted_catalog text[], created_at timestamptz not null default now());
+    consumed_at timestamptz, granted_catalog text[], authorizing_user_id uuid, created_at timestamptz not null default now());
 create table ged.sector_open_session (
     id uuid primary key, tenant_id uuid not null, integration_id uuid not null, cookie_hash char(64) not null unique,
     public_id uuid not null unique, patient_id uuid not null, encounter_id uuid not null, catalog_code text,
     document_id uuid, version_id uuid, mode text not null, scope_kind text not null,
     allow_encounter_switch boolean not null default false, origin text not null, correlation_id text not null,
-    expires_at timestamptz not null, revoked_at timestamptz, protection_hash char(64), granted_catalog text[],
+    expires_at timestamptz not null, revoked_at timestamptz, protection_hash char(64), granted_catalog text[], authorizing_user_id uuid,
     constraint scope_ok check (scope_kind in ('documento','tipo','atendimento')));
 create table ged.sector_document_type (
     tenant_id uuid not null, catalog_code text not null, name text not null, active boolean not null default true,
