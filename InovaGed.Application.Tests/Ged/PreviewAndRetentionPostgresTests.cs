@@ -31,6 +31,7 @@ internal static class LocalPg
         {
             System.Environment.GetEnvironmentVariable("INOVAGED_PG_DSN"),
             System.Environment.GetEnvironmentVariable("INOVAGED_AI_PG_DSN"),
+            "Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=123456;Timeout=5;Command Timeout=60",
             "Host=localhost;Port=5432;Database=postgres;Username=postgres;Timeout=5;Command Timeout=60"
         })
         {

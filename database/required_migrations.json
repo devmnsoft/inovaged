@@ -1069,5 +1069,12 @@
     "area": "DemaisSetores",
     "required": true,
     "description": "Acompanhamento do atendimento e paciente no trigger, segmentação e contagem clínica, e ciclo persistido de entrega."
+  },
+  {
+    "name": "2026_11_06_demais_setores_segment_and_state_alignment",
+    "path": "database/migrations/2026_11_06_demais_setores_segment_and_state_alignment.sql",
+    "area": "DemaisSetores",
+    "required": true,
+    "description": "Persistência durável por segmento clínico, alinhamento de status (BLOQUEADO_POLITICA) e snapshot histórico de entrega."
   }
 ]

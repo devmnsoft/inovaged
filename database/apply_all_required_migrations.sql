@@ -3194,3 +3194,5 @@ COMMIT;
 \ir migrations/2026_11_03_demais_setores_processing.sql
 \ir migrations/2026_11_04_demais_setores_clinical_extraction.sql
 \ir migrations/2026_11_05_demais_setores_encounter_correction.sql
+\ir migrations/2026_11_06_demais_setores_segment_and_state_alignment.sql
+

@@ -883,9 +883,11 @@ order by s.admitted_at desc nulls last
         var types = (await conn.QueryAsync<(string Code, string Name, string Applicability, int Order, bool Physical)>(new CommandDefinition(
             "select catalog_code as Code, name as Name, applicability as Applicability, catalog_order as Order, physical_original as Physical from ged.sector_document_type where tenant_id=@tenantId and active order by catalog_order",
             new { tenantId = _currentUser.TenantId }, cancellationToken: ct))).ToArray();
-        var links = (await conn.QueryAsync<(string CatalogCode, string ReviewStatus, string PreviewStatus, string OcrStatus, string ExtractionStatus, string? PhysicalEvidence)>(new CommandDefinition("""
-select l.catalog_code as CatalogCode, l.review_status as ReviewStatus, l.preview_status as PreviewStatus,
-       l.ocr_status as OcrStatus, l.extraction_status as ExtractionStatus, l.physical_evidence as PhysicalEvidence
+        var links = (await conn.QueryAsync<(Guid LinkId, string CatalogCode, string ReviewStatus, string PreviewStatus, string OcrStatus, string ExtractionStatus, string? PhysicalEvidence, bool HasReviewNeeded)>(new CommandDefinition("""
+select l.id as LinkId, l.catalog_code as CatalogCode, l.review_status as ReviewStatus, l.preview_status as PreviewStatus,
+       l.ocr_status as OcrStatus, l.extraction_status as ExtractionStatus, l.physical_evidence as PhysicalEvidence,
+       (exists(select 1 from ged.sector_extracted_field f where f.link_id=l.id and f.status='REVISAO_NECESSARIA')
+        or exists(select 1 from ged.sector_finding fn where fn.link_id=l.id and fn.review_status='REVISAO_NECESSARIA')) as HasReviewNeeded
 from ged.sector_document_link l
 where l.tenant_id=@tenantId and l.encounter_id=@encounterId and l.reg_status='A'
 """, new { tenantId = _currentUser.TenantId, encounterId }, cancellationToken: ct))).ToLookup(l => l.CatalogCode, StringComparer.Ordinal);
@@ -893,46 +895,10 @@ where l.tenant_id=@tenantId and l.encounter_id=@encounterId and l.reg_status='A'
         return types.Select(type =>
         {
             var required = profile.Id != Guid.Empty && SectorApplicability.IsRequired("ANEXO_I", profile.Enabled, encounter.Kind, type.Applicability, conditions);
-            var matching = links[type.Code].ToArray();
-            string state;
-            if (matching.Length == 0)
-            {
-                state = required ? "Documento faltante" : "Não exigido neste contexto";
-            }
-            else
-            {
-                if (matching.Any(m => m.ReviewStatus == "CONFERIDO"))
-                {
-                    if (type.Physical && matching.Any(m => string.IsNullOrWhiteSpace(m.PhysicalEvidence)))
-                        state = "Original físico pendente";
-                    else
-                        state = "Documento conferido";
-                }
-                else if (matching.Any(m => m.ReviewStatus == "NAO_APLICAVEL"))
-                {
-                    state = "Não aplicável com justificativa";
-                }
-                else if (type.Physical && matching.Any(m => string.IsNullOrWhiteSpace(m.PhysicalEvidence)))
-                {
-                    state = "Original físico pendente";
-                }
-                else if (matching.Any(m => m.ExtractionStatus is "CONCLUIDO" or "CONCLUIDO_PARCIAL" or "REVISAO_PENDENTE"))
-                {
-                    state = "Sugestão extraída";
-                }
-                else if (matching.Any(m => m.OcrStatus == "CONCLUIDO"))
-                {
-                    state = "OCR concluído";
-                }
-                else if (matching.Any(m => m.PreviewStatus == "DISPONIVEL"))
-                {
-                    state = "Prévia disponível";
-                }
-                else
-                {
-                    state = "Documento recebido";
-                }
-            }
+            var occurrences = links[type.Code]
+                .Select(l => new SectorChecklistOccurrence(l.LinkId, l.ReviewStatus, l.PreviewStatus, l.OcrStatus, l.ExtractionStatus, l.PhysicalEvidence, l.HasReviewNeeded))
+                .ToArray();
+            var state = SectorChecklistRules.EvaluateState(required, type.Physical, occurrences);
             return new SectorChecklistRow(type.Order, type.Name, state, required);
         }).ToArray();
     }
@@ -1115,9 +1081,11 @@ where tenant_id=@tenantId and active and (@catalog is null or catalog_code=@cata
 order by catalog_order
 """,
             SectorSessionScope.Args(session), cancellationToken: ct))).ToArray();
-        var links = (await conn.QueryAsync<(string CatalogCode, string ReviewStatus, string PreviewStatus, string OcrStatus, string ExtractionStatus, string? PhysicalEvidence)>(new CommandDefinition($"""
-select l.catalog_code as CatalogCode, l.review_status as ReviewStatus, l.preview_status as PreviewStatus,
-       l.ocr_status as OcrStatus, l.extraction_status as ExtractionStatus, l.physical_evidence as PhysicalEvidence
+        var links = (await conn.QueryAsync<(Guid LinkId, string CatalogCode, string ReviewStatus, string PreviewStatus, string OcrStatus, string ExtractionStatus, string? PhysicalEvidence, bool HasReviewNeeded)>(new CommandDefinition($"""
+select l.id as LinkId, l.catalog_code as CatalogCode, l.review_status as ReviewStatus, l.preview_status as PreviewStatus,
+       l.ocr_status as OcrStatus, l.extraction_status as ExtractionStatus, l.physical_evidence as PhysicalEvidence,
+       (exists(select 1 from ged.sector_extracted_field f where f.link_id=l.id and f.status='REVISAO_NECESSARIA')
+        or exists(select 1 from ged.sector_finding fn where fn.link_id=l.id and fn.review_status='REVISAO_NECESSARIA')) as HasReviewNeeded
 from ged.sector_document_link l
 where true
 {SectorSessionScope.LinkFilter}
@@ -1126,46 +1094,10 @@ where true
         return types.Select(type =>
         {
             var required = profile.Id != Guid.Empty && SectorApplicability.IsRequired("ANEXO_I", profile.Enabled, encounter.Kind, type.Applicability, conditions);
-            var matching = links[type.Code].ToArray();
-            string state;
-            if (matching.Length == 0)
-            {
-                state = required ? "Documento faltante" : "Não exigido neste contexto";
-            }
-            else
-            {
-                if (matching.Any(m => m.ReviewStatus == "CONFERIDO"))
-                {
-                    if (type.Physical && matching.Any(m => string.IsNullOrWhiteSpace(m.PhysicalEvidence)))
-                        state = "Original físico pendente";
-                    else
-                        state = "Documento conferido";
-                }
-                else if (matching.Any(m => m.ReviewStatus == "NAO_APLICAVEL"))
-                {
-                    state = "Não aplicável com justificativa";
-                }
-                else if (type.Physical && matching.Any(m => string.IsNullOrWhiteSpace(m.PhysicalEvidence)))
-                {
-                    state = "Original físico pendente";
-                }
-                else if (matching.Any(m => m.ExtractionStatus is "CONCLUIDO" or "CONCLUIDO_PARCIAL" or "REVISAO_PENDENTE"))
-                {
-                    state = "Sugestão extraída";
-                }
-                else if (matching.Any(m => m.OcrStatus == "CONCLUIDO"))
-                {
-                    state = "OCR concluído";
-                }
-                else if (matching.Any(m => m.PreviewStatus == "DISPONIVEL"))
-                {
-                    state = "Prévia disponível";
-                }
-                else
-                {
-                    state = "Documento recebido";
-                }
-            }
+            var occurrences = links[type.Code]
+                .Select(l => new SectorChecklistOccurrence(l.LinkId, l.ReviewStatus, l.PreviewStatus, l.OcrStatus, l.ExtractionStatus, l.PhysicalEvidence, l.HasReviewNeeded))
+                .ToArray();
+            var state = SectorChecklistRules.EvaluateState(required, type.Physical, occurrences);
             return new SectorChecklistRow(type.Order, type.Name, state, required);
         }).ToArray();
     }

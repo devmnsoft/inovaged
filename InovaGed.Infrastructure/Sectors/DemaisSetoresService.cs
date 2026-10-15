@@ -519,29 +519,76 @@ values (gen_random_uuid(), @TenantId, @LinkId, @current, @ToStatus, @Justificati
         if (!await HasPermissionAsync(request.TenantId, request.UserId, request.IsFullAdmin, SectorPermissions.CorrigirVinculo, ct))
             return "Seu acesso não permite corrigir o vínculo.";
         if (string.IsNullOrWhiteSpace(request.Reason)) return "A correção exige justificativa.";
+
         await using var conn = await _db.OpenAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+
+        // Bloqueia e lê o vínculo existente de forma segura contra concorrência
         var owner = await conn.QuerySingleOrDefaultAsync<(Guid EncounterId, Guid PatientId, Guid DocumentId, Guid VersionId, string ReviewStatus)>(new CommandDefinition("""
 select l.encounter_id as EncounterId, e.patient_id as PatientId, l.document_id as DocumentId, l.version_id as VersionId, l.review_status as ReviewStatus
 from ged.sector_document_link l
 join ged.sector_encounter e on e.id=l.encounter_id and e.tenant_id=l.tenant_id
 where l.tenant_id=@TenantId and l.id=@LinkId and l.reg_status='A'
-""", request, cancellationToken: ct));
+for update of l
+""", request, tx, cancellationToken: ct));
+
         if (owner.EncounterId == Guid.Empty)
             return "Documento do atendimento não encontrado.";
-        var targetPatient = await conn.ExecuteScalarAsync<Guid?>(new CommandDefinition(
-            "select patient_id from ged.sector_encounter where tenant_id=@TenantId and id=@ToEncounterId", request, cancellationToken: ct));
+
+        // Validação do atendimento de destino
+        var targetEncounter = await conn.QuerySingleOrDefaultAsync<(Guid Id, Guid PatientId)>(new CommandDefinition("""
+select id as Id, patient_id as PatientId
+from ged.sector_encounter
+where tenant_id=@TenantId and id=@ToEncounterId
+""", request, tx, cancellationToken: ct));
+
+        if (targetEncounter.Id == Guid.Empty)
+            return "Atendimento de destino não encontrado.";
+
+        var expectedPatientId = request.ToPatientId ?? owner.PatientId;
+        if (targetEncounter.PatientId != expectedPatientId)
+            return "O atendimento de destino não pertence ao mesmo paciente.";
+
+        // Validação da troca documental, se requisitada
+        var targetDocId = request.ToDocumentId ?? owner.DocumentId;
+        var targetVersionId = request.ToVersionId ?? owner.VersionId;
+
+        if (request.ToDocumentId.HasValue && request.ToDocumentId.Value != owner.DocumentId)
+        {
+            if (!request.ToVersionId.HasValue)
+                return "Para alterar o documento é obrigatório informar a versão de destino correspondente.";
+
+            var versionBelongs = await conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
+select exists(
+    select 1 from ged.document_version
+    where tenant_id=@TenantId and document_id=@targetDocId and id=@targetVersionId and reg_status='A'
+)
+""", new { request.TenantId, targetDocId, targetVersionId }, tx, cancellationToken: ct));
+
+            if (!versionBelongs)
+                return "A versão informada não pertence ao documento de destino ou está inativa.";
+
+            if (!await _authorization.CanAccessDocumentAsync(request.TenantId, request.UserId, targetDocId, "VIEW", new Dictionary<string, string>(), ct))
+                return "Seu usuário não possui acesso ao documento de destino informado.";
+        }
+        else if (request.ToVersionId.HasValue && request.ToVersionId.Value != owner.VersionId)
+        {
+            var versionBelongs = await conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
+select exists(
+    select 1 from ged.document_version
+    where tenant_id=@TenantId and document_id=@targetDocId and id=@targetVersionId and reg_status='A'
+)
+""", new { request.TenantId, targetDocId, targetVersionId }, tx, cancellationToken: ct));
+
+            if (!versionBelongs)
+                return "A versão informada não pertence ao documento informado ou está inativa.";
+        }
+
         var denied = await GuardLinkAsync(conn, request.TenantId, request.UserId, request.LinkId, ct);
         if (denied is not null) return denied;
 
-        var expectedPatientId = request.ToPatientId ?? owner.PatientId;
-        if (targetPatient is null || targetPatient != expectedPatientId)
-            return "O atendimento de destino não pertence ao mesmo paciente.";
-
-        var targetDocId = request.ToDocumentId ?? owner.DocumentId;
-        if (owner.EncounterId == request.ToEncounterId && targetDocId == owner.DocumentId && expectedPatientId == owner.PatientId)
-            return "O vínculo já aponta para este atendimento.";
-
-        await using var tx = await conn.BeginTransactionAsync(ct);
+        if (owner.EncounterId == request.ToEncounterId && targetDocId == owner.DocumentId && targetVersionId == owner.VersionId && expectedPatientId == owner.PatientId)
+            return "O vínculo já aponta para este atendimento e documento.";
 
         // 1. Registro histórico detalhado da correção
         await conn.ExecuteAsync(new CommandDefinition("""
@@ -574,10 +621,11 @@ update ged.sector_document_link
 set encounter_id = @ToEncounterId,
     patient_id = @toPatientId,
     document_id = @toDocumentId,
+    version_id = @toVersionId,
     extraction_status = 'ENFILEIRADO',
     review_status = case when review_status in ('CONFERIDO', 'EM_CONFERENCIA') then 'RECEBIDO' else review_status end
 where tenant_id = @TenantId and id = @LinkId;
-""", new { request.TenantId, request.LinkId, request.ToEncounterId, toPatientId = expectedPatientId, toDocumentId = targetDocId }, tx, cancellationToken: ct));
+""", new { request.TenantId, request.LinkId, request.ToEncounterId, toPatientId = expectedPatientId, toDocumentId = targetDocId, toVersionId = targetVersionId }, tx, cancellationToken: ct));
 
         // 4. Invalidação das sugestões incompatíveis e tratamento de confirmações humanas
         await conn.ExecuteAsync(new CommandDefinition("""
@@ -621,7 +669,7 @@ where tenant_id = @TenantId and link_id = @LinkId and review_status not in ('ABE
         // 6. Agendamento da reavaliação no novo contexto
         await conn.ExecuteAsync(new CommandDefinition(
             "select ged.sector_request_extraction(@TenantId, @versionId);",
-            new { request.TenantId, versionId = owner.VersionId }, tx, cancellationToken: ct));
+            new { request.TenantId, versionId = targetVersionId }, tx, cancellationToken: ct));
 
         await tx.CommitAsync(ct);
 
@@ -766,8 +814,9 @@ where tenant_id=@tenantId and id=@findingId
         if (!await HasPermissionAsync(request.TenantId, request.UserId, request.IsFullAdmin, SectorPermissions.Imprimir, ct))
             return new(false, "NEGADO", "Seu acesso não permite preparar a entrega.", []);
         await using var conn = await _db.OpenAsync(ct);
-        var profile = await conn.QuerySingleOrDefaultAsync<(Guid Id, bool Enabled)>(new CommandDefinition("""
-select id as Id, enabled as Enabled from ged.sector_profile
+        var profile = await conn.QuerySingleOrDefaultAsync<(Guid Id, int VersionNo, string Name, bool Enabled)>(new CommandDefinition("""
+select id as Id, coalesce(version_no, 1) as VersionNo, name as Name, enabled as Enabled
+from ged.sector_profile
 where tenant_id=@TenantId and code=@ProfileCode
 order by version_no desc limit 1
 """, request, cancellationToken: ct));
@@ -776,38 +825,58 @@ order by version_no desc limit 1
             return new(false, "PERFIL", "A composição física do Anexo II não está habilitada e não substitui o prontuário.", []);
         if (request.LinkIds.Count == 0)
             return new(false, "VAZIO", "Selecione os documentos antes de preparar a entrega.", ["Nenhum documento foi selecionado."]);
-        var items = (await conn.QueryAsync<(Guid LinkId, Guid VersionId, Guid DocumentId, string Code, string Name, bool Physical, string? Evidence, string Review, string Preview)>(new CommandDefinition("""
-select l.id as LinkId, l.version_id as VersionId, l.document_id as DocumentId, l.catalog_code as Code, t.name as Name,
-       t.physical_original as Physical, l.physical_evidence as Evidence, l.review_status as Review, l.preview_status as Preview
+
+        // Consulta ordenada deterministicamente pela ordem institucional do perfil
+        var items = (await conn.QueryAsync<(Guid LinkId, Guid VersionId, Guid DocumentId, string Code, string DocumentTitle, string CatalogName, bool Physical, string? Evidence, string Review, string Preview, int ProfilePos, int CatalogOrder)>(new CommandDefinition("""
+select l.id as LinkId, l.version_id as VersionId, l.document_id as DocumentId, l.catalog_code as Code,
+       coalesce(d.title, t.name) as DocumentTitle, t.name as CatalogName,
+       t.physical_original as Physical, l.physical_evidence as Evidence, l.review_status as Review, l.preview_status as Preview,
+       coalesce(pi.position, 999999) as ProfilePos, t.catalog_order as CatalogOrder
 from ged.sector_document_link l
 join ged.sector_document_type t on t.tenant_id=l.tenant_id and t.catalog_code=l.catalog_code
+join ged.document d on d.tenant_id=l.tenant_id and d.id=l.document_id
+left join ged.sector_profile_item pi on pi.profile_id=@profileId and pi.catalog_code=l.catalog_code
 where l.tenant_id=@tenantId and l.encounter_id=@encounterId and l.id = any(@ids) and l.reg_status='A'
-""", new { tenantId = request.TenantId, encounterId = request.EncounterId, ids = request.LinkIds.ToArray() }, cancellationToken: ct))).ToArray();
+order by coalesce(pi.position, 999999), t.catalog_order, l.id
+""", new { tenantId = request.TenantId, encounterId = request.EncounterId, profileId = profile.Id, ids = request.LinkIds.ToArray() }, cancellationToken: ct))).ToArray();
+
         if (items.Length != request.LinkIds.Distinct().Count())
             return new(false, "ATENDIMENTO", "A seleção contém documento de outro atendimento ou sem autorização de vínculo.", []);
+
         foreach (var item in items)
         {
             if (!await _authorization.CanAccessDocumentAsync(request.TenantId, request.UserId, item.DocumentId, "VIEW", new Dictionary<string, string>(), ct))
                 return new(false, "AUTORIZACAO", "Um documento selecionado não está disponível para o seu usuário.", []);
         }
+
         var profileCodes = (await conn.QueryAsync<string>(new CommandDefinition(
             "select catalog_code from ged.sector_profile_item where profile_id=@id", new { id = profile.Id }, cancellationToken: ct))).ToHashSet(StringComparer.Ordinal);
-        var blockers = SectorDeliveryRules.Blockers(items.Select(item => new SectorDeliveryCandidate(item.Name, item.Physical, !string.IsNullOrWhiteSpace(item.Evidence), item.Preview is "FALHOU" or "FALHOU_AO_ENFILEIRAR"))).ToList();
+
+        var blockers = new List<string>();
         foreach (var item in items)
         {
-            if (!profileCodes.Contains(item.Code)) blockers.Add($"{item.Name}: não pertence ao perfil selecionado.");
+            if (item.Preview is "FALHOU" or "FALHOU_AO_ENFILEIRAR")
+                blockers.Add($"{item.CatalogName}: falha de renderização de prévia. O pacote não pode ser apresentado como completo.");
+            if (item.Physical && string.IsNullOrWhiteSpace(item.Evidence))
+                blockers.Add($"{item.CatalogName}: exige original físico. A impressão da cópia digital não registra a entrega.");
+            if (!profileCodes.Contains(item.Code))
+                blockers.Add($"{item.CatalogName}: não pertence ao perfil selecionado.");
             if (item.Review is not (SectorReview.Conferido or SectorReview.Recebido or SectorReview.NaoAplicavel))
-                blockers.Add($"{item.Name}: a conferência ainda não permite incluir o item na entrega.");
+                blockers.Add($"{item.CatalogName}: a conferência ({item.Review}) ainda não permite incluir o item na entrega.");
         }
+
         var encounter = await conn.QuerySingleOrDefaultAsync<(string? Kind, bool Surgery, bool Opme, bool HighCost, DateTimeOffset? Discharged)>(new CommandDefinition(
             "select kind as Kind, surgery as Surgery, opme as Opme, high_cost as HighCost, discharged_at as Discharged from ged.sector_encounter where tenant_id=@tenantId and id=@encounterId",
             new { tenantId = request.TenantId, encounterId = request.EncounterId }, cancellationToken: ct));
-        var required = await conn.QueryAsync<(string Code, string Name, string Applicability)>(new CommandDefinition("""
+
+        var required = (await conn.QueryAsync<(string Code, string Name, string Applicability)>(new CommandDefinition("""
 select t.catalog_code as Code, t.name as Name, t.applicability as Applicability
 from ged.sector_profile_item i
 join ged.sector_document_type t on t.tenant_id=@tenantId and t.catalog_code=i.catalog_code
 where i.profile_id=@id and t.active
-""", new { tenantId = request.TenantId, id = profile.Id }, cancellationToken: ct));
+order by i.position, t.catalog_order
+""", new { tenantId = request.TenantId, id = profile.Id }, cancellationToken: ct))).ToArray();
+
         var selected = items.Select(item => item.Code).ToHashSet(StringComparer.Ordinal);
         var conditions = new SectorConditions(encounter.Surgery, encounter.Opme, encounter.HighCost, encounter.Discharged.HasValue);
         foreach (var type in required)
@@ -815,25 +884,45 @@ where i.profile_id=@id and t.active
             if (SectorApplicability.IsRequired(request.ProfileCode, profile.Enabled, encounter.Kind, type.Applicability, conditions) && !selected.Contains(type.Code))
                 blockers.Add($"{type.Name}: obrigatório neste contexto e ausente da seleção.");
         }
+
         var status = blockers.Count == 0 ? "PREPARADO" : "PREPARACAO_INCOMPLETA";
         var deliveryId = Guid.NewGuid();
         await using var tx = await conn.BeginTransactionAsync(ct);
+
         await conn.ExecuteAsync(new CommandDefinition("""
-insert into ged.sector_delivery (id, tenant_id, encounter_id, profile_id, status, assembled_by, recipient, notes)
-values (@deliveryId, @tenantId, @encounterId, @profileId, @status, @userId, @recipient, @notes)
-""", new { deliveryId, tenantId = request.TenantId, encounterId = request.EncounterId, profileId = profile.Id, status, userId = request.UserId, recipient = request.Recipient, notes = "Preparação. Não é entrega confirmada nem encerramento do atendimento. " + SectorFindings.AccountUnavailable }, tx, cancellationToken: ct));
+insert into ged.sector_delivery (id, tenant_id, encounter_id, profile_id, profile_version_no, profile_name, status, assembled_by, recipient, notes)
+values (@deliveryId, @tenantId, @encounterId, @profileId, @versionNo, @profileName, @status, @userId, @recipient, @notes)
+""", new { deliveryId, tenantId = request.TenantId, encounterId = request.EncounterId, profileId = profile.Id, versionNo = profile.VersionNo, profileName = profile.Name, status, userId = request.UserId, recipient = request.Recipient, notes = "Preparação. Não é entrega confirmada nem encerramento do atendimento. " + SectorFindings.AccountUnavailable }, tx, cancellationToken: ct));
+
         for (var i = 0; i < items.Length; i++)
         {
             var item = items[i];
-            var isPending = blockers.Any(b => b.StartsWith(item.Name, StringComparison.OrdinalIgnoreCase));
+            string? pendingReason = null;
+            if (item.Preview is "FALHOU" or "FALHOU_AO_ENFILEIRAR")
+                pendingReason = "Falha de renderização de prévia";
+            else if (item.Physical && string.IsNullOrWhiteSpace(item.Evidence))
+                pendingReason = "Original físico pendente de comprovação";
+            else if (!profileCodes.Contains(item.Code))
+                pendingReason = "Documento não pertence ao perfil selecionado";
+            else if (item.Review is not (SectorReview.Conferido or SectorReview.Recebido or SectorReview.NaoAplicavel))
+                pendingReason = $"Conferência pendente ({item.Review})";
+
+            var isPending = pendingReason != null;
             var outcome = !isPending ? "PREPARADO" : item.Physical && string.IsNullOrWhiteSpace(item.Evidence) ? "ORIGINAL_PENDENTE" : "PENDENTE";
+
             await conn.ExecuteAsync(new CommandDefinition("""
-insert into ged.sector_delivery_item (delivery_id, link_id, version_id, outcome, detail, item_order, catalog_code, is_pending)
-values (@deliveryId, @linkId, @versionId, @outcome, 'A impressão não afirma preservação de assinatura digital. A versão registrada é a selecionada.', @order, @code, @isPending)
-""", new { deliveryId, linkId = item.LinkId, versionId = item.VersionId, outcome, order = i + 1, code = item.Code, isPending }, tx, cancellationToken: ct));
+insert into ged.sector_delivery_item (delivery_id, link_id, version_id, document_id, document_title, catalog_name, physical_required, physical_evidence, pending_reason, outcome, detail, item_order, catalog_code, is_pending)
+values (@deliveryId, @linkId, @versionId, @documentId, @documentTitle, @catalogName, @physicalRequired, @physicalEvidence, @pendingReason, @outcome, 'A impressão não afirma preservação de assinatura digital. A versão registrada é a selecionada.', @order, @code, @isPending)
+""", new {
+                deliveryId, linkId = item.LinkId, versionId = item.VersionId, documentId = item.DocumentId,
+                documentTitle = item.DocumentTitle, catalogName = item.CatalogName,
+                physicalRequired = item.Physical, physicalEvidence = item.Evidence,
+                pendingReason, outcome, order = i + 1, code = item.Code, isPending
+            }, tx, cancellationToken: ct));
         }
+
         await tx.CommitAsync(ct);
-        await AuditAsync(request.TenantId, request.UserId, "REPORT_PRINT", deliveryId, "Preparação de entrega registrada sem encerrar o atendimento.", request.Ip, request.UserAgent, ct);
+        await AuditAsync(request.TenantId, request.UserId, "REPORT_PRINT", deliveryId, "Preparação de entrega registrada com snapshot imutável sem encerrar o atendimento.", request.Ip, request.UserAgent, ct);
         var message = blockers.Count == 0
             ? "A preparação foi registrada com as versões selecionadas. Isso ainda não confirma a entrega nem avalia assinatura."
             : "A preparação ficou incompleta. As pendências foram registradas e o pacote não foi marcado como completo.";
@@ -844,28 +933,67 @@ values (@deliveryId, @linkId, @versionId, @outcome, 'A impressão não afirma pr
     {
         if (!await HasPermissionAsync(tenantId, userId, isFullAdmin, SectorPermissions.Imprimir, ct))
             return "Seu acesso não permite confirmar a entrega.";
+
         await using var conn = await _db.OpenAsync(ct);
-        var delivery = await conn.QuerySingleOrDefaultAsync<(string Status, Guid EncounterId)>(new CommandDefinition("""
-select status as Status, encounter_id as EncounterId
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        var delivery = await conn.QuerySingleOrDefaultAsync<(string Status, Guid EncounterId, string? Recipient, string? ProtocolNumber, string? DeliveryEvidence)>(new CommandDefinition("""
+select status as Status, encounter_id as EncounterId, recipient as Recipient, protocol_number as ProtocolNumber, delivery_evidence as DeliveryEvidence
 from ged.sector_delivery
 where tenant_id=@tenantId and id=@deliveryId
-""", new { tenantId, deliveryId }, cancellationToken: ct));
+for update
+""", new { tenantId, deliveryId }, tx, cancellationToken: ct));
+
         if (string.IsNullOrWhiteSpace(delivery.Status))
             return "Preparação de entrega não encontrada.";
-        if (delivery.Status == "PREPARACAO_INCOMPLETA")
-            return "Não é possível confirmar a entrega de uma preparação incompleta com pendências.";
+
         if (delivery.Status == "ENTREGUE")
-            return "Esta entrega já foi confirmada anteriormente.";
+        {
+            if ((string.IsNullOrWhiteSpace(protocolNumber) || protocolNumber == delivery.ProtocolNumber) &&
+                (string.IsNullOrWhiteSpace(deliveryEvidence) || deliveryEvidence == delivery.DeliveryEvidence))
+                return null;
+            return "Esta entrega já foi confirmada anteriormente e não pode ser sobrescrita silenciosamente.";
+        }
+
+        if (delivery.Status != "PREPARADO")
+            return $"Não é possível confirmar a entrega: a preparação está na situação '{delivery.Status}' (somente PREPARADO é elegível).";
+
+        if (string.IsNullOrWhiteSpace(delivery.Recipient))
+            return "A entrega institucional exige a identificação do destinatário na preparação.";
+
+        // Revalidação de autorização sobre os documentos do pacote
+        var docIds = (await conn.QueryAsync<Guid>(new CommandDefinition("""
+select distinct coalesce(di.document_id, l.document_id)
+from ged.sector_delivery_item di
+left join ged.sector_document_link l on l.id=di.link_id and l.tenant_id=@tenantId
+where di.delivery_id=@deliveryId
+""", new { tenantId, deliveryId }, tx, cancellationToken: ct))).Where(id => id != Guid.Empty).ToArray();
+
+        foreach (var docId in docIds)
+        {
+            if (!await _authorization.CanAccessDocumentAsync(tenantId, userId, docId, "VIEW", new Dictionary<string, string>(), ct))
+                return "Seu usuário não possui autorização sobre um ou mais documentos contidos neste pacote.";
+        }
+
+        var missingPhysical = await conn.ExecuteScalarAsync<int>(new CommandDefinition("""
+select count(*) from ged.sector_delivery_item
+where delivery_id=@deliveryId and physical_required and (physical_evidence is null or trim(physical_evidence)='')
+""", new { deliveryId }, tx, cancellationToken: ct));
+
+        if (missingPhysical > 0 && string.IsNullOrWhiteSpace(deliveryEvidence))
+            return "O pacote contém documentos com exigência de original físico. Forneça a comprovação/evidência de entrega física.";
 
         await conn.ExecuteAsync(new CommandDefinition("""
 update ged.sector_delivery
 set status='ENTREGUE',
     delivered_at=now(),
+    confirmed_by=@userId,
     protocol_number=coalesce(@protocolNumber, protocol_number),
     delivery_evidence=coalesce(@deliveryEvidence, delivery_evidence)
-where tenant_id=@tenantId and id=@deliveryId
-""", new { tenantId, deliveryId, protocolNumber, deliveryEvidence }, cancellationToken: ct));
+where tenant_id=@tenantId and id=@deliveryId and status='PREPARADO'
+""", new { tenantId, deliveryId, userId, protocolNumber = protocolNumber?.Trim(), deliveryEvidence = deliveryEvidence?.Trim() }, tx, cancellationToken: ct));
 
+        await tx.CommitAsync(ct);
         await AuditAsync(tenantId, userId, "REPORT_PRINT", deliveryId, "Entrega de documentos confirmada com protocolo e evidência.", ip, userAgent, ct);
         return null;
     }
@@ -875,10 +1003,11 @@ where tenant_id=@tenantId and id=@deliveryId
         if (!await HasPermissionAsync(tenantId, userId, isFullAdmin, SectorPermissions.Consultar, ct) &&
             !await HasPermissionAsync(tenantId, userId, isFullAdmin, SectorPermissions.Imprimir, ct))
             return null;
+
         await using var conn = await _db.OpenAsync(ct);
         var delivery = await conn.QuerySingleOrDefaultAsync<(Guid Id, Guid EncounterId, Guid ProfileId, string ProfileCode, int VersionNo, string Status, Guid AssembledBy, string AssembledByName, string? Recipient, string? Notes, DateTimeOffset CreatedAt, DateTimeOffset? DeliveredAt, string? ProtocolNumber, string? DeliveryEvidence)>(new CommandDefinition("""
 select d.id as Id, d.encounter_id as EncounterId, d.profile_id as ProfileId,
-       p.code as ProfileCode, coalesce(d.version_no, 1) as VersionNo,
+       p.code as ProfileCode, coalesce(d.profile_version_no, d.version_no, p.version_no, 1) as VersionNo,
        d.status as Status, d.assembled_by as AssembledBy,
        coalesce(u.name, u.email, 'Sistema') as AssembledByName,
        d.recipient as Recipient, d.notes as Notes,
@@ -889,20 +1018,23 @@ join ged.sector_profile p on p.id = d.profile_id and p.tenant_id = d.tenant_id
 left join ged.app_user u on u.id = d.assembled_by and u.tenant_id = d.tenant_id
 where d.tenant_id=@tenantId and d.id=@deliveryId
 """, new { tenantId, deliveryId }, cancellationToken: ct));
+
         if (delivery.Id == Guid.Empty) return null;
 
-        var items = (await conn.QueryAsync<(Guid LinkId, Guid VersionId, string CatalogCode, string Name, string Outcome, string? Detail, int ItemOrder, bool IsPending, bool RequiresPhysical, string? PhysicalEvidence)>(new CommandDefinition("""
-select di.link_id as LinkId, di.version_id as VersionId, l.catalog_code as CatalogCode,
-       t.name as Name, di.outcome as Outcome, di.detail as Detail,
+        var items = (await conn.QueryAsync<(Guid LinkId, Guid VersionId, string CatalogCode, string Name, string Outcome, string? Detail, int ItemOrder, bool IsPending, bool RequiresPhysical, string? PhysicalEvidence, string? PendingReason)>(new CommandDefinition("""
+select di.link_id as LinkId, di.version_id as VersionId, di.catalog_code as CatalogCode,
+       coalesce(di.catalog_name, di.document_title, t.name, 'Documento') as Name,
+       di.outcome as Outcome, di.detail as Detail,
        coalesce(di.item_order, 0) as ItemOrder,
        coalesce(di.is_pending, false) as IsPending,
-       t.physical_original as RequiresPhysical,
-       l.physical_evidence as PhysicalEvidence
+       coalesce(di.physical_required, t.physical_original, false) as RequiresPhysical,
+       coalesce(di.physical_evidence, l.physical_evidence) as PhysicalEvidence,
+       di.pending_reason as PendingReason
 from ged.sector_delivery_item di
-join ged.sector_document_link l on l.id = di.link_id and l.tenant_id=@tenantId
-join ged.sector_document_type t on t.tenant_id = l.tenant_id and t.catalog_code = l.catalog_code
+left join ged.sector_document_link l on l.id = di.link_id and l.tenant_id=@tenantId
+left join ged.sector_document_type t on t.tenant_id = @tenantId and t.catalog_code = di.catalog_code
 where di.delivery_id=@deliveryId
-order by coalesce(di.item_order, 0), t.catalog_order, di.link_id
+order by coalesce(di.item_order, 0), di.link_id
 """, new { tenantId, deliveryId }, cancellationToken: ct))).Select(i => new SectorDeliveryItemDetails(
             i.LinkId, i.VersionId, i.CatalogCode, i.Name, i.Outcome, i.Detail, i.ItemOrder, i.IsPending, i.RequiresPhysical, i.PhysicalEvidence
         )).ToList();

@@ -1426,6 +1426,14 @@
       "transactional": true,
       "deploymentSafety": "Additive",
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_11_06_demais_setores_segment_and_state_alignment",
+      "path": "database/migrations/2026_11_06_demais_setores_segment_and_state_alignment.sql",
+      "module": "DemaisSetores",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
     }
   ]
 }

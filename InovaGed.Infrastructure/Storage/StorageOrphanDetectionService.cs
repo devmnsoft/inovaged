@@ -37,34 +37,87 @@ public sealed class StorageOrphanDetectionService : IStorageOrphanDetector
                 Array.Empty<OrphanFileInfo>());
         }
 
+        var pathComparer = OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+
+        // Determinar o escopo físico a ser percorrido
+        string scanDir = rootDir;
+        bool isDedicatedTenantDir = false;
+
+        if (tenantId.HasValue)
+        {
+            var possibleTenantDirs = new[]
+            {
+                Path.Combine(rootDir, tenantId.Value.ToString()),
+                Path.Combine(rootDir, tenantId.Value.ToString("D")),
+                Path.Combine(rootDir, tenantId.Value.ToString("N"))
+            };
+
+            foreach (var td in possibleTenantDirs)
+            {
+                if (Directory.Exists(td))
+                {
+                    scanDir = td;
+                    isDedicatedTenantDir = true;
+                    break;
+                }
+            }
+        }
+
         await using var conn = await _db.OpenAsync(ct);
 
-        // 1. Obter todos os storage_paths de versões confirmadas
-        var versionPaths = (await conn.QueryAsync<string>(new CommandDefinition("""
-select storage_path from ged.document_version
-where (@tenantId is null or tenant_id = @tenantId) and storage_path is not null
-""", new { tenantId }, cancellationToken: ct)))
+        // 1. Obter referências de versões de documentos (sempre carregar globais para evitar classificar arquivos de outros tenants como órfãos)
+        var allVersionPaths = (await conn.QueryAsync<string>(new CommandDefinition("""
+select storage_path from ged.document_version where storage_path is not null
+""", cancellationToken: ct)))
             .Select(NormalizePath)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            .ToHashSet(pathComparer);
 
-        // 2. Obter storage_paths de prévias geradas (se tabela existir no schema)
+        // 2. Obter referências de prévias geradas
         var hasPreviewTable = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
             "select to_regclass('ged.document_preview') is not null", cancellationToken: ct));
-        var previewPaths = hasPreviewTable
+        var allPreviewPaths = hasPreviewTable
             ? (await conn.QueryAsync<string>(new CommandDefinition("""
-select preview_path from ged.document_preview
-where (@tenantId is null or tenant_id = @tenantId) and preview_path is not null
-""", new { tenantId }, cancellationToken: ct)))
+select preview_path from ged.document_preview where preview_path is not null
+""", cancellationToken: ct)))
                 .Select(NormalizePath)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase)
-            : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                .ToHashSet(pathComparer)
+            : new HashSet<string>(pathComparer);
 
-        // 3. Obter identificadores de sessões ativas de upload recentes (protegidas pelo período de carência)
+        // 3. Obter anexos de protocolo, evidências de etiqueta e jobs de OCR se existirem
+        var hasProtocolAttachment = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
+            "select to_regclass('ged.protocol_request_attachment') is not null", cancellationToken: ct));
+        var protocolPaths = hasProtocolAttachment
+            ? (await conn.QueryAsync<string>(new CommandDefinition("""
+select storage_path from ged.protocol_request_attachment where storage_path is not null
+""", cancellationToken: ct)))
+                .Select(NormalizePath)
+                .ToHashSet(pathComparer)
+            : new HashSet<string>(pathComparer);
+
+        var hasLabelEvidence = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
+            "select to_regclass('ged.label_evidence') is not null", cancellationToken: ct));
+        var labelPaths = hasLabelEvidence
+            ? (await conn.QueryAsync<string>(new CommandDefinition("""
+select storage_path from ged.label_evidence where storage_path is not null
+""", cancellationToken: ct)))
+                .Select(NormalizePath)
+                .ToHashSet(pathComparer)
+            : new HashSet<string>(pathComparer);
+
+        // 4. Identificadores de sessões ativas de upload recentes
         var activeUploads = (await conn.QueryAsync<string>(new CommandDefinition("""
 select id::text from ged.upload_session
-where (@tenantId is null or tenant_id = @tenantId)
-  and (status in ('ACTIVE', 'PENDING', 'UPLOADING') or updated_at > now() - @graceInterval)
-""", new { tenantId, graceInterval = gracePeriod }, cancellationToken: ct)))
+where status in ('ACTIVE', 'PENDING', 'UPLOADING') or updated_at > now() - @graceInterval
+""", new { graceInterval = gracePeriod }, cancellationToken: ct)))
+            .ToHashSet(pathComparer);
+
+        // 5. Todos os outros tenants cadastrados (para garantir isolamento de caminhos e nunca reportar ou vazar arquivos de outro tenant)
+        var otherTenantGuids = (await conn.QueryAsync<Guid>(new CommandDefinition("""
+select id from ged.tenant where @tenantId is null or id <> @tenantId
+""", new { tenantId }, cancellationToken: ct)))
+            .Select(g => g.ToString())
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var candidates = new List<OrphanFileInfo>();
@@ -74,26 +127,79 @@ where (@tenantId is null or tenant_id = @tenantId)
         long orphanBytesTotal = 0;
         var cutoff = DateTimeOffset.UtcNow - gracePeriod;
 
-        var allFiles = Directory.EnumerateFiles(rootDir, "*", SearchOption.AllDirectories);
+        IEnumerable<string> fileEnumerable;
+        try
+        {
+            fileEnumerable = Directory.EnumerateFiles(scanDir, "*", SearchOption.AllDirectories);
+        }
+        catch (DirectoryNotFoundException)
+        {
+            fileEnumerable = Array.Empty<string>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Falha ao enumerar arquivos no diretório de armazenamento: {Directory}", scanDir);
+            fileEnumerable = Array.Empty<string>();
+        }
 
-        foreach (var fullPath in allFiles)
+        foreach (var fullPath in fileEnumerable)
         {
             ct.ThrowIfCancellationRequested();
+
+            FileInfo fileInfo;
+            try
+            {
+                var resolvedFull = Path.GetFullPath(fullPath);
+                // Proteção contra links simbólicos e path traversal saindo da raiz
+                if (!resolvedFull.StartsWith(rootDir, StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogWarning("Arquivo ignorado por escapar da raiz configurada: {Path}", resolvedFull);
+                    continue;
+                }
+
+                fileInfo = new FileInfo(resolvedFull);
+                if (!fileInfo.Exists)
+                    continue;
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException or UnauthorizedAccessException)
+            {
+                continue;
+            }
+
             totalScanned++;
 
-            var relative = Path.GetRelativePath(rootDir, fullPath);
-            var normalizedRel = NormalizePath(relative);
+            var relativeFromRoot = Path.GetRelativePath(rootDir, fullPath);
+            var normalizedRelRoot = NormalizePath(relativeFromRoot);
 
-            // Verificar se pertence a versão confirmada
-            if (versionPaths.Contains(normalizedRel) || previewPaths.Contains(normalizedRel))
+            var relativeFromScan = Path.GetRelativePath(scanDir, fullPath);
+            var normalizedRelScan = NormalizePath(relativeFromScan);
+
+            // Verificar se pertence a versões confirmadas globais, prévias, protocolos ou evidências
+            if (allVersionPaths.Contains(normalizedRelRoot) || allVersionPaths.Contains(normalizedRelScan) ||
+                allPreviewPaths.Contains(normalizedRelRoot) || allPreviewPaths.Contains(normalizedRelScan) ||
+                protocolPaths.Contains(normalizedRelRoot) || protocolPaths.Contains(normalizedRelScan) ||
+                labelPaths.Contains(normalizedRelRoot) || labelPaths.Contains(normalizedRelScan))
             {
                 confirmedReferenced++;
                 continue;
             }
 
+            // Se a busca for de um tenant específico e não estiver em pasta exclusiva,
+            // verificar se o arquivo pertence ou está na estrutura de outro tenant
+            if (tenantId.HasValue && !isDedicatedTenantDir)
+            {
+                var segments = normalizedRelRoot.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                var belongsToOtherTenant = segments.Any(s => otherTenantGuids.Contains(s));
+                if (belongsToOtherTenant)
+                {
+                    // Não pertence a este tenant nem pode ser revelado neste relatório
+                    continue;
+                }
+            }
+
             // Verificar se o arquivo está sob diretório de upload ativo
-            var segments = normalizedRel.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
-            var isInActiveUpload = segments.Any(s => activeUploads.Contains(s));
+            var pathSegments = normalizedRelRoot.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var isInActiveUpload = pathSegments.Any(s => activeUploads.Contains(s));
             if (isInActiveUpload)
             {
                 activeUploadFiles++;
@@ -101,8 +207,18 @@ where (@tenantId is null or tenant_id = @tenantId)
             }
 
             // Verificar tempo de modificação em relação ao período de segurança
-            var fileInfo = new FileInfo(fullPath);
-            var lastModified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero);
+            DateTimeOffset lastModified;
+            long fileLength;
+            try
+            {
+                lastModified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero);
+                fileLength = fileInfo.Length;
+            }
+            catch (Exception)
+            {
+                // Arquivo pode ter sido modificado ou removido concorrentemente
+                continue;
+            }
 
             if (lastModified >= cutoff)
             {
@@ -111,18 +227,18 @@ where (@tenantId is null or tenant_id = @tenantId)
                 continue;
             }
 
-            // Arquivo não referenciado e fora do período de segurança -> candidato a órfão
-            orphanBytesTotal += fileInfo.Length;
+            // Arquivo não referenciado em nenhuma base e fora do período de segurança -> candidato a órfão
+            orphanBytesTotal += fileLength;
             candidates.Add(new OrphanFileInfo(
-                relative,
-                fileInfo.Length,
+                relativeFromRoot,
+                fileLength,
                 lastModified,
-                "Arquivo físico sem referência em ged.document_version nem prévias ativas, fora do período de segurança."));
+                "Arquivo físico sem referência global em ged.document_version, prévias ou uploads ativos, fora do período de segurança."));
         }
 
         _logger.LogInformation(
-            "Varredura de órfãos de armazenamento concluída. Total: {Total}, Referenciados: {Referenced}, Candidatos: {Candidates}, Bytes: {Bytes}",
-            totalScanned, confirmedReferenced, candidates.Count, orphanBytesTotal);
+            "Varredura de órfãos de armazenamento concluída para tenant {TenantId}. Total: {Total}, Referenciados: {Referenced}, Candidatos: {Candidates}, Bytes: {Bytes}",
+            tenantId, totalScanned, confirmedReferenced, candidates.Count, orphanBytesTotal);
 
         return new StorageOrphanReport(
             DateTimeOffset.UtcNow,

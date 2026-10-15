@@ -17,6 +17,141 @@ public sealed record SectorClinicalItem(string Category,string Name,string Dose,
     private static string Label(string name,string value)=>value.Length==0?"":name+": "+value;
 }
 
+public sealed record SectorClinicalSegment(
+    int Index,
+    int CharStart,
+    int CharEnd,
+    int? PageStart,
+    int? PageEnd,
+    string Text,
+    string InputHash
+);
+
+public static class SectorClinicalSegmentation
+{
+    public static IReadOnlyList<SectorClinicalSegment> CalculateSegments(string text, int maxCharsPerSegment)
+    {
+        if (string.IsNullOrEmpty(text)) return [];
+        if (maxCharsPerSegment < 500) maxCharsPerSegment = 500;
+
+        var segments = new List<SectorClinicalSegment>();
+        const string pageMarker = "--- página ";
+
+        if (text.Contains(pageMarker, StringComparison.OrdinalIgnoreCase))
+        {
+            var pageSlices = new List<(int Start, int End, int? Page)>();
+            var scan = 0;
+            var currentPage = SectorTextLocator.PageAt(text, 0);
+
+            while (scan < text.Length)
+            {
+                var nextMarker = text.IndexOf(pageMarker, scan, StringComparison.OrdinalIgnoreCase);
+                if (nextMarker < 0)
+                {
+                    pageSlices.Add((scan, text.Length, currentPage));
+                    break;
+                }
+                if (nextMarker > scan)
+                {
+                    pageSlices.Add((scan, nextMarker, currentPage));
+                    scan = nextMarker;
+                }
+                var endMarker = text.IndexOf("---", nextMarker + pageMarker.Length, StringComparison.Ordinal);
+                if (endMarker > nextMarker)
+                {
+                    var numStr = text[(nextMarker + pageMarker.Length)..endMarker].Trim();
+                    if (int.TryParse(numStr, out var p) && p > 0)
+                        currentPage = p;
+                }
+                var pageContentEnd = text.IndexOf(pageMarker, nextMarker + pageMarker.Length, StringComparison.OrdinalIgnoreCase);
+                if (pageContentEnd < 0) pageContentEnd = text.Length;
+                pageSlices.Add((nextMarker, pageContentEnd, currentPage));
+                scan = pageContentEnd;
+            }
+
+            var currentStart = -1;
+            var currentEnd = -1;
+            int? startPage = null;
+            int? endPage = null;
+
+            foreach (var slice in pageSlices)
+            {
+                var sliceLen = slice.End - slice.Start;
+                if (sliceLen <= 0) continue;
+
+                if (sliceLen > maxCharsPerSegment)
+                {
+                    if (currentStart >= 0)
+                    {
+                        AddSeg(currentStart, currentEnd, startPage, endPage);
+                        currentStart = -1;
+                        currentEnd = -1;
+                        startPage = null;
+                        endPage = null;
+                    }
+                    var subStart = slice.Start;
+                    while (subStart < slice.End)
+                    {
+                        var len = Math.Min(maxCharsPerSegment, slice.End - subStart);
+                        AddSeg(subStart, subStart + len, slice.Page, slice.Page);
+                        subStart += len;
+                    }
+                }
+                else
+                {
+                    if (currentStart >= 0 && (slice.End - currentStart) > maxCharsPerSegment)
+                    {
+                        AddSeg(currentStart, currentEnd, startPage, endPage);
+                        currentStart = slice.Start;
+                        currentEnd = slice.End;
+                        startPage = slice.Page;
+                        endPage = slice.Page;
+                    }
+                    else
+                    {
+                        if (currentStart < 0)
+                        {
+                            currentStart = slice.Start;
+                            startPage = slice.Page;
+                        }
+                        currentEnd = slice.End;
+                        endPage = slice.Page ?? endPage;
+                    }
+                }
+            }
+
+            if (currentStart >= 0 && currentEnd > currentStart)
+            {
+                AddSeg(currentStart, currentEnd, startPage, endPage);
+            }
+        }
+        else
+        {
+            var start = 0;
+            while (start < text.Length)
+            {
+                var len = Math.Min(maxCharsPerSegment, text.Length - start);
+                AddSeg(start, start + len, null, null);
+                start += len;
+            }
+        }
+
+        if (segments.Count == 0 && text.Length > 0)
+        {
+            AddSeg(0, text.Length, null, null);
+        }
+
+        return segments;
+
+        void AddSeg(int start, int end, int? pStart, int? pEnd)
+        {
+            var segText = text.Substring(start, end - start);
+            var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(segText)));
+            segments.Add(new SectorClinicalSegment(segments.Count + 1, start, end, pStart, pEnd, segText, hash));
+        }
+    }
+}
+
 public static class SectorClinicalEvidence
 {
     public const string Mechanism="IA_CLINICA_V1";
