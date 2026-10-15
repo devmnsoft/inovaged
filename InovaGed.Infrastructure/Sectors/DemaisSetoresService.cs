@@ -879,10 +879,14 @@ order by i.position, t.catalog_order
 
         var selected = items.Select(item => item.Code).ToHashSet(StringComparer.Ordinal);
         var conditions = new SectorConditions(encounter.Surgery, encounter.Opme, encounter.HighCost, encounter.Discharged.HasValue);
+        var missingRequired = new List<(string Code, string Name, bool Physical)>();
         foreach (var type in required)
         {
             if (SectorApplicability.IsRequired(request.ProfileCode, profile.Enabled, encounter.Kind, type.Applicability, conditions) && !selected.Contains(type.Code))
+            {
                 blockers.Add($"{type.Name}: obrigatório neste contexto e ausente da seleção.");
+                missingRequired.Add((type.Code, type.Name, type.Applicability.Contains("PHYSICAL", StringComparison.OrdinalIgnoreCase)));
+            }
         }
 
         var status = blockers.Count == 0 ? "PREPARADO" : "PREPARACAO_INCOMPLETA";
@@ -918,6 +922,32 @@ values (@deliveryId, @linkId, @versionId, @documentId, @documentTitle, @catalogN
                 documentTitle = item.DocumentTitle, catalogName = item.CatalogName,
                 physicalRequired = item.Physical, physicalEvidence = item.Evidence,
                 pendingReason, outcome, order = i + 1, code = item.Code, isPending
+            }, tx, cancellationToken: ct));
+        }
+
+        for (var m = 0; m < missingRequired.Count; m++)
+        {
+            var req = missingRequired[m];
+            var syntheticLinkId = Guid.NewGuid();
+            var pendingReason = "Obrigatório neste contexto e ausente da seleção";
+            await conn.ExecuteAsync(new CommandDefinition("""
+insert into ged.sector_delivery_item (
+    delivery_id, link_id, version_id, document_id, document_title, catalog_name,
+    physical_required, physical_evidence, pending_reason, outcome, detail,
+    item_order, catalog_code, is_pending)
+values (
+    @deliveryId, @syntheticLinkId, '00000000-0000-0000-0000-000000000000'::uuid, null, null, @catalogName,
+    @physicalRequired, null, @pendingReason, 'DOCUMENTO_OBRIGATORIO_AUSENTE',
+    'Documento obrigatório exigido pelo perfil e contexto, ausente na preparação do pacote.',
+    @order, @code, true)
+""", new {
+                deliveryId,
+                syntheticLinkId,
+                catalogName = req.Name,
+                physicalRequired = req.Physical,
+                pendingReason,
+                order = items.Length + m + 1,
+                code = req.Code
             }, tx, cancellationToken: ct));
         }
 
@@ -961,12 +991,12 @@ for update
         if (string.IsNullOrWhiteSpace(delivery.Recipient))
             return "A entrega institucional exige a identificação do destinatário na preparação.";
 
-        // Revalidação de autorização sobre os documentos do pacote
+        // Revalidação de autorização sobre os documentos do pacote através da versão persistida
         var docIds = (await conn.QueryAsync<Guid>(new CommandDefinition("""
-select distinct coalesce(di.document_id, l.document_id)
+select distinct coalesce(v.document_id, di.document_id)
 from ged.sector_delivery_item di
-left join ged.sector_document_link l on l.id=di.link_id and l.tenant_id=@tenantId
-where di.delivery_id=@deliveryId
+left join ged.document_version v on v.id=di.version_id and v.tenant_id=@tenantId
+where di.delivery_id=@deliveryId and di.version_id != '00000000-0000-0000-0000-000000000000'::uuid
 """, new { tenantId, deliveryId }, tx, cancellationToken: ct))).Where(id => id != Guid.Empty).ToArray();
 
         foreach (var docId in docIds)
@@ -1005,56 +1035,145 @@ where tenant_id=@tenantId and id=@deliveryId and status='PREPARADO'
             return null;
 
         await using var conn = await _db.OpenAsync(ct);
-        var delivery = await conn.QuerySingleOrDefaultAsync<(Guid Id, Guid EncounterId, Guid ProfileId, string ProfileCode, int VersionNo, string Status, Guid AssembledBy, string AssembledByName, string? Recipient, string? Notes, DateTimeOffset CreatedAt, DateTimeOffset? DeliveredAt, string? ProtocolNumber, string? DeliveryEvidence)>(new CommandDefinition("""
+        var delivery = await conn.QuerySingleOrDefaultAsync<(
+            Guid Id, Guid EncounterId, Guid ProfileId, string ProfileCode,
+            string? ProfileName, int? ProfileVersionNo, int? DeliveryVersionNo, int? ProfileItemVersionNo,
+            string Status, Guid AssembledBy, string AssembledByName, string? Recipient, string? Notes,
+            DateTimeOffset CreatedAt, DateTimeOffset? DeliveredAt, string? ProtocolNumber, string? DeliveryEvidence)>(new CommandDefinition("""
 select d.id as Id, d.encounter_id as EncounterId, d.profile_id as ProfileId,
-       p.code as ProfileCode, coalesce(d.profile_version_no, d.version_no, p.version_no, 1) as VersionNo,
+       p.code as ProfileCode, d.profile_name as ProfileName,
+       d.profile_version_no as ProfileVersionNo, d.version_no as DeliveryVersionNo, p.version_no as ProfileItemVersionNo,
        d.status as Status, d.assembled_by as AssembledBy,
        coalesce(u.name, u.email, 'Sistema') as AssembledByName,
        d.recipient as Recipient, d.notes as Notes,
        d.created_at as CreatedAt, d.delivered_at as DeliveredAt,
        d.protocol_number as ProtocolNumber, d.delivery_evidence as DeliveryEvidence
 from ged.sector_delivery d
-join ged.sector_profile p on p.id = d.profile_id and p.tenant_id = d.tenant_id
+left join ged.sector_profile p on p.id = d.profile_id and p.tenant_id = d.tenant_id
 left join ged.app_user u on u.id = d.assembled_by and u.tenant_id = d.tenant_id
 where d.tenant_id=@tenantId and d.id=@deliveryId
 """, new { tenantId, deliveryId }, cancellationToken: ct));
 
         if (delivery.Id == Guid.Empty) return null;
 
-        var items = (await conn.QueryAsync<(Guid LinkId, Guid VersionId, string CatalogCode, string Name, string Outcome, string? Detail, int ItemOrder, bool IsPending, bool RequiresPhysical, string? PhysicalEvidence, string? PendingReason)>(new CommandDefinition("""
-select di.link_id as LinkId, di.version_id as VersionId, di.catalog_code as CatalogCode,
-       coalesce(di.catalog_name, di.document_title, t.name, 'Documento') as Name,
-       di.outcome as Outcome, di.detail as Detail,
+        var isHistoricalSnapshot = !string.IsNullOrWhiteSpace(delivery.ProfileName);
+        var versionNo = delivery.ProfileVersionNo ?? delivery.DeliveryVersionNo ?? delivery.ProfileItemVersionNo ?? 1;
+
+        var rawItems = (await conn.QueryAsync<(
+            Guid LinkId, Guid VersionId, Guid? PersistedDocId, Guid? VersionDocId,
+            string CatalogCode, string? PersistedCatalogName, string? PersistedDocumentTitle,
+            string? CurrentCatalogName,
+            bool? PersistedPhysicalRequired, bool? CurrentPhysicalOriginal,
+            string? PersistedPhysicalEvidence, string? CurrentPhysicalEvidence,
+            string? PendingReason, string Outcome, string? Detail,
+            int ItemOrder, bool IsPending)>(new CommandDefinition("""
+select di.link_id as LinkId,
+       di.version_id as VersionId,
+       di.document_id as PersistedDocId,
+       v.document_id as VersionDocId,
+       di.catalog_code as CatalogCode,
+       di.catalog_name as PersistedCatalogName,
+       di.document_title as PersistedDocumentTitle,
+       t.name as CurrentCatalogName,
+       di.physical_required as PersistedPhysicalRequired,
+       t.physical_original as CurrentPhysicalOriginal,
+       di.physical_evidence as PersistedPhysicalEvidence,
+       l.physical_evidence as CurrentPhysicalEvidence,
+       di.pending_reason as PendingReason,
+       di.outcome as Outcome,
+       di.detail as Detail,
        coalesce(di.item_order, 0) as ItemOrder,
-       coalesce(di.is_pending, false) as IsPending,
-       coalesce(di.physical_required, t.physical_original, false) as RequiresPhysical,
-       coalesce(di.physical_evidence, l.physical_evidence) as PhysicalEvidence,
-       di.pending_reason as PendingReason
+       coalesce(di.is_pending, false) as IsPending
 from ged.sector_delivery_item di
-left join ged.sector_document_link l on l.id = di.link_id and l.tenant_id=@tenantId
+left join ged.document_version v on v.tenant_id = @tenantId and v.id = di.version_id
+left join ged.sector_document_link l on l.id = di.link_id and l.tenant_id = @tenantId
 left join ged.sector_document_type t on t.tenant_id = @tenantId and t.catalog_code = di.catalog_code
-where di.delivery_id=@deliveryId
+where di.delivery_id = @deliveryId
 order by coalesce(di.item_order, 0), di.link_id
-""", new { tenantId, deliveryId }, cancellationToken: ct))).Select(i => new SectorDeliveryItemDetails(
-            i.LinkId, i.VersionId, i.CatalogCode, i.Name, i.Outcome, i.Detail, i.ItemOrder, i.IsPending, i.RequiresPhysical, i.PhysicalEvidence
-        )).ToList();
+""", new { tenantId, deliveryId }, cancellationToken: ct))).ToList();
+
+        // 1. Autorização documental canônica
+        // "Resolva o documento pela versão persistida no pacote."
+        // "Negue a consulta integral quando algum item não estiver autorizado, sem revelar seus metadados."
+        foreach (var item in rawItems)
+        {
+            if (item.VersionId != Guid.Empty)
+            {
+                if (!item.VersionDocId.HasValue && !item.PersistedDocId.HasValue)
+                {
+                    // Versão não encontrada no tenant
+                    return null;
+                }
+
+                var docId = item.VersionDocId ?? item.PersistedDocId!.Value;
+                if (!isFullAdmin)
+                {
+                    var canAccess = await _authorization.CanAccessDocumentAsync(tenantId, userId, docId, "VIEW", new Dictionary<string, string>(), ct);
+                    if (!canAccess)
+                    {
+                        // Nega a consulta integral sem vazar metadados
+                        return null;
+                    }
+                }
+            }
+        }
+
+        // 2. Composição dos itens respeitando fotografia histórica vs. legado
+        // "Não apresente valores padrão ou dados atuais como informação histórica comprovada. Preserve ausência de informação quando não houver fonte confiável."
+        var items = new List<SectorDeliveryItemDetails>(rawItems.Count);
+        foreach (var r in rawItems)
+        {
+            string name;
+            bool requiresPhysical;
+            string? physicalEvidence;
+
+            if (isHistoricalSnapshot || !string.IsNullOrWhiteSpace(r.PersistedCatalogName) || !string.IsNullOrWhiteSpace(r.PersistedDocumentTitle))
+            {
+                // Snapshot histórico comprovado: NUNCA lê de catálogo ou link alterados posteriormente
+                name = r.PersistedCatalogName ?? r.PersistedDocumentTitle ?? "Documento";
+                requiresPhysical = r.PersistedPhysicalRequired ?? false;
+                physicalEvidence = r.PersistedPhysicalEvidence; // Preserva o snapshot gravado na preparação
+            }
+            else
+            {
+                // Registro legado: preserva ausência de dados não comprovados sem assumir o estado corrente do link como histórico
+                name = r.PersistedCatalogName ?? r.PersistedDocumentTitle ?? r.CurrentCatalogName ?? "Registro legado (tipo documental não registrado)";
+                requiresPhysical = r.PersistedPhysicalRequired ?? false;
+                physicalEvidence = r.PersistedPhysicalEvidence; // Não inventa comprovação corrente
+            }
+
+            var resolvedDocId = r.VersionDocId ?? r.PersistedDocId;
+
+            items.Add(new SectorDeliveryItemDetails(
+                r.LinkId, r.VersionId, r.CatalogCode, name, r.Outcome, r.Detail,
+                r.ItemOrder, r.IsPending, requiresPhysical, physicalEvidence,
+                r.PendingReason, resolvedDocId));
+        }
 
         var blockers = new List<string>();
         if (delivery.Status == "PREPARACAO_INCOMPLETA")
         {
             foreach (var item in items)
             {
-                if (item.IsPending) blockers.Add($"{item.Name}: pendência registrada.");
-                if (item.RequiresPhysical && string.IsNullOrWhiteSpace(item.PhysicalEvidence))
+                if (item.IsPending)
+                {
+                    var reason = !string.IsNullOrWhiteSpace(item.PendingReason)
+                        ? item.PendingReason
+                        : "pendência registrada";
+                    blockers.Add($"{item.Name}: {reason}.");
+                }
+                else if (item.RequiresPhysical && string.IsNullOrWhiteSpace(item.PhysicalEvidence))
+                {
                     blockers.Add($"{item.Name}: pendente de original físico.");
+                }
             }
         }
 
         return new SectorDeliveryDetails(
-            delivery.Id, delivery.EncounterId, delivery.ProfileId, delivery.ProfileCode, delivery.VersionNo,
+            delivery.Id, delivery.EncounterId, delivery.ProfileId, delivery.ProfileCode, versionNo,
             delivery.Status, delivery.AssembledBy, delivery.AssembledByName, delivery.Recipient, delivery.Notes,
             delivery.CreatedAt, delivery.DeliveredAt, delivery.ProtocolNumber, delivery.DeliveryEvidence,
-            items, blockers);
+            items, blockers, isHistoricalSnapshot, delivery.ProfileName);
     }
 
     public async Task<SectorEmbedResult> CreateEmbedAsync(SectorEmbedRequest request, CancellationToken ct)

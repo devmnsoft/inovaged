@@ -678,7 +678,7 @@ where l.version_id=@askedVersion
         if (deliveryId.HasValue && deliveryId.Value != Guid.Empty)
         {
             delivery = await _sectors.GetDeliveryAsync(_currentUser.TenantId, _currentUser.UserId, Admin, deliveryId.Value, ct);
-            if (delivery is null) return Html(404, "Preparação de entrega não encontrada.");
+            if (delivery is null) return Html(404, "Preparação de entrega não encontrada ou acesso não autorizado.");
             encounterId = delivery.EncounterId;
         }
         else if (encounterId.HasValue && encounterId.Value != Guid.Empty)
@@ -692,6 +692,8 @@ order by created_at desc limit 1
             if (latestDeliveryId.HasValue)
             {
                 delivery = await _sectors.GetDeliveryAsync(_currentUser.TenantId, _currentUser.UserId, Admin, latestDeliveryId.Value, ct);
+                if (delivery is null)
+                    return Html(403, "O acesso a esta preparação de entrega não está autorizado para o seu usuário.");
             }
         }
 
@@ -746,17 +748,17 @@ on conflict (tenant_id, origin) do update set reg_status='A'
     {
         await using var conn = await _db.OpenAsync(ct);
         var row = await conn.QuerySingleOrDefaultAsync<(Guid DocumentId, string Path, string ContentType, string Catalog)>(new CommandDefinition("""
-select l.document_id as DocumentId, v.storage_path as Path, coalesce(v.content_type,'application/octet-stream') as ContentType, l.catalog_code as Catalog
-from ged.sector_document_link l
-join ged.document d on d.tenant_id=l.tenant_id and d.id=l.document_id and coalesce(d.reg_status,'A')='A'
-join ged.document_version v on v.tenant_id=l.tenant_id and v.id=l.version_id
-where l.tenant_id=@tenantId and l.version_id=@versionId and l.reg_status='A'
+select coalesce(v.document_id, l.document_id) as DocumentId, v.storage_path as Path, coalesce(v.content_type,'application/octet-stream') as ContentType, coalesce(l.catalog_code, 'DOCUMENTO') as Catalog
+from ged.document_version v
+join ged.document d on d.tenant_id=v.tenant_id and d.id=v.document_id and coalesce(d.reg_status,'A')='A'
+left join ged.sector_document_link l on l.tenant_id=v.tenant_id and l.version_id=v.id and l.reg_status='A'
+where v.tenant_id=@tenantId and v.id=@versionId
 """, new { tenantId, versionId }, cancellationToken: ct));
         if (row.DocumentId == Guid.Empty) return Html(404, "O documento não está disponível neste atendimento.");
         if (!requireGrant)
         {
             var visible = await _sectors.VisibleCatalogCodesAsync(_currentUser.TenantId, _currentUser.UserId, Admin, ct);
-            if (!visible.Contains(row.Catalog, StringComparer.Ordinal)) return Html(403, "Seu setor não consulta este tipo.");
+            if (!visible.Contains(row.Catalog, StringComparer.Ordinal) && row.Catalog != "DOCUMENTO") return Html(403, "Seu setor não consulta este tipo.");
             if (!await _authorization.CanAccessDocumentAsync(_currentUser.TenantId, _currentUser.UserId, row.DocumentId, "VIEW", new Dictionary<string, string>(), ct))
                 return Html(403, "A autorização documental não permite este arquivo.");
         }

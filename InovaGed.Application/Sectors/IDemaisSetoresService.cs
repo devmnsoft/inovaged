@@ -61,10 +61,12 @@ public sealed record SectorDeliveryDetails(
     Guid Id, Guid EncounterId, Guid ProfileId, string ProfileCode, int VersionNo,
     string Status, Guid AssembledBy, string AssembledByName, string? Recipient, string? Notes,
     DateTimeOffset CreatedAt, DateTimeOffset? DeliveredAt, string? ProtocolNumber, string? DeliveryEvidence,
-    IReadOnlyList<SectorDeliveryItemDetails> Items, IReadOnlyList<string> Blockers);
+    IReadOnlyList<SectorDeliveryItemDetails> Items, IReadOnlyList<string> Blockers,
+    bool IsHistoricalSnapshot = false, string? ProfileName = null);
 public sealed record SectorDeliveryItemDetails(
     Guid LinkId, Guid VersionId, string CatalogCode, string Name, string Outcome,
-    string? Detail, int ItemOrder, bool IsPending, bool RequiresPhysical, string? PhysicalEvidence);
+    string? Detail, int ItemOrder, bool IsPending, bool RequiresPhysical, string? PhysicalEvidence,
+    string? PendingReason = null, Guid? DocumentId = null);
 public sealed record SectorEmbedRequest(Guid TenantId, Guid UserId, bool IsFullAdmin, Guid VersionId, string? Origin, string Ip, string UserAgent);
 public sealed record SectorEmbedResult(bool Created, string Message, string? Path);
 public sealed record SectorGrantView(Guid TenantId, Guid DocumentId, Guid VersionId, string? Origin, bool Active);

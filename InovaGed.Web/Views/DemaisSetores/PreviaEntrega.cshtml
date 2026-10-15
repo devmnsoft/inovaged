@@ -24,7 +24,8 @@
     {
         <section class="ds-card @(delivery.Status == "PREPARACAO_INCOMPLETA" ? "ds-card-warning" : delivery.Status == "ENTREGUE" ? "ds-card-success" : "")">
             <h2>Composição de entrega persistida (Versão @delivery.VersionNo)</h2>
-            <p><strong>Perfil:</strong> @delivery.ProfileCode · <strong>Situação:</strong> <span class="ds-badge">@delivery.Status</span></p>
+            <p><strong>Perfil:</strong> @(delivery.ProfileName ?? delivery.ProfileCode) · <strong>Situação:</strong> <span class="ds-badge">@delivery.Status</span></p>
+            <p class="ds-note">@(delivery.IsHistoricalSnapshot ? "Fotografia histórica comprovada gravada na preparação." : "Registro legado sem fotografia histórica imutável.")</p>
             <p><strong>Montado por:</strong> @delivery.AssembledByName em @delivery.CreatedAt.ToString("dd/MM/yyyy HH:mm")</p>
             @if (!string.IsNullOrWhiteSpace(delivery.Recipient))
             {
@@ -83,13 +84,21 @@
                 {
                     <li>
                         <strong>@item.Name</strong> (@item.CatalogCode)
-                        — Situação: <span class="ds-badge">@item.Outcome</span>
-                        @(item.RequiresPhysical ? "— Original físico exigido: " + (string.IsNullOrWhiteSpace(item.PhysicalEvidence) ? "PENDENTE" : item.PhysicalEvidence) : "")
-                        <details><summary>Detalhes e versão</summary><p class="ds-note">Versão @item.VersionId. @item.Detail</p></details>
+                        @if (item.Outcome == "DOCUMENTO_OBRIGATORIO_AUSENTE")
+                        {
+                            <span class="ds-badge" style="background-color: var(--color-danger, #d9534f); color: #fff;">Obrigatório Ausente</span>
+                            <em>— @item.PendingReason</em>
+                        }
+                        else
+                        {
+                            <span>— Situação: <span class="ds-badge">@item.Outcome</span></span>
+                            @(item.RequiresPhysical ? "— Original físico exigido: " + (string.IsNullOrWhiteSpace(item.PhysicalEvidence) ? "PENDENTE" : item.PhysicalEvidence) : "")
+                            <details><summary>Detalhes e versão</summary><p class="ds-note">Versão @item.VersionId. @item.Detail</p></details>
+                        }
                     </li>
                 }
             </ol>
-            <p class="ds-note">Reimpressões preservam esta composição histórica gravada.</p>
+            <p class="ds-note">Reimpressões preservam esta composição histórica gravada, imune a alterações posteriores de catálogo ou vínculo.</p>
         </section>
     }
     else

@@ -413,6 +413,294 @@ select gen_random_uuid(),@tenantB,id,1,'tenantB_doc.pdf','.pdf',100,'tenantB_doc
         }
     }
 
+    [LocalPgFact]
+    public async Task Delivery_authorization_resolves_documents_from_persisted_version_and_denies_entirely_on_revocation_or_other_tenant()
+    {
+        var name = "ig_auth_" + Guid.NewGuid().ToString("N");
+        var admin = new NpgsqlConnectionStringBuilder(LocalPg.AdminDsn) { Pooling = false };
+        await using var control = new NpgsqlConnection(admin.ConnectionString);
+        await control.OpenAsync();
+        await control.ExecuteAsync($"create database {name}");
+
+        try
+        {
+            var builder = new NpgsqlConnectionStringBuilder(admin.ConnectionString) { Database = name };
+            await RunMigratorInstall(builder.ConnectionString);
+
+            await using var db = new NpgsqlConnection(builder.ConnectionString);
+            await db.OpenAsync();
+
+            var tenant1 = Guid.NewGuid();
+            var tenant2 = Guid.NewGuid();
+            var user1 = Guid.NewGuid();
+            var role1 = Guid.NewGuid();
+            var patient1 = Guid.NewGuid();
+            var encounter1 = Guid.NewGuid();
+
+            var doc1 = Guid.NewGuid();
+            var ver1 = Guid.NewGuid();
+            var link1 = Guid.NewGuid();
+
+            var doc2 = Guid.NewGuid();
+            var ver2 = Guid.NewGuid();
+            var link2 = Guid.NewGuid();
+
+            var doc3 = Guid.NewGuid();
+            var ver3 = Guid.NewGuid();
+
+            // Setup Tenant 1 e Tenant 2
+            await db.ExecuteAsync("""
+insert into ged.tenant(id,name,code) values(@tenant1,'Hospital Tenant 1','t1');
+insert into ged.tenant(id,name,code) values(@tenant2,'Hospital Tenant 2','t2');
+
+insert into ged.app_user(id,tenant_id,name,email,password_hash) values(@user1,@tenant1,'Dr. Autorizado','user1@hospital.test','hash');
+insert into ged.role(id,tenant_id,code,name) values(@role1,@tenant1,'AUDITOR','Auditor');
+insert into ged.app_role(id,tenant_id,name,normalized_name) values(@role1,@tenant1,'Auditor','AUDITOR');
+insert into ged.user_role(user_id,role_id) values(@user1,@role1);
+insert into ged.permission(code,name) values('Documents.View','View') on conflict(code) do nothing;
+insert into ged.role_permission(tenant_id,role_id,permission_code) values(@tenant1,@role1,'Documents.View');
+insert into ged.sector_access(tenant_id,user_id,sector_code,permission_code) values(@tenant1,@user1,'FATURAMENTO','ADMINISTRAR');
+
+insert into ged.sector_patient(id,tenant_id,source_system,source_unit,external_code,display_name,identifier_kind,confirmed_at)
+values(@patient1,@tenant1,'MV','SADT','P001','Paciente Entrega','prontuario',now());
+
+insert into ged.sector_encounter(id,tenant_id,patient_id,external_code,confirmed_at)
+values(@encounter1,@tenant1,@patient1,'ATD-001',now());
+
+-- Documento 1
+insert into ged.document(id,tenant_id,code,title,is_confidential,created_by)
+values(@doc1,@tenant1,'DOC-001','Prescricao Medica',false,@user1);
+insert into ged.document_version(id,tenant_id,document_id,version_number,file_name,file_extension,file_size_bytes,storage_path,checksum_sha256,content_type,created_by)
+values(@ver1,@tenant1,@doc1,1,'presc.pdf','.pdf',1000,'presc.pdf',repeat('1',64),'application/pdf',@user1);
+
+insert into ged.sector_document_link(id,tenant_id,patient_id,encounter_id,document_id,version_id,catalog_code,origin,original_file_name,content_sha256,uploaded_by,transfer_status,preview_status,ocr_status,extraction_status,review_status)
+values(@link1,@tenant1,@patient1,@encounter1,@doc1,@ver1,'DS01','GED_UPLOAD','presc.pdf',repeat('1',64),@user1,'GRAVADO','PRONTO','CONCLUIDO','CONCLUIDO','CONFERIDO');
+
+-- Documento 2
+insert into ged.document(id,tenant_id,code,title,is_confidential,created_by)
+values(@doc2,@tenant1,'DOC-002','Exame Laboratorial',false,@user1);
+insert into ged.document_version(id,tenant_id,document_id,version_number,file_name,file_extension,file_size_bytes,storage_path,checksum_sha256,content_type,created_by)
+values(@ver2,@tenant1,@doc2,1,'exame.pdf','.pdf',1200,'exame.pdf',repeat('2',64),'application/pdf',@user1);
+
+insert into ged.sector_document_link(id,tenant_id,patient_id,encounter_id,document_id,version_id,catalog_code,origin,original_file_name,content_sha256,uploaded_by,transfer_status,preview_status,ocr_status,extraction_status,review_status)
+values(@link2,@tenant1,@patient1,@encounter1,@doc2,@ver2,'DS02','GED_UPLOAD','exame.pdf',repeat('2',64),@user1,'GRAVADO','PRONTO','CONCLUIDO','CONCLUIDO','CONFERIDO');
+
+-- Documento 3 (usado depois na correção de vínculo)
+insert into ged.document(id,tenant_id,code,title,is_confidential,created_by)
+values(@doc3,@tenant1,'DOC-003','Relatorio Sigiloso Restrito',false,@user1);
+insert into ged.document_version(id,tenant_id,document_id,version_number,file_name,file_extension,file_size_bytes,storage_path,checksum_sha256,content_type,created_by)
+values(@ver3,@tenant1,@doc3,1,'restrito.pdf','.pdf',1500,'restrito.pdf',repeat('3',64),'application/pdf',@user1);
+""", new { tenant1, tenant2, user1, role1, patient1, encounter1, doc1, ver1, link1, doc2, ver2, link2, doc3, ver3 });
+
+            var factory = new LocalDbFactory(builder.ConnectionString);
+            var auth = new AbacAuthorizationService(factory);
+            var service = new DemaisSetoresService(factory, null!, null!, null!, null!, null!, auth, new TestAuditWriter(), Options.Create(new DocumentUploadOptions()), new UnconfiguredClinicalSource(), NullLogger<DemaisSetoresService>.Instance);
+            await service.EnsureTenantAsync(tenant1, CancellationToken.None);
+            await service.EnsureTenantAsync(tenant2, CancellationToken.None);
+
+            // 1. Prepara entrega com Doc 1 e Doc 2
+            var prepReq = new SectorDeliveryRequest(
+                tenant1, user1, false, encounter1, "ANEXO_I", "Setor Auditoria",
+                new[] { link1, link2 }, "127.0.0.1", "TestAgent");
+
+            var prepResult = await service.PrepareDeliveryAsync(prepReq, CancellationToken.None);
+            Assert.True(prepResult.Recorded);
+            Assert.NotNull(prepResult.DeliveryId);
+            var deliveryId = prepResult.DeliveryId.Value;
+
+            // 2. Consulta inicial pelo usuário autorizado -> Sucesso completo
+            var details = await service.GetDeliveryAsync(tenant1, user1, false, deliveryId, CancellationToken.None);
+            Assert.NotNull(details);
+            Assert.Contains(details.Items, i => i.LinkId == link1);
+            Assert.Contains(details.Items, i => i.LinkId == link2);
+
+            // 3. Consulta de outro tenant -> Nega integralmente
+            var otherTenantDetails = await service.GetDeliveryAsync(tenant2, user1, false, deliveryId, CancellationToken.None);
+            Assert.Null(otherTenantDetails);
+
+            // 4. Revoga permissão sobre o Documento 2 removendo a permissão da role
+            await db.ExecuteAsync("delete from ged.role_permission where tenant_id=@tenant1 and permission_code='Documents.View'", new { tenant1 });
+
+            // Usuário sem Documents.View -> GetDeliveryAsync deve negar integralmente sem vazar metadados
+            var deniedDetails = await service.GetDeliveryAsync(tenant1, user1, false, deliveryId, CancellationToken.None);
+            Assert.Null(deniedDetails);
+
+            // Restaura permissão geral
+            await db.ExecuteAsync("insert into ged.role_permission(tenant_id,role_id,permission_code) values(@tenant1,@role1,'Documents.View')", new { tenant1, role1 });
+
+            // 5. Corrige vínculo do Link 1 para apontar para Doc 3 e Ver 3 após a preparação
+            var corrReq = new SectorCorrectionRequest(
+                tenant1, user1, false, link1, encounter1,
+                "Troca pós preparação", "127.0.0.1", "TestAgent",
+                ToPatientId: patient1, ToDocumentId: doc3, ToVersionId: ver3);
+
+            var corrResult = await service.CorrectLinkAsync(corrReq, CancellationToken.None);
+            Assert.Null(corrResult); // Sucesso na correção do link
+
+            // 6. Consulta do pacote preparado anteriormente:
+            // O pacote foi preparado com Ver 1 (Doc 1).
+            // A autorização deve resolver Doc 1 a partir da versão persistida Ver 1, e NÃO Doc 3!
+            var preservedDetails = await service.GetDeliveryAsync(tenant1, user1, false, deliveryId, CancellationToken.None);
+            Assert.NotNull(preservedDetails);
+            // Verifica que o item do pacote aponta para ver1
+            Assert.Contains(preservedDetails.Items, i => i.VersionId == ver1);
+
+            // 7. Confirmação de entrega revalida autorização documental canônica
+            var confirmErr = await service.ConfirmDeliveryAsync(tenant1, user1, false, deliveryId, "PROT-100", "Recibo assinado", "127.0.0.1", "TestAgent", CancellationToken.None);
+            Assert.Null(confirmErr);
+        }
+        finally
+        {
+            NpgsqlConnection.ClearAllPools();
+            await control.ExecuteAsync($"drop database if exists {name} with (force)");
+        }
+    }
+
+    [LocalPgFact]
+    public async Task Historical_snapshot_persists_missing_required_items_and_remains_stable_after_catalog_link_and_evidence_mutations()
+    {
+        var name = "ig_hist_" + Guid.NewGuid().ToString("N");
+        var admin = new NpgsqlConnectionStringBuilder(LocalPg.AdminDsn) { Pooling = false };
+        await using var control = new NpgsqlConnection(admin.ConnectionString);
+        await control.OpenAsync();
+        await control.ExecuteAsync($"create database {name}");
+
+        try
+        {
+            var builder = new NpgsqlConnectionStringBuilder(admin.ConnectionString) { Database = name };
+            await RunMigratorInstall(builder.ConnectionString);
+
+            await using var db = new NpgsqlConnection(builder.ConnectionString);
+            await db.OpenAsync();
+
+            var tenant = Guid.NewGuid();
+            var user = Guid.NewGuid();
+            var role = Guid.NewGuid();
+            var patient = Guid.NewGuid();
+            var encounter = Guid.NewGuid();
+
+            var doc1 = Guid.NewGuid();
+            var ver1 = Guid.NewGuid();
+            var link1 = Guid.NewGuid();
+
+            await db.ExecuteAsync("""
+insert into ged.tenant(id,name,code) values(@tenant,'Hospital Snapshot Histórico','fixture');
+insert into ged.app_user(id,tenant_id,name,email,password_hash) values(@user,@tenant,'Usuário Auditor','user@hospital.test','hash');
+insert into ged.role(id,tenant_id,code,name) values(@role,@tenant,'HOSPITAL','Hospital');
+insert into ged.app_role(id,tenant_id,name,normalized_name) values(@role,@tenant,'Hospital','HOSPITAL');
+insert into ged.user_role(user_id,role_id) values(@user,@role);
+insert into ged.permission(code,name) values('Documents.View','View') on conflict(code) do nothing;
+insert into ged.role_permission(tenant_id,role_id,permission_code) values(@tenant,@role,'Documents.View');
+insert into ged.sector_access(tenant_id,user_id,sector_code,permission_code) values(@tenant,@user,'FATURAMENTO','ADMINISTRAR');
+
+insert into ged.sector_patient(id,tenant_id,source_system,source_unit,external_code,display_name,identifier_kind,confirmed_at)
+values(@patient,@tenant,'MV','SADT','P100','Paciente Snapshot','prontuario',now());
+
+insert into ged.sector_encounter(id,tenant_id,patient_id,external_code,kind,confirmed_at)
+values(@encounter,@tenant,@patient,'ATD-SNAP-01','INTERNACAO',now());
+
+insert into ged.document(id,tenant_id,code,title,is_confidential,created_by)
+values(@doc1,@tenant,'DOC-SNAP-1','Prescricao Diaria',false,@user);
+insert into ged.document_version(id,tenant_id,document_id,version_number,file_name,file_extension,file_size_bytes,storage_path,checksum_sha256,content_type,created_by)
+values(@ver1,@tenant,@doc1,1,'presc.pdf','.pdf',2000,'presc.pdf',repeat('s',64),'application/pdf',@user);
+
+-- Vínculo com evidência física original preenchida
+insert into ged.sector_document_link(id,tenant_id,patient_id,encounter_id,document_id,version_id,catalog_code,origin,original_file_name,content_sha256,uploaded_by,transfer_status,preview_status,ocr_status,extraction_status,review_status,physical_evidence)
+values(@link1,@tenant,@patient,@encounter,@doc1,@ver1,'DS01','GED_UPLOAD','presc.pdf',repeat('s',64),@user,'GRAVADO','PRONTO','CONCLUIDO','CONCLUIDO','CONFERIDO','Recibo Original Físico 123');
+""", new { tenant, user, role, patient, encounter, doc1, ver1, link1 });
+
+            var factory = new LocalDbFactory(builder.ConnectionString);
+            var auth = new AbacAuthorizationService(factory);
+            var service = new DemaisSetoresService(factory, null!, null!, null!, null!, null!, auth, new TestAuditWriter(), Options.Create(new DocumentUploadOptions()), new UnconfiguredClinicalSource(), NullLogger<DemaisSetoresService>.Instance);
+            await service.EnsureTenantAsync(tenant, CancellationToken.None);
+
+            // Prepara entrega com apenas 1 documento (DS01), deixando de fora outros obrigatórios do perfil ANEXO_I
+            var prepReq = new SectorDeliveryRequest(
+                tenant, user, false, encounter, "ANEXO_I", "Recepção Central",
+                new[] { link1 }, "127.0.0.1", "TestAgent");
+
+            var prepResult = await service.PrepareDeliveryAsync(prepReq, CancellationToken.None);
+            Assert.True(prepResult.Recorded);
+            Assert.Equal("PREPARACAO_INCOMPLETA", prepResult.Status);
+            Assert.NotNull(prepResult.DeliveryId);
+            var deliveryId = prepResult.DeliveryId.Value;
+
+            // 1. Verifica se os documentos obrigatórios ausentes foram persistidos estruturadamente no banco
+            var persistedItems = (await db.QueryAsync<(string Outcome, string CatalogCode, string CatalogName, bool IsPending, string? PendingReason)>(
+                "select outcome as Outcome, catalog_code as CatalogCode, catalog_name as CatalogName, is_pending as IsPending, pending_reason as PendingReason from ged.sector_delivery_item where delivery_id=@deliveryId order by item_order",
+                new { deliveryId })).ToList();
+
+            Assert.True(persistedItems.Count > 1, "Deveria ter persistido o item selecionado e os itens obrigatórios ausentes.");
+            var missingItems = persistedItems.Where(i => i.Outcome == "DOCUMENTO_OBRIGATORIO_AUSENTE").ToList();
+            Assert.NotEmpty(missingItems);
+            Assert.All(missingItems, m =>
+            {
+                Assert.True(m.IsPending);
+                Assert.Equal("Obrigatório neste contexto e ausente da seleção", m.PendingReason);
+            });
+
+            // 2. Consulta a preparação e comprova fotografia histórica
+            var details1 = await service.GetDeliveryAsync(tenant, user, false, deliveryId, CancellationToken.None);
+            Assert.NotNull(details1);
+            Assert.True(details1.IsHistoricalSnapshot);
+            var selectedItem = details1.Items.First(i => i.LinkId == link1);
+            Assert.Equal("Recibo Original Físico 123", selectedItem.PhysicalEvidence);
+
+            // 3. Modifica dados correntes (catálogo e evidência do vínculo) para simular alterações futuras
+            await db.ExecuteAsync("""
+update ged.sector_document_type
+set name='Evolução Médica Nome Alterado Futuro', physical_original=false
+where tenant_id=@tenant and catalog_code='EVOLUCAO';
+
+update ged.sector_document_link
+set physical_evidence='Evidência Alterada 999 Futura'
+where tenant_id=@tenant and id=@link1;
+""", new { tenant, link1 });
+
+            // 4. Reconsulta o pacote (reimpressão):
+            // DEVE manter o snapshot histórico gravado no momento da preparação!
+            var detailsAfterMutation = await service.GetDeliveryAsync(tenant, user, false, deliveryId, CancellationToken.None);
+            Assert.NotNull(detailsAfterMutation);
+            Assert.True(detailsAfterMutation.IsHistoricalSnapshot);
+
+            var recheckItem = detailsAfterMutation.Items.First(i => i.LinkId == link1);
+            // Evidência física NÃO deve ter sido alterada para a nova
+            Assert.Equal("Recibo Original Físico 123", recheckItem.PhysicalEvidence);
+            // Nome gravado no snapshot não foi contaminado
+            Assert.DoesNotContain("Nome Alterado Futuro", recheckItem.Name);
+
+            // Os itens obrigatórios ausentes permanecem estáveis no snapshot
+            Assert.Contains(detailsAfterMutation.Items, i => i.Outcome == "DOCUMENTO_OBRIGATORIO_AUSENTE");
+
+            // 5. Validação de registro legado:
+            // Insere um registro sem as colunas de snapshot histórico
+            var legacyDeliveryId = Guid.NewGuid();
+            var legacyLinkId = Guid.NewGuid();
+            var legacyProfileId = await db.ExecuteScalarAsync<Guid>("select id from ged.sector_profile where tenant_id=@tenant and code='ANEXO_I' limit 1", new { tenant });
+
+            await db.ExecuteAsync("""
+insert into ged.sector_delivery(id,tenant_id,encounter_id,profile_id,version_no,status,assembled_by,created_at)
+values(@legacyDeliveryId,@tenant,@encounter,@legacyProfileId,1,'PREPARADO',@user,now() - interval '30 days');
+
+insert into ged.sector_delivery_item(delivery_id,link_id,version_id,outcome,detail,item_order,catalog_code,is_pending)
+values(@legacyDeliveryId,@legacyLinkId,@ver1,'PREPARADO','Registro legado',1,'EVOLUCAO',false);
+""", new { legacyDeliveryId, tenant, encounter, legacyProfileId, user, legacyLinkId, ver1 });
+
+            var legacyDetails = await service.GetDeliveryAsync(tenant, user, false, legacyDeliveryId, CancellationToken.None);
+            Assert.NotNull(legacyDetails);
+            Assert.False(legacyDetails.IsHistoricalSnapshot);
+            var legacyItem = legacyDetails.Items.First(i => i.LinkId == legacyLinkId);
+            // Não deve inventar dados atuais como históricos comprovados
+            Assert.Null(legacyItem.PhysicalEvidence);
+        }
+        finally
+        {
+            NpgsqlConnection.ClearAllPools();
+            await control.ExecuteAsync($"drop database if exists {name} with (force)");
+        }
+    }
+
+
     private static async Task RunMigratorInstall(string dsn)
     {
         var workspace = FindRoot();
