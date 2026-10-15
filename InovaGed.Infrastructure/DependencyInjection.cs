@@ -275,6 +275,7 @@ public static class InfrastructureServiceCollectionExtensions
             .ValidateOnStart();
 
         services.AddScoped<IFileStorage, LocalFileStorage>();
+        services.AddScoped<global::InovaGed.Application.Storage.IStorageOrphanDetector, Storage.StorageOrphanDetectionService>();
         services.AddScoped<IDocumentWriteRepository, DocumentWriteRepository>();
         services.AddScoped<IDocumentMoveService, DocumentMoveService>();
         services.TryAddScoped<global::InovaGed.Application.Documents.IDocumentCommands, Documents.DocumentCommands>();

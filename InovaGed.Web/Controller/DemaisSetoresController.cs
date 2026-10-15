@@ -669,16 +669,49 @@ where l.version_id=@askedVersion
     }
 
     [HttpGet]
-    public async Task<IActionResult> PreviaEntrega(Guid encounterId, CancellationToken ct)
+    public async Task<IActionResult> PreviaEntrega(Guid? encounterId, Guid? deliveryId, CancellationToken ct)
     {
         if (!await _sectors.HasPermissionAsync(_currentUser.TenantId, _currentUser.UserId, Admin, SectorPermissions.Imprimir, ct))
             return Forbid();
-        var context = await ContextAsync(encounterId, ct);
+
+        SectorDeliveryDetails? delivery = null;
+        if (deliveryId.HasValue && deliveryId.Value != Guid.Empty)
+        {
+            delivery = await _sectors.GetDeliveryAsync(_currentUser.TenantId, _currentUser.UserId, Admin, deliveryId.Value, ct);
+            if (delivery is null) return Html(404, "Preparação de entrega não encontrada.");
+            encounterId = delivery.EncounterId;
+        }
+        else if (encounterId.HasValue && encounterId.Value != Guid.Empty)
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            var latestDeliveryId = await conn.ExecuteScalarAsync<Guid?>(new CommandDefinition("""
+select id from ged.sector_delivery
+where tenant_id=@tenantId and encounter_id=@encounterId
+order by created_at desc limit 1
+""", new { tenantId = _currentUser.TenantId, encounterId = encounterId.Value }, cancellationToken: ct));
+            if (latestDeliveryId.HasValue)
+            {
+                delivery = await _sectors.GetDeliveryAsync(_currentUser.TenantId, _currentUser.UserId, Admin, latestDeliveryId.Value, ct);
+            }
+        }
+
+        if (!encounterId.HasValue)
+            return Html(400, "Informe o atendimento ou a preparação de entrega.");
+
+        var context = await ContextAsync(encounterId.Value, ct);
         if (context is null) return Html(404, "Atendimento não encontrado para a prévia.");
         ViewBag.Context = context;
-        ViewBag.Documents = await DocumentsAsync(encounterId, null, null, null, ct);
-        ViewBag.Checklist = await ChecklistAsync(encounterId, ct);
+        ViewBag.Delivery = delivery;
+        ViewBag.Documents = await DocumentsAsync(encounterId.Value, null, null, null, ct);
+        ViewBag.Checklist = await ChecklistAsync(encounterId.Value, ct);
         return View();
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> ConfirmarEntrega(Guid deliveryId, string? protocolNumber, string? deliveryEvidence, CancellationToken ct)
+    {
+        var error = await _sectors.ConfirmDeliveryAsync(_currentUser.TenantId, _currentUser.UserId, Admin, deliveryId, protocolNumber, deliveryEvidence, Ip(), Ua(), ct);
+        return Page(error is null ? 200 : 400, error ?? "Entrega confirmada com evidência de protocolo.");
     }
 
     [HttpPost, ValidateAntiForgeryToken]
@@ -733,6 +766,10 @@ where l.tenant_id=@tenantId and l.version_id=@versionId and l.reg_status='A'
         var stream = await _storage.OpenReadAsync(row.Path, ct);
         Response.Headers.CacheControl = "private, no-store";
         Response.Headers.ContentDisposition = "inline";
+        if (!requireGrant && !Response.Headers.ContainsKey("Content-Security-Policy"))
+        {
+            Response.Headers.ContentSecurityPolicy = "frame-ancestors 'self'";
+        }
         return File(stream, row.ContentType, enableRangeProcessing: true);
     }
 
@@ -843,17 +880,59 @@ order by s.admitted_at desc nulls last
         var profile = await conn.QuerySingleOrDefaultAsync<(Guid Id, bool Enabled)>(new CommandDefinition(
             "select id as Id, enabled as Enabled from ged.sector_profile where tenant_id=@tenantId and code='ANEXO_I' order by version_no desc limit 1",
             new { tenantId = _currentUser.TenantId }, cancellationToken: ct));
-        var types = await conn.QueryAsync<(string Code, string Name, string Applicability, int Order)>(new CommandDefinition(
-            "select catalog_code as Code, name as Name, applicability as Applicability, catalog_order as Order from ged.sector_document_type where tenant_id=@tenantId and active order by catalog_order",
-            new { tenantId = _currentUser.TenantId }, cancellationToken: ct));
-        var received = (await conn.QueryAsync<string>(new CommandDefinition(
-            "select distinct catalog_code from ged.sector_document_link where tenant_id=@tenantId and encounter_id=@encounterId and reg_status='A'",
-            new { tenantId = _currentUser.TenantId, encounterId }, cancellationToken: ct))).ToHashSet(StringComparer.Ordinal);
+        var types = (await conn.QueryAsync<(string Code, string Name, string Applicability, int Order, bool Physical)>(new CommandDefinition(
+            "select catalog_code as Code, name as Name, applicability as Applicability, catalog_order as Order, physical_original as Physical from ged.sector_document_type where tenant_id=@tenantId and active order by catalog_order",
+            new { tenantId = _currentUser.TenantId }, cancellationToken: ct))).ToArray();
+        var links = (await conn.QueryAsync<(string CatalogCode, string ReviewStatus, string PreviewStatus, string OcrStatus, string ExtractionStatus, string? PhysicalEvidence)>(new CommandDefinition("""
+select l.catalog_code as CatalogCode, l.review_status as ReviewStatus, l.preview_status as PreviewStatus,
+       l.ocr_status as OcrStatus, l.extraction_status as ExtractionStatus, l.physical_evidence as PhysicalEvidence
+from ged.sector_document_link l
+where l.tenant_id=@tenantId and l.encounter_id=@encounterId and l.reg_status='A'
+""", new { tenantId = _currentUser.TenantId, encounterId }, cancellationToken: ct))).ToLookup(l => l.CatalogCode, StringComparer.Ordinal);
         var conditions = new SectorConditions(encounter.Surgery, encounter.Opme, encounter.HighCost, encounter.Discharged.HasValue);
         return types.Select(type =>
         {
             var required = profile.Id != Guid.Empty && SectorApplicability.IsRequired("ANEXO_I", profile.Enabled, encounter.Kind, type.Applicability, conditions);
-            var state = received.Contains(type.Code) ? "recebido" : required ? "pendente" : "não exigido neste contexto";
+            var matching = links[type.Code].ToArray();
+            string state;
+            if (matching.Length == 0)
+            {
+                state = required ? "Documento faltante" : "Não exigido neste contexto";
+            }
+            else
+            {
+                if (matching.Any(m => m.ReviewStatus == "CONFERIDO"))
+                {
+                    if (type.Physical && matching.Any(m => string.IsNullOrWhiteSpace(m.PhysicalEvidence)))
+                        state = "Original físico pendente";
+                    else
+                        state = "Documento conferido";
+                }
+                else if (matching.Any(m => m.ReviewStatus == "NAO_APLICAVEL"))
+                {
+                    state = "Não aplicável com justificativa";
+                }
+                else if (type.Physical && matching.Any(m => string.IsNullOrWhiteSpace(m.PhysicalEvidence)))
+                {
+                    state = "Original físico pendente";
+                }
+                else if (matching.Any(m => m.ExtractionStatus is "CONCLUIDO" or "CONCLUIDO_PARCIAL" or "REVISAO_PENDENTE"))
+                {
+                    state = "Sugestão extraída";
+                }
+                else if (matching.Any(m => m.OcrStatus == "CONCLUIDO"))
+                {
+                    state = "OCR concluído";
+                }
+                else if (matching.Any(m => m.PreviewStatus == "DISPONIVEL"))
+                {
+                    state = "Prévia disponível";
+                }
+                else
+                {
+                    state = "Documento recebido";
+                }
+            }
             return new SectorChecklistRow(type.Order, type.Name, state, required);
         }).ToArray();
     }
@@ -1027,26 +1106,66 @@ order by f.updated_at desc
         var profile = await conn.QuerySingleOrDefaultAsync<(Guid Id, bool Enabled)>(new CommandDefinition(
             "select id as Id, enabled as Enabled from ged.sector_profile where tenant_id=@tenantId and code='ANEXO_I' order by version_no desc limit 1",
             new { tenantId = session.TenantId }, cancellationToken: ct));
-        var types = await conn.QueryAsync<(string Code, string Name, string Applicability, int Order)>(new CommandDefinition(
+        var types = (await conn.QueryAsync<(string Code, string Name, string Applicability, int Order, bool Physical)>(new CommandDefinition(
             """
-select catalog_code as Code, name as Name, applicability as Applicability, catalog_order as Order
+select catalog_code as Code, name as Name, applicability as Applicability, catalog_order as Order, physical_original as Physical
 from ged.sector_document_type
 where tenant_id=@tenantId and active and (@catalog is null or catalog_code=@catalog)
   and catalog_code = any(@allowedCatalog)
 order by catalog_order
 """,
-            SectorSessionScope.Args(session), cancellationToken: ct));
-        var received = (await conn.QueryAsync<string>(new CommandDefinition($"""
-select distinct l.catalog_code
+            SectorSessionScope.Args(session), cancellationToken: ct))).ToArray();
+        var links = (await conn.QueryAsync<(string CatalogCode, string ReviewStatus, string PreviewStatus, string OcrStatus, string ExtractionStatus, string? PhysicalEvidence)>(new CommandDefinition($"""
+select l.catalog_code as CatalogCode, l.review_status as ReviewStatus, l.preview_status as PreviewStatus,
+       l.ocr_status as OcrStatus, l.extraction_status as ExtractionStatus, l.physical_evidence as PhysicalEvidence
 from ged.sector_document_link l
 where true
 {SectorSessionScope.LinkFilter}
-""", SectorSessionScope.Args(session), cancellationToken: ct))).ToHashSet(StringComparer.Ordinal);
+""", SectorSessionScope.Args(session), cancellationToken: ct))).ToLookup(l => l.CatalogCode, StringComparer.Ordinal);
         var conditions = new SectorConditions(encounter.Surgery, encounter.Opme, encounter.HighCost, encounter.Discharged.HasValue);
         return types.Select(type =>
         {
             var required = profile.Id != Guid.Empty && SectorApplicability.IsRequired("ANEXO_I", profile.Enabled, encounter.Kind, type.Applicability, conditions);
-            var state = received.Contains(type.Code) ? "recebido" : required ? "pendente" : "não exigido neste contexto";
+            var matching = links[type.Code].ToArray();
+            string state;
+            if (matching.Length == 0)
+            {
+                state = required ? "Documento faltante" : "Não exigido neste contexto";
+            }
+            else
+            {
+                if (matching.Any(m => m.ReviewStatus == "CONFERIDO"))
+                {
+                    if (type.Physical && matching.Any(m => string.IsNullOrWhiteSpace(m.PhysicalEvidence)))
+                        state = "Original físico pendente";
+                    else
+                        state = "Documento conferido";
+                }
+                else if (matching.Any(m => m.ReviewStatus == "NAO_APLICAVEL"))
+                {
+                    state = "Não aplicável com justificativa";
+                }
+                else if (type.Physical && matching.Any(m => string.IsNullOrWhiteSpace(m.PhysicalEvidence)))
+                {
+                    state = "Original físico pendente";
+                }
+                else if (matching.Any(m => m.ExtractionStatus is "CONCLUIDO" or "CONCLUIDO_PARCIAL" or "REVISAO_PENDENTE"))
+                {
+                    state = "Sugestão extraída";
+                }
+                else if (matching.Any(m => m.OcrStatus == "CONCLUIDO"))
+                {
+                    state = "OCR concluído";
+                }
+                else if (matching.Any(m => m.PreviewStatus == "DISPONIVEL"))
+                {
+                    state = "Prévia disponível";
+                }
+                else
+                {
+                    state = "Documento recebido";
+                }
+            }
             return new SectorChecklistRow(type.Order, type.Name, state, required);
         }).ToArray();
     }

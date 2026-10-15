@@ -3193,3 +3193,4 @@ COMMIT;
 \ir migrations/2026_11_02_demais_setores_recovery_revocation.sql
 \ir migrations/2026_11_03_demais_setores_processing.sql
 \ir migrations/2026_11_04_demais_setores_clinical_extraction.sql
+\ir migrations/2026_11_05_demais_setores_encounter_correction.sql

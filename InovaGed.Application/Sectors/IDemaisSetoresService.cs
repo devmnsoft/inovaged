@@ -23,6 +23,8 @@ public interface IDemaisSetoresService
     Task<string?> RecordPhysicalEvidenceAsync(Guid tenantId, Guid userId, bool isFullAdmin, Guid linkId, string evidence, string ip, string userAgent, CancellationToken ct);
     Task<string?> ReviewFindingAsync(Guid tenantId, Guid userId, bool isFullAdmin, Guid findingId, string status, string? justification, string ip, string userAgent, CancellationToken ct);
     Task<SectorDeliveryResult> PrepareDeliveryAsync(SectorDeliveryRequest request, CancellationToken ct);
+    Task<string?> ConfirmDeliveryAsync(Guid tenantId, Guid userId, bool isFullAdmin, Guid deliveryId, string? protocolNumber, string? deliveryEvidence, string ip, string userAgent, CancellationToken ct);
+    Task<SectorDeliveryDetails?> GetDeliveryAsync(Guid tenantId, Guid userId, bool isFullAdmin, Guid deliveryId, CancellationToken ct);
     Task<SectorEmbedResult> CreateEmbedAsync(SectorEmbedRequest request, CancellationToken ct);
     Task<bool> GrantIsActiveAsync(string token, Guid versionId, CancellationToken ct);
     Task RevokeEmbedAsync(Guid tenantId, Guid grantId, Guid actorId, CancellationToken ct);
@@ -48,13 +50,21 @@ public sealed record SectorRegistrationResult(bool Stored, string Stage, string 
 public sealed record SectorUploadContext(Guid PatientId, Guid EncounterId, string CatalogCode);
 
 public sealed record SectorReviewRequest(Guid TenantId, Guid UserId, bool IsFullAdmin, Guid LinkId, string ToStatus, string? Justification, string Ip, string UserAgent);
-public sealed record SectorCorrectionRequest(Guid TenantId, Guid UserId, bool IsFullAdmin, Guid LinkId, Guid ToEncounterId, string Reason, string Ip, string UserAgent);
+public sealed record SectorCorrectionRequest(Guid TenantId, Guid UserId, bool IsFullAdmin, Guid LinkId, Guid ToEncounterId, string Reason, string Ip, string UserAgent, Guid? ToPatientId = null, Guid? ToDocumentId = null);
 public sealed record SectorSearchRequest(Guid TenantId, Guid UserId, bool IsFullAdmin, Guid EncounterId, string Term, bool IncludeOtherEncounters, int Page = 0);
 public sealed record SectorSearchPage(IReadOnlyList<SectorSearchHit> Hits, int Total, int Page, int PageSize);
 public sealed record SectorSearchHit(Guid DocumentId, Guid VersionId, string Name, string Excerpt, int? Page, string EncounterCode, string TextOrigin, Guid EncounterId);
 public sealed record SectorFieldReviewRequest(Guid TenantId, Guid UserId, bool IsFullAdmin, Guid FieldId, string Status, string? Value, string Ip, string UserAgent);
 public sealed record SectorDeliveryRequest(Guid TenantId, Guid UserId, bool IsFullAdmin, Guid EncounterId, string ProfileCode, string? Recipient, IReadOnlyList<Guid> LinkIds, string Ip, string UserAgent);
-public sealed record SectorDeliveryResult(bool Recorded, string Status, string Message, IReadOnlyList<string> Blockers);
+public sealed record SectorDeliveryResult(bool Recorded, string Status, string Message, IReadOnlyList<string> Blockers, Guid? DeliveryId = null);
+public sealed record SectorDeliveryDetails(
+    Guid Id, Guid EncounterId, Guid ProfileId, string ProfileCode, int VersionNo,
+    string Status, Guid AssembledBy, string AssembledByName, string? Recipient, string? Notes,
+    DateTimeOffset CreatedAt, DateTimeOffset? DeliveredAt, string? ProtocolNumber, string? DeliveryEvidence,
+    IReadOnlyList<SectorDeliveryItemDetails> Items, IReadOnlyList<string> Blockers);
+public sealed record SectorDeliveryItemDetails(
+    Guid LinkId, Guid VersionId, string CatalogCode, string Name, string Outcome,
+    string? Detail, int ItemOrder, bool IsPending, bool RequiresPhysical, string? PhysicalEvidence);
 public sealed record SectorEmbedRequest(Guid TenantId, Guid UserId, bool IsFullAdmin, Guid VersionId, string? Origin, string Ip, string UserAgent);
 public sealed record SectorEmbedResult(bool Created, string Message, string? Path);
 public sealed record SectorGrantView(Guid TenantId, Guid DocumentId, Guid VersionId, string? Origin, bool Active);

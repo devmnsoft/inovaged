@@ -1062,5 +1062,12 @@
     "area": "DemaisSetores",
     "required": true,
     "description": "Execuções clínicas governadas por versão, itens estruturados e evidência, sem habilitar política de IA."
+  },
+  {
+    "name": "2026_11_05_demais_setores_encounter_correction",
+    "path": "database/migrations/2026_11_05_demais_setores_encounter_correction.sql",
+    "area": "DemaisSetores",
+    "required": true,
+    "description": "Acompanhamento do atendimento e paciente no trigger, segmentação e contagem clínica, e ciclo persistido de entrega."
   }
 ]

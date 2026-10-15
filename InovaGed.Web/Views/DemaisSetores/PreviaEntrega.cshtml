@@ -1,8 +1,10 @@
 @using InovaGed.Web.Controllers
+@using InovaGed.Application.Sectors
 @{
     Layout = null;
     ViewData["Title"] = "Prévia de entrega";
     var context = (SectorContextRow)ViewBag.Context;
+    var delivery = (SectorDeliveryDetails?)ViewBag.Delivery;
     var documents = (IReadOnlyList<SectorDocumentRow>)(ViewBag.Documents ?? Array.Empty<SectorDocumentRow>());
     var checklist = (IReadOnlyList<SectorChecklistRow>)(ViewBag.Checklist ?? Array.Empty<SectorChecklistRow>());
 }
@@ -10,52 +12,126 @@
 <html lang="pt-BR">
 <head>
     <meta charset="utf-8" />
-    <title>Prévia de entrega</title>
+    <title>Prévia e preparação de entrega</title>
     <link rel="stylesheet" href="~/css/demais-setores.css" asp-append-version="true" />
 </head>
 <body>
 <main class="ds-page">
-    <h1>Prévia de capa e checklist</h1>
-    <p class="ds-help">Isto é preparação para conferência. Não é entrega confirmada, não encerra o atendimento e não prova assinatura digital nem preservação do original físico.</p>
+    <h1>Prévia e preparação de entrega documental</h1>
+    <p class="ds-help">Isto é preparação para conferência e entrega. Não encerra o atendimento hospitalar e a impressão não prova assinatura digital nem substitui o original físico arquivístico.</p>
+
+    @if (delivery is not null)
+    {
+        <section class="ds-card @(delivery.Status == "PREPARACAO_INCOMPLETA" ? "ds-card-warning" : delivery.Status == "ENTREGUE" ? "ds-card-success" : "")">
+            <h2>Composição de entrega persistida (Versão @delivery.VersionNo)</h2>
+            <p><strong>Perfil:</strong> @delivery.ProfileCode · <strong>Situação:</strong> <span class="ds-badge">@delivery.Status</span></p>
+            <p><strong>Montado por:</strong> @delivery.AssembledByName em @delivery.CreatedAt.ToString("dd/MM/yyyy HH:mm")</p>
+            @if (!string.IsNullOrWhiteSpace(delivery.Recipient))
+            {
+                <p><strong>Destinatário registrado:</strong> @delivery.Recipient</p>
+            }
+
+            @if (delivery.Status == "PREPARACAO_INCOMPLETA")
+            {
+                <div class="ds-status" data-kind="erro">
+                    <p><strong>Atenção:</strong> Preparação incompleta com pendências. O pacote não pode ser apresentado como completo.</p>
+                    @if (delivery.Blockers.Count > 0)
+                    {
+                        <ul>
+                            @foreach (var blocker in delivery.Blockers)
+                            {
+                                <li>@blocker</li>
+                            }
+                        </ul>
+                    }
+                </div>
+            }
+            else if (delivery.Status == "ENTREGUE")
+            {
+                <div class="ds-status">
+                    <p><strong>Entrega confirmada</strong> em @(delivery.DeliveredAt?.ToString("dd/MM/yyyy HH:mm") ?? "data não registrada")</p>
+                    <p><strong>Protocolo:</strong> @(delivery.ProtocolNumber ?? "não informado") · <strong>Evidência:</strong> @(delivery.DeliveryEvidence ?? "não informada")</p>
+                </div>
+            }
+            else if (delivery.Status == "PREPARADO")
+            {
+                <form method="post" action="@Url.Action("ConfirmarEntrega")" class="ds-card">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="deliveryId" value="@delivery.Id" />
+                    <h3>Confirmar recebimento / entrega do pacote</h3>
+                    <label>Número do protocolo institucional <input name="protocolNumber" placeholder="Ex.: PROT-2026-10492" required /></label>
+                    <label>Evidência da entrega (recibo, protocolo físico ou assinatura) <input name="deliveryEvidence" placeholder="Ex.: Recibo assinado pelo setor de faturamento" required /></label>
+                    <button type="submit" class="ds-btn-primary">Registrar confirmação de entrega</button>
+                </form>
+            }
+        </section>
+    }
+
     <section class="ds-card">
-        <h2>Contexto</h2>
+        <h2>Contexto do atendimento</h2>
         <p><strong>@context.DisplayName</strong> · código @context.PatientCode</p>
         <p>Atendimento @context.EncounterCode · @(context.Kind ?? "tipo ainda não mapeado") · @(context.Status ?? "situação não informada")</p>
         <p>Entrada @(context.AdmittedAt?.ToString("dd/MM/yyyy HH:mm") ?? "não informada") · alta @(context.DischargedAt?.ToString("dd/MM/yyyy HH:mm") ?? "não informada")</p>
     </section>
-    <section class="ds-card">
-        <h2>Arquivos visíveis nesta consulta</h2>
-        @if (documents.Count == 0)
-        {
-            <p>Nenhum arquivo visível. A prévia não inventa documento ausente.</p>
-        }
-        <ul>
-            @foreach (var document in documents)
+
+    @if (delivery is not null && delivery.Items.Count > 0)
+    {
+        <section class="ds-card">
+            <h2>Documentos da preparação persistida (@delivery.Items.Count itens)</h2>
+            <ol>
+                @foreach (var item in delivery.Items)
+                {
+                    <li>
+                        <strong>@item.Name</strong> (@item.CatalogCode)
+                        — Situação: <span class="ds-badge">@item.Outcome</span>
+                        @(item.RequiresPhysical ? "— Original físico exigido: " + (string.IsNullOrWhiteSpace(item.PhysicalEvidence) ? "PENDENTE" : item.PhysicalEvidence) : "")
+                        <details><summary>Detalhes e versão</summary><p class="ds-note">Versão @item.VersionId. @item.Detail</p></details>
+                    </li>
+                }
+            </ol>
+            <p class="ds-note">Reimpressões preservam esta composição histórica gravada.</p>
+        </section>
+    }
+    else
+    {
+        <section class="ds-card">
+            <h2>Arquivos visíveis neste atendimento</h2>
+            @if (documents.Count == 0)
             {
-                <li>
-                    <strong>@document.Name</strong>
-                    — @document.OriginalFileName
-                    — @(document.DocumentDate?.ToString("dd/MM/yyyy") ?? "sem data")
-                    — conferência @document.ReviewStatus
-                    — prévia @document.PreviewStatus
-                    — OCR @document.OcrStatus
-                    @(document.RequiresPhysical ? "— original físico exigido: " + (string.IsNullOrWhiteSpace(document.PhysicalEvidence) ? "pendente" : document.PhysicalEvidence) : "")
-                    <details><summary>Versão registrada</summary><p class="ds-note">@document.VersionId</p></details>
-                </li>
+                <p>Nenhum arquivo visível. A prévia não inventa documento ausente.</p>
             }
-        </ul>
-    </section>
+            <ul>
+                @foreach (var document in documents)
+                {
+                    <li>
+                        <strong>@document.Name</strong>
+                        — @document.OriginalFileName
+                        — @(document.DocumentDate?.ToString("dd/MM/yyyy") ?? "sem data")
+                        — conferência @document.ReviewStatus
+                        — prévia @document.PreviewStatus
+                        — OCR @document.OcrStatus
+                        @(document.RequiresPhysical ? "— original físico exigido: " + (string.IsNullOrWhiteSpace(document.PhysicalEvidence) ? "pendente" : document.PhysicalEvidence) : "")
+                        <details><summary>Versão registrada</summary><p class="ds-note">@document.VersionId</p></details>
+                    </li>
+                }
+            </ul>
+        </section>
+    }
+
     <section class="ds-card">
-        <h2>Checklist do Anexo I</h2>
+        <h2>Conferência do checklist (Anexo I)</h2>
         <ul>
             @foreach (var item in checklist)
             {
-                <li>@item.Order.ToString("00") @item.Name — @item.State @(item.Required ? "(exigido neste contexto)" : "(não exigido neste contexto)")</li>
+                <li>@item.Order.ToString("00") @item.Name — <span class="ds-badge">@item.State</span> @(item.Required ? "(exigido neste contexto)" : "(não exigido neste contexto)")</li>
             }
         </ul>
         <p class="ds-note">O Anexo II permanece um perfil separado e só pode ser usado quando a instituição o habilitar. A impressão desta página não substitui o pacote conferido nem comprova assinatura.</p>
     </section>
-    <div class="ds-actions"><button type="button" onclick="window.print()">Imprimir prévia</button></div>
+
+    <div class="ds-actions">
+        <button type="button" class="ds-btn-primary" onclick="window.print()">Imprimir pacote / capa</button>
+    </div>
 </main>
 </body>
 </html>

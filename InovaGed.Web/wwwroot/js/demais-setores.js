@@ -421,16 +421,61 @@
   page?.querySelectorAll("[data-ds-protection]").forEach(function (input) { input.value = protection(); });
   const viewerStatus = workspace.querySelector("[data-ds-viewer-status]");
   const textHost = workspace.querySelector("[data-ds-text]");
+  const directLink = workspace.querySelector("[data-ds-viewer-direct]");
+  const zoomLevelEl = workspace.querySelector("[data-ds-zoom-level]");
+  let currentZoom = 100;
   let request = 0;
+
+  function updateViewerZoom(newZoom) {
+    currentZoom = Math.min(300, Math.max(50, newZoom));
+    if (zoomLevelEl) zoomLevelEl.textContent = currentZoom + "%";
+    if (frame && frame.src) {
+      try {
+        const u = new URL(frame.src);
+        const hash = u.hash.replace(/^#/, "");
+        const parts = hash ? hash.split("&").filter(function (p) { return !p.startsWith("zoom="); }) : [];
+        parts.push("zoom=" + currentZoom);
+        u.hash = parts.join("&");
+        frame.src = u.toString();
+      } catch { /* frame src maintained */ }
+    }
+  }
+
+  workspace.querySelector("[data-ds-zoom-in]")?.addEventListener("click", function () {
+    updateViewerZoom(currentZoom + 25);
+  });
+  workspace.querySelector("[data-ds-zoom-out]")?.addEventListener("click", function () {
+    updateViewerZoom(currentZoom - 25);
+  });
+  workspace.querySelector("[data-ds-zoom-reset]")?.addEventListener("click", function () {
+    updateViewerZoom(100);
+  });
+
+  frame?.addEventListener("load", function () {
+    if (viewerStatus && frame.src) {
+      if (!viewerStatus.textContent || viewerStatus.textContent.startsWith("Carregando")) {
+        viewerStatus.textContent = "Documento carregado no visualizador.";
+      }
+    }
+  });
 
   function openDocument(button) {
     const mine = ++request;
     workspace.querySelectorAll("[data-ds-open]").forEach(function (item) { item.setAttribute("aria-current", "false"); });
     button.setAttribute("aria-current", "true");
     frame.removeAttribute("src");
+    if (directLink && button.dataset.url) {
+      directLink.href = button.dataset.url;
+      directLink.hidden = false;
+    }
     if (viewerStatus) viewerStatus.textContent = "Carregando o documento. Se a sessão tiver expirado, a mensagem aparece neste quadro, sem JSON.";
     const pageNumber = button.dataset.page;
-    const url = button.dataset.url + (pageNumber ? "#page=" + pageNumber : "");
+    const zoomParam = currentZoom !== 100 ? "zoom=" + currentZoom : "";
+    const hashParts = [];
+    if (pageNumber) hashParts.push("page=" + pageNumber);
+    if (zoomParam) hashParts.push(zoomParam);
+    const hash = hashParts.length ? "#" + hashParts.join("&") : "";
+    const url = button.dataset.url + hash;
     window.setTimeout(function () {
       if (mine !== request) return;
       frame.src = url;

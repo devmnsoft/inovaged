@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace InovaGed.Application.Sectors;
 
-public sealed record SectorClinicalExtractionResult(int Status,string State,string Message,Guid? RunId=null,int Items=0);
+public sealed record SectorClinicalExtractionResult(int Status,string State,string Message,Guid? RunId=null,int Items=0,int ItemsReturned=0,int ItemsRecorded=0,int ItemsPreserved=0);
 public interface ISectorClinicalExtractionService
 {
     Task<SectorClinicalExtractionResult> ExtractAsync(Guid tenantId,Guid userId,Guid linkId,string? idempotencyKey,CancellationToken ct,Guid? resumeRunId=null);

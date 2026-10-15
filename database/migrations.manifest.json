@@ -1418,6 +1418,14 @@
       "transactional": true,
       "deploymentSafety": "Additive",
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_11_05_demais_setores_encounter_correction",
+      "path": "database/migrations/2026_11_05_demais_setores_encounter_correction.sql",
+      "module": "DemaisSetores",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
     }
   ]
 }

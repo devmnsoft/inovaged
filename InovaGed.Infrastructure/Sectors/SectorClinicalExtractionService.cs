@@ -37,8 +37,14 @@ Se nada estiver documentado com evidência suficiente, devolva items vazio.
         if(!SectorClinicalEvidence.SupportedCatalog.Contains(source.Catalog,StringComparer.Ordinal))
             return new(422,"TIPO","A extração clínica está disponível para prescrições, evoluções e documentos cirúrgicos/material/OPME suportados.");
         if(string.IsNullOrWhiteSpace(source.Text)) return new(422,"AGUARDANDO_TEXTO","A versão ainda não possui texto utilizável. Acompanhe o OCR antes de solicitar IA.");
-        if(source.Text.Length>Math.Clamp(options.Value.MaximumInputCharacters,1000,500000)-Instructions.Length-200)
-            return new(422,"LIMITE","O texto excede o limite configurado. Nenhum trecho foi truncado ou enviado.");
+
+        var charLimit = Math.Clamp(options.Value.MaximumInputCharacters, 1000, 500000) - Instructions.Length - 200;
+        const int MaxSegments = 5;
+        var segments = SplitSegments(source.Text, charLimit, MaxSegments);
+        var estimatedTotalSegments = (int)Math.Ceiling((double)source.Text.Length / Math.Max(1, charLimit));
+        var totalSegments = Math.Max(segments.Count, estimatedTotalSegments);
+        var isPartial = totalSegments > segments.Count;
+
         var hash=Fingerprint(source);
         var lockKey=$"sector-clinical:{tenantId:N}:{source.VersionId:N}";
         if(!await conn.ExecuteScalarAsync<bool>(new CommandDefinition("select pg_try_advisory_lock(hashtextextended(@lockKey,0))",new{lockKey},cancellationToken:ct)))
@@ -49,6 +55,24 @@ Se nada estiver documentado com evidência suficiente, devolva items vazio.
             var fresh=await ReadSource(conn,tenantId,linkId,ct);
             if(fresh is null||!await Authorized(conn,tenantId,userId,fresh,ct)) return Denied();
             if(Fingerprint(fresh)!=hash) return new(409,"DESATUALIZADO","O texto mudou. Atualize a consulta antes de solicitar a extração.");
+
+            // Validar política de IA antes de reutilizar ou processar
+            try
+            {
+                var policy = await governance.GetEffectivePolicyAsync(tenantId, AiTask.ExtractClinicalItems, ct);
+                if (policy is not null && (!policy.Enabled || !policy.Tasks.Contains(AiTask.ExtractClinicalItems)))
+                {
+                    await conn.ExecuteAsync(new CommandDefinition(
+                        "update ged.sector_document_link set extraction_status='BLOQUEADO_POLITICA' where tenant_id=@tenantId and id=@linkId",
+                        new { tenantId, linkId }, cancellationToken: ct));
+                    return new(403, "BLOQUEADO_POLITICA", "A política de IA para extração clínica está desabilitada para o tenant.");
+                }
+            }
+            catch (NotSupportedException)
+            {
+                // Ambientes de teste sem mock de política delegam ao gateway
+            }
+
             Run? run;
             if(resumeRunId.HasValue)
             {
@@ -66,7 +90,7 @@ Se nada estiver documentado com evidência suficiente, devolva items vazio.
                 {
                     run=NewRun();run.Status="CONCLUIDO";run.Items=completed.Items;run.ExecutionId=completed.ExecutionId;
                     await InsertRun(run,completed.Id);
-                    return Completed(run);
+                    return new(200,"CONCLUIDO","Resultado reaproveitado de análise anterior para a mesma fonte e versão do mecanismo. Nenhuma nova chamada de IA foi executada.",run.Id,completed.Items,completed.Items,completed.Items,0);
                 }
                 var pending=await conn.QueryFirstOrDefaultAsync<Run>(new CommandDefinition(RunSelect+" where tenant_id=@tenantId and version_id=@version and input_hash=@hash and status in ('PROCESSANDO','AGUARDANDO_RESULTADO') order by created_at desc limit 1",new{tenantId,version=source.VersionId,hash},cancellationToken:ct));
                 if(pending is not null) return new(202,"AGUARDANDO_RESULTADO","Existe uma execução sem resultado resolvido. Retome a solicitação original; não houve novo envio.",pending.UserId==userId?pending.Id:null);
@@ -85,38 +109,66 @@ Se nada estiver documentado com evidência suficiente, devolva items vazio.
                 await Finish("AGUARDANDO_RESULTADO");
                 return new(202,"AGUARDANDO_RESULTADO","O resultado remoto ainda precisa ser reconciliado na governança de IA. Não houve novo envio.",run.Id);
             }
-            var response=await ai.ExecuteAsync(new AiRequest(tenantId,userId,AiTask.ExtractClinicalItems,
-                Instructions+"\nTipo documental canônico: "+source.Catalog,
-                [new(source.DocumentId.ToString("N")+"/"+source.VersionId.ToString("N"),source.Text)],schema,
-                "sector-clinical-v1:"+run.Id.ToString("N"),[new(source.DocumentId,source.VersionId)],OnExecutionReserved:async (executionId,token)=>
-                {
-                    var changed=await conn.ExecuteAsync(new CommandDefinition("""
+
+            var allItems = new List<SectorClinicalItem>();
+            var uniqueKeys = new HashSet<string>(StringComparer.Ordinal);
+            Guid? lastExecutionId = null;
+
+            for(var segIdx = 0; segIdx < segments.Count; segIdx++)
+            {
+                var segmentText = segments[segIdx];
+                var reqKey = segments.Count == 1 ? $"sector-clinical-v1:{run.Id:N}" : $"sector-clinical-v1:{run.Id:N}-seg{segIdx+1}";
+                var response=await ai.ExecuteAsync(new AiRequest(tenantId,userId,AiTask.ExtractClinicalItems,
+                    Instructions+"\nTipo documental canônico: "+source.Catalog+(segments.Count > 1 ? $"\nSegmento {segIdx+1} de {segments.Count}" : ""),
+                    [new(source.DocumentId.ToString("N")+"/"+source.VersionId.ToString("N"),segmentText)],schema,
+                    reqKey,[new(source.DocumentId,source.VersionId)],OnExecutionReserved:async (executionId,token)=>
+                    {
+                        var changed=await conn.ExecuteAsync(new CommandDefinition("""
 update ged.sector_clinical_extraction set execution_id=@executionId
 where tenant_id=@tenantId and id=@id and (execution_id is null or execution_id=@executionId)
 """,new{tenantId,id=run.Id,executionId},cancellationToken:token));
-                    if(changed!=1)throw new InvalidOperationException("A confirmação da execução não corresponde à solicitação clínica.");
-                    run.ExecutionId=executionId;
-                }),ct);
-            var execution=response.ExecutionId.HasValue?await governance.GetExecutionAsync(tenantId,userId,response.ExecutionId.Value,ct):null;
-            run.ExecutionId=response.ExecutionId??run.ExecutionId;
-            if(!response.Success)
-            {
-                var waiting=execution?.State is AiExecutionState.Running or AiExecutionState.Reserved or AiExecutionState.RemoteOutcomeUnknown
-                    ||priorExecution?.State is AiExecutionState.Running or AiExecutionState.Reserved or AiExecutionState.RemoteOutcomeUnknown;
-                await Finish(waiting?"AGUARDANDO_RESULTADO":"FALHOU");
-                return new(waiting?202:422,waiting?"AGUARDANDO_RESULTADO":"FALHOU",
-                    waiting?"O resultado ainda não está resolvido. Retome esta solicitação; não inicie outro envio.":"A extração não foi concluída: "+(response.Limitation??"verifique política, provedor, credencial e cota na administração de IA."),run.Id);
+                        if(changed!=1)throw new InvalidOperationException("A confirmação da execução não corresponde à solicitação clínica.");
+                        run.ExecutionId=executionId;
+                    }),ct);
+
+                var execution=response.ExecutionId.HasValue?await governance.GetExecutionAsync(tenantId,userId,response.ExecutionId.Value,ct):null;
+                run.ExecutionId=response.ExecutionId??run.ExecutionId;
+                lastExecutionId = run.ExecutionId;
+                if(!response.Success)
+                {
+                    if (response.Failure == AiFailureKind.Disabled)
+                    {
+                        await Finish("BLOQUEADO_POLITICA");
+                        await conn.ExecuteAsync(new CommandDefinition(
+                            "update ged.sector_document_link set extraction_status='BLOQUEADO_POLITICA' where tenant_id=@tenantId and id=@linkId",
+                            new { tenantId, linkId }, cancellationToken: ct));
+                        return new(403, "BLOQUEADO_POLITICA", "A política de IA para extração clínica está desabilitada para o tenant.", run.Id);
+                    }
+                    var waiting=execution?.State is AiExecutionState.Running or AiExecutionState.Reserved or AiExecutionState.RemoteOutcomeUnknown
+                        ||priorExecution?.State is AiExecutionState.Running or AiExecutionState.Reserved or AiExecutionState.RemoteOutcomeUnknown;
+                    await Finish(waiting?"AGUARDANDO_RESULTADO":"FALHOU");
+                    return new(waiting?202:422,waiting?"AGUARDANDO_RESULTADO":"FALHOU",
+                        waiting?"O resultado ainda não está resolvido. Retome esta solicitação; não inicie outro envio.":"A extração não foi concluída: "+(response.Limitation??"verifique política, provedor, credencial e cota na administração de IA."),run.Id);
+                }
+                if(execution is null||execution.Task!=AiTask.ExtractClinicalItems||execution.State!=AiExecutionState.Completed
+                    ||execution.SourceIntegrity!=AiSourceIntegrity.Resolved||execution.ResultMalformed
+                    ||execution.Result is null||!execution.Result.Success||execution.Result.StructuredData is null
+                    ||execution.ResultExpiresAt<=DateTimeOffset.UtcNow
+                    ||execution.Sources is null||execution.Sources.Count!=1||execution.Sources[0]!=new AiExecutionSource(source.DocumentId,source.VersionId)
+                    ||!JsonSchemaSubsetValidator.IsValid(execution.Result.StructuredData.RootElement,schema.RootElement)
+                    ||!SectorClinicalEvidence.TryRead(execution.Result.StructuredData.RootElement,source.Text,source.Catalog,out var segItems))
+                {
+                    await Finish("FALHOU");return new(422,"SAIDA_INVALIDA","O resultado não possui fontes e evidências válidas. Nenhuma sugestão foi gravada.",run.Id);
+                }
+
+                foreach(var item in segItems)
+                {
+                    if(uniqueKeys.Add(item.Category + ":" + item.Evidence))
+                        allItems.Add(item);
+                }
             }
-            if(execution is null||execution.Task!=AiTask.ExtractClinicalItems||execution.State!=AiExecutionState.Completed
-                ||execution.SourceIntegrity!=AiSourceIntegrity.Resolved||execution.ResultMalformed
-                ||execution.Result is null||!execution.Result.Success||execution.Result.StructuredData is null
-                ||execution.ResultExpiresAt<=DateTimeOffset.UtcNow
-                ||execution.Sources is null||execution.Sources.Count!=1||execution.Sources[0]!=new AiExecutionSource(source.DocumentId,source.VersionId)
-                ||!JsonSchemaSubsetValidator.IsValid(execution.Result.StructuredData.RootElement,schema.RootElement)
-                ||!SectorClinicalEvidence.TryRead(execution.Result.StructuredData.RootElement,source.Text,source.Catalog,out var items))
-            {
-                await Finish("FALHOU");return new(422,"SAIDA_INVALIDA","O resultado não possui fontes e evidências válidas. Nenhuma sugestão foi gravada.",run.Id);
-            }
+
+            var items = allItems;
             await using var tx=await conn.BeginTransactionAsync(System.Data.IsolationLevel.Serializable,ct);
             current=await ReadSource(conn,tenantId,linkId,ct,tx,true);
             if(current is null||!await Authorized(conn,tenantId,userId,current,ct))
@@ -133,22 +185,70 @@ update ged.sector_extracted_field set status='SUPERADO',updated_at=now()
 where tenant_id=@tenantId and link_id=@linkId and version_id=@version and mechanism=@mechanism and status='SUGERIDO'
  and not exists(select 1 from ged.sector_field_review r where r.tenant_id=sector_extracted_field.tenant_id and r.field_id=sector_extracted_field.id);
 """,new{tenantId,linkId,version=source.VersionId,mechanism=SectorClinicalEvidence.Mechanism},tx,cancellationToken:ct));
+
+            var itemsReturned = items.Count;
+            var itemsRecorded = 0;
+            var itemsPreserved = 0;
+
             foreach(var item in items)
-                await conn.ExecuteAsync(new CommandDefinition("""
+            {
+                var alreadyReviewed = await conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
+select exists(
+  select 1 from ged.sector_extracted_field
+  where tenant_id=@tenantId and link_id=@linkId and version_id=@version and field_key=@Category
+    and evidence_excerpt=@Evidence and status in ('CONFIRMADO','CORRIGIDO','REJEITADO','INCONCLUSIVO'))
+""", new { tenantId, linkId, version = source.VersionId, item.Category, item.Evidence }, tx, cancellationToken: ct));
+
+                if (alreadyReviewed)
+                {
+                    itemsPreserved++;
+                }
+                else
+                {
+                    await conn.ExecuteAsync(new CommandDefinition("""
 insert into ged.sector_extracted_field
  (id,tenant_id,link_id,version_id,field_key,context_code,suggested_value,evidence_excerpt,page_number,status,source_kind,mechanism,structured_value,ai_execution_id,source_fingerprint)
-select gen_random_uuid(),@tenantId,@linkId,@version,@Category,@Context,@display,@Evidence,@Page,'SUGERIDO',@textSource,@mechanism,cast(@structured as jsonb),@executionId,@hash
-where not exists(select 1 from ged.sector_extracted_field
- where tenant_id=@tenantId and link_id=@linkId and version_id=@version and field_key=@Category
- and evidence_excerpt=@Evidence and status in ('CONFIRMADO','CORRIGIDO','REJEITADO','INCONCLUSIVO'));
-""",new{tenantId,linkId,version=source.VersionId,item.Category,item.Context,display=item.DisplayValue,item.Evidence,item.Page,textSource=source.Source,
-                    mechanism=SectorClinicalEvidence.Mechanism,structured=JsonSerializer.Serialize(item),executionId=response.ExecutionId,hash},tx,cancellationToken:ct));
+values
+ (gen_random_uuid(),@tenantId,@linkId,@version,@Category,@Context,@display,@Evidence,@Page,'SUGERIDO',@textSource,@mechanism,cast(@structured as jsonb),@executionId,@hash)
+""", new {
+                        tenantId, linkId, version = source.VersionId,
+                        item.Category, item.Context, display = item.DisplayValue,
+                        item.Evidence, item.Page, textSource = source.Source,
+                        mechanism = SectorClinicalEvidence.Mechanism,
+                        structured = JsonSerializer.Serialize(item),
+                        executionId = lastExecutionId, hash
+                    }, tx, cancellationToken: ct));
+                    itemsRecorded++;
+                }
+            }
+
+            var finalStatus = isPartial ? "CONCLUIDO_PARCIAL" : "CONCLUIDO";
+            var completionMessage = isPartial
+                ? $"Extração clínica concluída parcialmente ({segments.Count} de {totalSegments} segmentos processados). Sugestões gravadas: {itemsRecorded}, preservadas: {itemsPreserved}. Revise cada item."
+                : (itemsPreserved > 0
+                    ? $"Sugestões clínicas gravadas com evidência (retornados: {itemsReturned}, gravados: {itemsRecorded}, preservados por revisão: {itemsPreserved}). Revise cada item; não houve confirmação automática."
+                    : "Sugestões clínicas gravadas com evidência. Revise cada item; não houve confirmação ou cobrança automática.");
+
             await conn.ExecuteAsync(new CommandDefinition("""
-update ged.sector_clinical_extraction set status='CONCLUIDO',execution_id=@executionId,item_count=@count,completed_at=now()
+update ged.sector_clinical_extraction
+set status=@finalStatus, execution_id=@executionId, item_count=@itemsRecorded,
+    items_returned=@itemsReturned, items_recorded=@itemsRecorded, items_preserved=@itemsPreserved,
+    total_segments=@totalSegments, completed_segments=@completedSegments, completed_at=now()
 where tenant_id=@tenantId and id=@id
-""",new{tenantId,id=run.Id,executionId=response.ExecutionId,count=items.Count},tx,cancellationToken:ct));
+""", new {
+                tenantId, id = run.Id, executionId = lastExecutionId,
+                finalStatus, itemsRecorded, itemsReturned, itemsPreserved,
+                totalSegments, completedSegments = segments.Count
+            }, tx, cancellationToken: ct));
+
+            await conn.ExecuteAsync(new CommandDefinition("""
+update ged.sector_document_link
+set extraction_status = case when @itemsRecorded > 0 then 'REVISAO_PENDENTE' else 'CONCLUIDO' end
+where tenant_id=@tenantId and id=@linkId
+""", new { tenantId, linkId, itemsRecorded }, tx, cancellationToken: ct));
+
             await tx.CommitAsync(ct);
-            return new(200,"CONCLUIDO","Sugestões clínicas gravadas com evidência. Revise cada item; não houve confirmação ou cobrança automática.",run.Id,items.Count);
+            return new(200, finalStatus, completionMessage, run.Id, itemsRecorded, itemsReturned, itemsRecorded, itemsPreserved);
 
             Run NewRun()=>new(){Id=Guid.NewGuid(),UserId=userId,LinkId=linkId,VersionId=source.VersionId,InputHash=hash,Status="PROCESSANDO"};
             Task InsertRun(Run value,Guid? reused)=>conn.ExecuteAsync(new CommandDefinition("""
@@ -161,6 +261,64 @@ values(@Id,@tenantId,@UserId,@LinkId,@VersionId,@key,@InputHash,@mechanism,@Stat
         {
             await conn.ExecuteAsync(new CommandDefinition("select pg_advisory_unlock(hashtextextended(@lockKey,0))",new{lockKey},commandTimeout:5,cancellationToken:CancellationToken.None));
         }
+    }
+
+    private static List<string> SplitSegments(string text, int maxSegmentChars, int maxSegments)
+    {
+        var segments = new List<string>();
+        if (text.Length <= maxSegmentChars)
+        {
+            segments.Add(text);
+            return segments;
+        }
+
+        var pageDelim = "--- página ";
+        if (text.Contains(pageDelim, StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = text.Split(new[] { pageDelim }, StringSplitOptions.RemoveEmptyEntries);
+            var current = new StringBuilder();
+            for (var p = 0; p < parts.Length; p++)
+            {
+                var piece = (p == 0 && !text.StartsWith(pageDelim, StringComparison.OrdinalIgnoreCase)) ? parts[p] : pageDelim + parts[p];
+                if (current.Length + piece.Length > maxSegmentChars && current.Length > 0)
+                {
+                    segments.Add(current.ToString());
+                    current.Clear();
+                    if (segments.Count >= maxSegments) break;
+                }
+                if (piece.Length > maxSegmentChars)
+                {
+                    var start = 0;
+                    while (start < piece.Length && segments.Count < maxSegments)
+                    {
+                        var len = Math.Min(maxSegmentChars, piece.Length - start);
+                        segments.Add(piece.Substring(start, len));
+                        start += len;
+                    }
+                }
+                else
+                {
+                    current.Append(piece);
+                }
+            }
+            if (current.Length > 0 && segments.Count < maxSegments)
+            {
+                segments.Add(current.ToString());
+            }
+        }
+        else
+        {
+            var start = 0;
+            while (start < text.Length && segments.Count < maxSegments)
+            {
+                var len = Math.Min(maxSegmentChars, text.Length - start);
+                segments.Add(text.Substring(start, len));
+                start += len;
+            }
+        }
+
+        if (segments.Count == 0) segments.Add(text);
+        return segments;
     }
 
     private async Task<bool> Authorized(NpgsqlConnection conn,Guid tenantId,Guid userId,InputSource source,CancellationToken ct)

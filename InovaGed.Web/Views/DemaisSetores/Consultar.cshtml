@@ -197,7 +197,16 @@
             </nav>
         </section>
         <section id="ds-pdf" data-region="pdf">
-            <h2>Visualizador</h2>
+            <div class="ds-viewer-header">
+                <h2>Visualizador</h2>
+                <div class="ds-viewer-controls">
+                    <button type="button" class="ds-btn-tool" data-ds-zoom-out title="Diminuir zoom (−)">−</button>
+                    <span class="ds-zoom-label" data-ds-zoom-level>100%</span>
+                    <button type="button" class="ds-btn-tool" data-ds-zoom-in title="Aumentar zoom (+)">+</button>
+                    <button type="button" class="ds-btn-tool" data-ds-zoom-reset title="Redefinir zoom (100%)">100%</button>
+                    <a data-ds-viewer-direct href="#" target="_blank" rel="noopener noreferrer" class="ds-viewer-direct" hidden>Abrir em nova aba</a>
+                </div>
+            </div>
             <p class="ds-note" data-ds-viewer-status>Nenhum documento selecionado.</p>
             <iframe class="ds-viewer" data-ds-frame title="Documento do atendimento" name="ds-viewer"></iframe>
         </section>

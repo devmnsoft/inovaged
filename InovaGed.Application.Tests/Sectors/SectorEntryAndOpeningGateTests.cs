@@ -832,6 +832,8 @@ create table ged.sector_document_link (
         public Task<string?> RecordPhysicalEvidenceAsync(Guid tenantId, Guid userId, bool isFullAdmin, Guid linkId, string evidence, string ip, string userAgent, CancellationToken ct) => throw new NotSupportedException();
         public Task<string?> ReviewFindingAsync(Guid tenantId, Guid userId, bool isFullAdmin, Guid findingId, string status, string? justification, string ip, string userAgent, CancellationToken ct) => throw new NotSupportedException();
         public Task<SectorDeliveryResult> PrepareDeliveryAsync(SectorDeliveryRequest request, CancellationToken ct) => throw new NotSupportedException();
+        public Task<string?> ConfirmDeliveryAsync(Guid tenantId, Guid userId, bool isFullAdmin, Guid deliveryId, string? protocolNumber, string? deliveryEvidence, string ip, string userAgent, CancellationToken ct) => throw new NotSupportedException();
+        public Task<SectorDeliveryDetails?> GetDeliveryAsync(Guid tenantId, Guid userId, bool isFullAdmin, Guid deliveryId, CancellationToken ct) => throw new NotSupportedException();
         public Task<SectorEmbedResult> CreateEmbedAsync(SectorEmbedRequest request, CancellationToken ct) => throw new NotSupportedException();
         public Task<bool> GrantIsActiveAsync(string token, Guid versionId, CancellationToken ct) => throw new NotSupportedException();
         public Task RevokeEmbedAsync(Guid tenantId, Guid grantId, Guid actorId, CancellationToken ct) => throw new NotSupportedException();
