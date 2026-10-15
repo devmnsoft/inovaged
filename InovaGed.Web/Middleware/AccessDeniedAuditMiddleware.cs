@@ -1,5 +1,6 @@
 ﻿using InovaGed.Application.Audit;
 using InovaGed.Application.Identity;
+using InovaGed.Web.Security;
 
 namespace InovaGed.Web.Middleware;
 
@@ -22,13 +23,13 @@ public sealed class AccessDeniedAuditMiddleware
                 action: "ACCESS_DENIED", // precisa existir no enum
                 entityName: "security",
                 entityId: null,
-                summary: $"403 em {ctx.Request.Method} {ctx.Request.Path}",
+                summary: $"403 em {ctx.Request.Method} {SectorRequestRedaction.Path(ctx)}",
                 ipAddress: ctx.Connection.RemoteIpAddress?.ToString(),
                 userAgent: userAgent,
                 data: new
                 {
                     method = ctx.Request.Method,
-                    path = ctx.Request.Path.Value
+                    path = SectorRequestRedaction.Path(ctx)
                 },
                 ct: ctx.RequestAborted);
         }

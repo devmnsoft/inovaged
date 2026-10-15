@@ -430,6 +430,8 @@ values
 
     private const string Schema = """
 create schema if not exists ged;
+create table ged.sector_entry_ticket(id uuid primary key,tenant_id uuid,integration_id uuid,consumed_at timestamptz,revoked_at timestamptz);
+create table ged.sector_open_request(id uuid primary key,tenant_id uuid,integration_id uuid,revoked_at timestamptz);
 create table ged.sector_patient (
     id uuid primary key, tenant_id uuid not null, source_system text not null, source_unit text not null default '',
     external_code text not null, display_name text not null, identifier_kind text not null default 'ID');

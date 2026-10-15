@@ -3,10 +3,16 @@ namespace InovaGed.Application.Sectors;
 public interface ISectorOpeningService
 {
     Task<SectorOpeningResponse> OpenAsync(SectorOpeningRequest request, CancellationToken ct);
+    Task<SectorOpeningState> OpeningStateAsync(string? clientId, string? secret, string? key, CancellationToken ct);
+    Task<SectorOpeningResponse> RecoverOpeningAsync(string? clientId, string? secret, string? key, CancellationToken ct);
+    Task<SectorRecoveryInfo> RecoveryInfoAsync(Guid reference, bool entryTicket, CancellationToken ct);
+    Task<SectorEntryIssue> CreateRecoveryEntryAsync(Guid reference, bool entryTicket, CancellationToken ct);
+    Task<SectorEntryIssue> CreateCodeRecoveryEntryAsync(string code, CancellationToken ct);
     Task<SectorEntryIssue> CreateEntryAsync(SectorEntryDraft draft, CancellationToken ct);
     Task<SectorEntryContinuation> ContinueEntryAsync(Guid ticketId, Guid tenantId, Guid userId, bool isFullAdmin, CancellationToken ct);
     Task<SectorConsumedOpening?> ConsumeAsync(string code, CancellationToken ct);
-    Task<SectorSessionAccess?> ReadSessionAsync(string? cookieValue, Guid publicId, CancellationToken ct);
+    Task<SectorSessionAccess?> ReadSessionAsync(string? cookieValue, Guid publicId, CancellationToken ct, bool includeOtherEncounters = false);
+    Task<SectorSessionAccess?> ReadCommandSessionAsync(string? cookieValue, Guid publicId, string? protectionToken, CancellationToken ct, bool includeOtherEncounters = false);
     Task<bool> SwitchEncounterAsync(string? cookieValue, Guid publicId, string encounterCode, CancellationToken ct);
     Task<bool> AuthorizeCommandAsync(string? cookieValue, Guid publicId, string? protectionToken, CancellationToken ct);
     Task<string?> RegisterIntegrationAsync(SectorIntegrationRegistration registration, CancellationToken ct);
@@ -28,7 +34,10 @@ public static class SectorOpeningCodes
     public const string Contradictory = "tipo_contraditorio";
     public const string Repeated = "abertura_repetida";
     public const string RateLimited = "limite_excedido";
+    public const string Conflict = "idempotencia_conflitante";
 }
+
+public sealed record SectorOpeningState(bool Authorized, string Code, string State, string? CorrelationId, DateTimeOffset? ExpiresAt, int Recoveries);
 
 public static class SectorOpeningLink
 {
@@ -118,4 +127,5 @@ public sealed record SectorIntegrationRegistration(
     string[] CatalogCodes,
     bool AllowEncounterList,
     bool AllowEncounterSwitch,
-    int MaxMinutes);
+    int MaxMinutes,
+    string? Name = null);

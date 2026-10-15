@@ -2,6 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Parceiro sintético — Demais setores</title>
   <style>
     body { font-family: system-ui, sans-serif; margin: 24px; background: #f4f1ea; color: #1d1a16; }
@@ -9,12 +10,12 @@
     input, select, textarea { width: min(100%, 42rem); }
     .modelo { background: #fff8e8; padding: 12px; }
     .temporaria { background: #e7f5ee; padding: 12px; }
-    iframe { width: min(100%, 42rem); height: 180px; background: #fff; border: 1px solid #8a8175; }
+    iframe { width: 100%; height: 680px; background: #fff; border: 1px solid #8a8175; }
   </style>
 </head>
 <body>
   <h1>Parceiro sintético</h1>
-  <p>Esta página não usa a sessão administrativa do InovaGed e não envia chave. Publique-a em outra origem para exercitar o iframe.</p>
+  <p>Parceiro de teste em outra origem. A chave permanece no processo backend, fora desta página.</p>
   <label>Endereço do InovaGed <input id="host" value="https://inovaged.exemplo" /></label>
   <label>Integração <input id="integracao" value="parceiro-exemplo" /></label>
   <label>Tipo <select id="tipo"><option>ID</option><option>CPF</option></select></label>
@@ -22,6 +23,11 @@
   <label>Código do atendimento <input id="atendimento" value="000088" /></label>
   <label>Nome do documento <input id="documento" value="Prescrição Médica" /></label>
   <label>Modo <select id="modo"><option>consulta</option><option>documento</option></select></label>
+  <label>Destino contextual <select id="destino"><option value="pagina">Página própria</option><option value="iframe">Iframe</option></select></label>
+  <label>Chave da solicitação <input id="idempotencia" value="ensaio-0001" /></label>
+  <p><button type="button" id="backend">Solicitar ao backend</button> <button type="button" id="estado">Consultar estado</button> <button type="button" id="recuperar">Recuperar resposta perdida</button></p>
+  <p id="resultado" role="status"></p>
+  <p id="estado-quadro" role="status"></p>
   <p><button type="button" id="montar">Montar modelo</button></p>
   <section class="modelo">
     <h2>Modelo de URL parametrizada</h2>
@@ -49,9 +55,34 @@
       params.set("codigoAtendimento", document.getElementById("atendimento").value.trim());
       params.set("nomeDocumento", document.getElementById("documento").value.trim());
       params.set("modo", document.getElementById("modo").value);
+      params.set("destino", document.getElementById("destino").value);
+      if(document.getElementById("destino").value === "iframe") params.set("origemIncorporacao",location.origin);
       var url = host + "/DemaisSetores/Integrar?" + params.toString();
       document.getElementById("modelo").value = url;
       document.getElementById("abrir").href = url;
+    });
+    const field = id => document.getElementById(id);
+    async function backend(path) {
+      const body = { idempotencia:field('idempotencia').value,
+        paciente:{tipoIdentificador:field('tipo').value,identificador:field('paciente').value},
+        codigoAtendimento:field('atendimento').value,nomeDocumento:field('documento').value,
+        modo:field('modo').value,origemIncorporacao:location.origin };
+      try {
+        const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+        const result=await response.json();
+        field('resultado').textContent=(result.mensagem || result.estado || result.codigo || 'Sem resposta')+' · correlação '+(result.correlacao || 'não disponível');
+        if(result.urlAbertura) field('pagina').value=result.urlAbertura;
+        if(result.urlIncorporacao) field('quadro').value=result.urlIncorporacao;
+      } catch { field('resultado').textContent='Não foi possível concluir. Consulte o estado antes de repetir.'; }
+    }
+    field('backend').onclick=()=>backend('/abertura');
+    field('estado').onclick=()=>backend('/estado');
+    field('recuperar').onclick=()=>backend('/recuperar');
+    window.addEventListener('message',event=>{
+      let expected;try { expected=new URL(field('host').value).origin; } catch { return; }
+      if(event.origin!==expected || ![field('frame-a').contentWindow,field('frame-b').contentWindow].includes(event.source))return;
+      if(event.data?.tipo==='ds-estado')field('estado-quadro').textContent='Estado da integração: '+String(event.data.estado).slice(0,60);
+      if(event.data?.tipo==='ds-carregado')field('estado-quadro').textContent='Documento autorizado no quadro.';
     });
     document.getElementById("incorporar").addEventListener("click", function () {
       var host = document.getElementById("host").value.replace(/\/$/, "");

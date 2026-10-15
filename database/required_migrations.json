@@ -1020,5 +1020,47 @@
     "area": "DemaisSetores",
     "required": true,
     "description": "Preserva o usuário autorizador nas aberturas e sessões por login para revalidação documental."
+  },
+  {
+    "name": "2026_10_30_demais_setores_context_lifecycle",
+    "path": "database/migrations/2026_10_30_demais_setores_context_lifecycle.sql",
+    "area": "DemaisSetores",
+    "required": true,
+    "description": "Índices para admissão limitada e limpeza em lotes dos contextos temporários."
+  },
+  {
+    "name": "2026_10_31_demais_setores_recovery",
+    "path": "database/migrations/2026_10_31_demais_setores_recovery.sql",
+    "area": "DemaisSetores",
+    "required": true,
+    "description": "Origem explícita no contexto e recuperação autenticada limitada por solicitação."
+  },
+  {
+    "name": "2026_11_01_demais_setores_ticket_binding",
+    "path": "database/migrations/2026_11_01_demais_setores_ticket_binding.sql",
+    "area": "DemaisSetores",
+    "required": true,
+    "description": "Vincula o ticket à configuração original e permite nome de exibição e diagnóstico por correlação."
+  },
+  {
+    "name": "2026_11_02_demais_setores_recovery_revocation",
+    "path": "database/migrations/2026_11_02_demais_setores_recovery_revocation.sql",
+    "area": "DemaisSetores",
+    "required": true,
+    "description": "Revogação persistente de tickets e solicitações, impedindo recuperação após reativação."
+  },
+  {
+    "name": "2026_11_03_demais_setores_processing",
+    "path": "database/migrations/2026_11_03_demais_setores_processing.sql",
+    "area": "DemaisSetores",
+    "required": true,
+    "description": "Processamento durável por versão na fila do GED, acionado por vínculo, texto, OCR e prévia."
+  },
+  {
+    "name": "2026_11_04_demais_setores_clinical_extraction",
+    "path": "database/migrations/2026_11_04_demais_setores_clinical_extraction.sql",
+    "area": "DemaisSetores",
+    "required": true,
+    "description": "Execuções clínicas governadas por versão, itens estruturados e evidência, sem habilitar política de IA."
   }
 ]

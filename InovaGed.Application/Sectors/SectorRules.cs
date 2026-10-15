@@ -219,6 +219,10 @@ public static class SectorDuplicateNotice
 
 public static class SectorExtraction
 {
+    private static readonly System.Text.RegularExpressions.Regex ExplicitNonPerformance = new(
+        @"\b(?:não|nao|nunca)\s+(?:\p{L}+\s+){0,3}(?:administrad\p{L}*|realizad\p{L}*)\b|\bsem\s+(?:administração|administracao|realização|realizacao)\b",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant,
+        TimeSpan.FromMilliseconds(100));
     public const string Prescrito = "PRESCRITO";
     public const string Planejado = "PLANEJADO";
     public const string MencionadoComoRealizado = "MENCIONADO_COMO_REALIZADO";
@@ -246,7 +250,9 @@ public static class SectorExtraction
                 continue;
             }
 
-            if (line.Contains("administrad", StringComparison.OrdinalIgnoreCase))
+            if (ExplicitNonPerformance.IsMatch(line))
+                facts.Add(new(Negado, "situacao", line, page, lineNo));
+            else if (line.Contains("administrad", StringComparison.OrdinalIgnoreCase))
                 facts.Add(new(Administrado, "administracao", line, page, lineNo));
             else if (line.Contains("cancelad", StringComparison.OrdinalIgnoreCase))
                 facts.Add(new(Cancelado, "situacao", line, page, lineNo));

@@ -20,6 +20,23 @@
     var searchUrl = publicId is Guid searchId ? Url.Action("PesquisarIntegrado", new { publicId = searchId }) : Url.Action("Pesquisar");
     var textUrl = publicId is Guid textId ? Url.Action("TextoIntegrado", new { publicId = textId }) : Url.Action("Texto");
     var switchUrl = publicId is Guid switchId ? Url.Action("TrocarAtendimento", new { publicId = switchId }) : Url.Action("TrocarAtendimento");
+    string ProcessingLabel(string? status) => status switch
+    {
+        "CONCLUIDO" => "Concluído",
+        "AGUARDANDO_TEXTO" => "Aguardando texto",
+        "BLOQUEADO_OCR" => "Aguardando correção do OCR",
+        "SEM_TEXTO" => "Concluído sem texto utilizável",
+        "AGUARDANDO" => "Aguardando",
+        "ENFILEIRADO" => "Na fila",
+        "PROCESSANDO" => "Em processamento",
+        "FALHOU" => "Falhou",
+        "FALHOU_AO_ENFILEIRAR" => "Solicitação não enfileirada",
+        "NAO_APLICAVEL" => "Não se aplica",
+        "CANCELADO" => "Cancelado",
+        "JA_EXISTENTE" => "Já existente",
+        "CONCLUIDO_COM_PENDENCIAS" => "Concluído com pendências",
+        _ => status ?? "Aguardando"
+    };
     if (embedded)
         Layout = "~/Views/Shared/_DemaisSetoresFrame.cshtml";
 }
@@ -27,6 +44,14 @@
 <main class="ds-page" data-ds-consult data-embedded="@(embedded ? "1" : "0")" data-public-id="@publicId" data-partner-origin="@ViewBag.PartnerOrigin" data-allow-switch="@(ViewBag.AllowSwitch == true ? "1" : "0")" data-patient-id="@context?.PatientId" data-encounter-id="@encounterId" data-encounter-code="@context?.EncounterCode" data-find-url="@Url.Action("BuscarPaciente")" data-switch-url="@switchUrl" data-search-url="@searchUrl" data-text-url="@textUrl" data-file-url="@(publicId is Guid fileId ? Url.Action(fileAction, new { publicId = fileId }) : Url.Action(fileAction))">
     @Html.AntiForgeryToken()
     <h1>Consultar e analisar</h1>
+    @if(publicId is Guid sessionId)
+    {
+        <section class="ds-card" data-ds-session data-expires="@(((DateTimeOffset?)ViewBag.SessionExpiresAt)?.ToString("O"))" data-status-url="@Url.Action("EstadoIntegrado",new { publicId=sessionId })" data-recovery-url="@Url.Action("Recuperar",new { reference=sessionId })" data-partner-origin="@ViewBag.PartnerOrigin" aria-live="polite">
+            <p data-ds-session-state>Sessão ativa. O acesso é revalidado a cada consulta.</p>
+            <a class="ds-primary-action" data-ds-session-recover hidden target="_blank" rel="noopener noreferrer">Abrir em nova janela</a>
+        </section>
+        <script src="~/js/demais-setores-session.js" asp-append-version="true"></script>
+    }
     <p class="ds-help">Como usar: confirme o atendimento, escolha o documento e leia o PDF, o texto e os dados sugeridos. Campo sugerido não é informação validada. A conta não está integrada: ausência no prontuário não significa item não faturado.</p>
     <section class="ds-context" data-ds-consult-lookup>
         @if (!embedded)
@@ -102,11 +127,28 @@
                     <button type="button" class="ds-doc" data-ds-open data-url="@FileUrl(document.VersionId)" data-version="@document.VersionId" data-name="@document.Name" data-origin="@document.Origin" data-sector="@document.SectorCode" data-review="@document.ReviewStatus" data-date="@document.DocumentDate?.ToString("yyyy-MM-dd")" aria-current="false">
                         <strong>@document.Name</strong>
                         <span class="ds-badge">@document.ReviewStatus</span>
-                        <span class="ds-badge">Prévia @document.PreviewStatus</span>
-                        <span class="ds-badge">OCR @document.OcrStatus</span>
-                        <span class="ds-badge">Extração @document.ExtractionStatus</span>
+                        <span class="ds-badge">Prévia: @ProcessingLabel(document.PreviewStatus)</span>
+                        <span class="ds-badge">OCR: @ProcessingLabel(document.OcrStatus)</span>
+                        <span class="ds-badge">Extração: @ProcessingLabel(document.ExtractionStatus)</span>
+                        <span class="ds-note">Arquivo gravado · vínculo confirmado. A revisão humana permanece separada.</span>
                         <span class="ds-note">@document.OriginalFileName · @document.Origin · @(document.SectorCode ?? "setor não informado") · @(document.DocumentDate?.ToString("dd/MM/yyyy") ?? "sem data")</span>
                     </button>
+                    @if (ViewBag.CanExtract == true && InovaGed.Application.Sectors.SectorClinicalEvidence.SupportedCatalog.Contains(document.CatalogCode))
+                    {
+                        <details class="ds-card">
+                        <summary>Sugestões clínicas com IA</summary>
+                        <form method="post" action="@Url.Action("ExtrairItensClinicos")" data-ds-clinical-extraction>
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="linkId" value="@document.LinkId" />
+                            <input type="hidden" name="idempotencyKey" value="@Guid.NewGuid().ToString("N")" />
+                            <input type="hidden" name="resumeRunId" value="" />
+                            <p class="ds-note">IA clínica usa o texto desta versão, se houver política e provedor autorizados. As sugestões exigem revisão e não geram cobrança.</p>
+                            <button type="submit">Sugerir itens clínicos com IA</button>
+                            <p role="status" aria-live="polite" data-ds-clinical-result></p>
+                            <button type="button" data-ds-clinical-refresh hidden>Atualizar sugestões na tela</button>
+                        </form>
+                        </details>
+                    }
                     @if (ViewBag.CanReview == true)
                     {
                         <form method="post" action="@Url.Action("Conferir")" class="ds-inline">
@@ -185,9 +227,13 @@
                             <p>Valor revisado: @field.ConfirmedValue</p>
                         }
                         <p>Evidência: @field.Evidence @(field.PageNumber is null ? "(página não informada pelo mecanismo; sem coordenadas não há destaque visual)" : "página " + field.PageNumber)</p>
-                        <p class="ds-note">Origem @(field.SourceKind ?? "texto da versão") · mecanismo @(field.Mechanism ?? "regras locais") · situação @field.Status. Valor sugerido não é dado confirmado.</p>
+                        <p class="ds-note">Origem @(field.SourceKind == "TEXTO_NATIVO" ? "texto nativo" : field.SourceKind ?? "texto da versão") · mecanismo @(field.Mechanism == "IA_CLINICA_V1" ? "IA clínica" : field.Mechanism?.StartsWith("REGRAS_LOCAIS") == true ? "regras locais" : field.Mechanism) · situação @field.Status. Valor sugerido não é dado confirmado.</p>
+                        @if (field.ReviewerId.HasValue)
+                        {
+                            <p class="ds-note">Revisão registrada por @field.ReviewerName, em @field.ReviewedAt.</p>
+                        }
                         <button type="button" data-ds-open data-url="@FileUrl(field.VersionId)" data-page="@field.PageNumber" data-version="@field.VersionId">Abrir evidência</button>
-                        @if (ViewBag.CanExtract == true)
+                        @if (ViewBag.CanExtract == true && field.Status!="SUPERADO")
                         {
                             <form method="post" action="@Url.Action("RevisarCampo")">
                                 @Html.AntiForgeryToken()
@@ -264,12 +310,12 @@
                 }
                 @if (ViewBag.CanExtract == true && encounterId.HasValue)
                 {
-                    <h3>Sincronizar leitura</h3>
-                    <p class="ds-note">A consulta não relê o documento ao abrir. Esta ação acompanha o OCR já persistido e grava sugestões. Correções humanas são preservadas.</p>
+                    <h3>Solicitar leitura</h3>
+                    <p class="ds-note">O vínculo e as mudanças de texto acionam o processamento em segundo plano. Esta ação solicita nova verificação na fila. Abrir a consulta não executa extração. Correções humanas são preservadas.</p>
                     <form method="post" action="@Url.Action("AtualizarLeitura")">
                         @Html.AntiForgeryToken()
                         <input type="hidden" name="encounterId" value="@encounterId" />
-                        <button type="submit">Atualizar leitura</button>
+                        <button type="submit">Solicitar verificação na fila</button>
                     </form>
                 }
                 @if (ViewBag.CanPrint == true && encounterId.HasValue)
@@ -311,3 +357,4 @@
     </div>
 </main>
 <script src="~/js/demais-setores.js" asp-append-version="true"></script>
+<script src="~/js/demais-setores-clinical.js" asp-append-version="true"></script>

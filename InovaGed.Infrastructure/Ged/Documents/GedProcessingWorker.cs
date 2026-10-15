@@ -28,6 +28,7 @@ public sealed class GedProcessingWorker : BackgroundService
             {
                 using var scope = _scopeFactory.CreateScope();
                 var repo = scope.ServiceProvider.GetRequiredService<IGedProcessingJobRepository>();
+                await repo.RecoverAbandonedAsync("SECTOR_EXTRACT", TimeSpan.FromMinutes(10), stoppingToken);
                 var jobs = await repo.DequeueAsync(_workerId, 5, stoppingToken);
                 if (jobs.Count == 0)
                 {
@@ -66,6 +67,10 @@ public sealed class GedProcessingWorker : BackgroundService
             _logger.LogInformation("GED processing job started JobId={JobId} Tenant={TenantId} Type={JobType} Version={VersionId}", job.Id, job.TenantId, job.JobType, job.DocumentVersionId);
             switch (job.JobType.ToUpperInvariant())
             {
+                case "SECTOR_EXTRACT":
+                    await services.GetRequiredService<InovaGed.Infrastructure.Sectors.SectorVersionProcessor>().ProcessAsync(job, ct);
+                    // Processor commits suggestions and completion atomically with notifications.
+                    return;
                 case "OCR":
                     if (job.DocumentVersionId.HasValue)
                     {
@@ -98,6 +103,12 @@ public sealed class GedProcessingWorker : BackgroundService
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
+            if (job.JobType == "SECTOR_EXTRACT")
+            {
+                await repo.ReleaseAsync(job.TenantId, job.Id, _workerId, CancellationToken.None);
+                await services.GetRequiredService<InovaGed.Infrastructure.Sectors.SectorVersionProcessor>().RefreshQueueStatusAsync(job,CancellationToken.None);
+                return;
+            }
             await repo.CancelAsync(job.TenantId, job.Id, "Worker cancelado", CancellationToken.None);
         }
         catch (TaskCanceledException) when (ct.IsCancellationRequested)
@@ -113,6 +124,8 @@ public sealed class GedProcessingWorker : BackgroundService
         {
             var delay = TimeSpan.FromSeconds(Math.Min(300, Math.Pow(2, Math.Max(1, job.AttemptCount)) * 15));
             await repo.FailAsync(job.TenantId, job.Id, ex.Message, delay, CancellationToken.None);
+            if (job.JobType == "SECTOR_EXTRACT")
+                await services.GetRequiredService<InovaGed.Infrastructure.Sectors.SectorVersionProcessor>().RefreshQueueStatusAsync(job,CancellationToken.None);
             _logger.LogError(ex, "PROCESSING_JOB_FAILED JobId={JobId} Tenant={TenantId} Type={JobType} RetryDelaySeconds={RetryDelaySeconds}", job.Id, job.TenantId, job.JobType, delay.TotalSeconds);
         }
     }

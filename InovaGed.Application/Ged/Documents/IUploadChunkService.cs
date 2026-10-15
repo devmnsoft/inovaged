@@ -22,6 +22,7 @@ public sealed class StartUploadChunkRequestDto
     public string? UploadName { get; set; }
     public DocumentBulkUploadMetadata Metadata { get; set; } = new();
     public string? CorrelationId { get; set; }
+    public InovaGed.Application.Sectors.SectorUploadContext? SectorContext { get; set; }
 }
 
 public sealed class UploadChunkSessionDto

@@ -23,7 +23,11 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
     private readonly DocumentUploadOptions _uploadOptions;
     private readonly DocumentAppService _documentApp; private readonly IAuditWriter _audit; private readonly ILogger<DocumentBulkUploadService> _logger; private readonly IMemoryCache _cache; private readonly IDbConnectionFactory _db; private readonly IDocumentPartialService _partialService; private readonly IDocumentBulkClassificationService _classification;
     public DocumentBulkUploadService(DocumentAppService documentApp, IAuditWriter audit, ILogger<DocumentBulkUploadService> logger, IOptions<DocumentUploadOptions> options, IMemoryCache cache, IDbConnectionFactory db, IDocumentPartialService partialService, IDocumentBulkClassificationService classification){_documentApp=documentApp;_audit=audit;_logger=logger;_uploadOptions=options.Value;_cache=cache;_db=db;_partialService=partialService;_classification=classification;_ = DocumentUploadSizePolicy.Resolve(_uploadOptions);}
-    public async Task<Result<DocumentBulkUploadResultDto>> UploadStreamAsync(Guid tenantId, Guid userId, string? userName, Stream content, string fileName, string contentType, long sizeBytes, Guid? folderId, DocumentBulkUploadMetadata metadata, bool isAdmin, CancellationToken ct)
+    public Task<Result<DocumentBulkUploadResultDto>> UploadStreamAsync(Guid tenantId, Guid userId, string? userName, Stream content, string fileName, string contentType, long sizeBytes, Guid? folderId, DocumentBulkUploadMetadata metadata, bool isAdmin,CancellationToken ct)
+        =>UploadStreamCoreAsync(tenantId,userId,userName,content,fileName,contentType,sizeBytes,folderId,metadata,isAdmin,ct,null);
+    public Task<Result<DocumentBulkUploadResultDto>> UploadStreamWithReceiptAsync(Guid tenantId, Guid userId, string? userName, Stream content, string fileName, string contentType, long sizeBytes, Guid? folderId, DocumentBulkUploadMetadata metadata, bool isAdmin,Guid uploadSessionId,CancellationToken ct)
+        =>UploadStreamCoreAsync(tenantId,userId,userName,content,fileName,contentType,sizeBytes,folderId,metadata,isAdmin,ct,uploadSessionId);
+    private async Task<Result<DocumentBulkUploadResultDto>> UploadStreamCoreAsync(Guid tenantId, Guid userId, string? userName, Stream content, string fileName, string contentType, long sizeBytes, Guid? folderId, DocumentBulkUploadMetadata metadata, bool isAdmin, CancellationToken ct, Guid? uploadSessionId)
     {
         try
         {
@@ -50,7 +54,9 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
             Guid? versionId = null;
             if (isPart && (metadata.ConsolidateIntoDocumentId.HasValue || metadata.ExistingDocumentId.HasValue) && (metadata.ConsolidateIntoDocumentId ?? metadata.ExistingDocumentId) is Guid existingDoc && existingDoc != Guid.Empty)
             {
-                var addVersion = await _documentApp.AddVersionAsync(existingDoc, content, safeName, string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType, "BULK_PART", userName ?? "BULK", ct);
+                var addVersion = uploadSessionId.HasValue
+                    ? await _documentApp.AddVersionWithUploadReceiptAsync(existingDoc,content,safeName,string.IsNullOrWhiteSpace(contentType)?"application/octet-stream":contentType,"BULK_PART",userName??"BULK",uploadSessionId.Value,ct)
+                    : await _documentApp.AddVersionAsync(existingDoc,content,safeName,string.IsNullOrWhiteSpace(contentType)?"application/octet-stream":contentType,"BULK_PART",userName??"BULK",ct);
                 if (!addVersion.Success) return Result<DocumentBulkUploadResultDto>.Fail(addVersion.Error?.Code ?? "UPLOAD_PART", addVersion.Error?.Message ?? "Falha ao anexar parte do documento.");
                 documentId = existingDoc;
                 versionId = addVersion.Value;
@@ -76,7 +82,9 @@ public sealed class DocumentBulkUploadService : IDocumentBulkUploadService
             else
             {
                 var cmd = new UploadDocumentCommand { FolderId = folderId.Value, TypeId = metadata.DocumentTypeId, ClassificationId = null, Description = metadata.Notes, Visibility = string.IsNullOrWhiteSpace(metadata.Visibility) ? "INTERNAL" : metadata.Visibility.Trim().ToUpperInvariant(), Title = title, FileName = safeName, ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType, Content = content, UploadedAtUtc = uploadedAtUtc, IsPartialDocument = isPart, IsDocumentIncomplete = isIncomplete, IncompleteReason = metadata.IncompleteReason, IncompleteSource = incompleteSource, PartNumber = metadata.PartNumber, TotalParts = metadata.TotalParts };
-                var result = await _documentApp.UploadAsync(cmd, "BULK", userName ?? "BULK", ct);
+                var result = uploadSessionId.HasValue
+                    ? await _documentApp.UploadWithReceiptAsync(cmd,"BULK",userName??"BULK",uploadSessionId.Value,ct)
+                    : await _documentApp.UploadAsync(cmd,"BULK",userName??"BULK",ct);
                 if (!result.Success) return Result<DocumentBulkUploadResultDto>.Fail(result.Error?.Code ?? "UPLOAD", result.Error?.Message ?? "Falha no upload.");
                 documentId = result.Value;
                 versionId = await GetCurrentVersionIdAsync(tenantId, documentId, ct);

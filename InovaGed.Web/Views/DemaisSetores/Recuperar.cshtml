@@ -1,0 +1,23 @@
+@{
+    Layout="_DemaisSetoresFrame";
+    ViewData["Title"]="Continuar com segurança";
+    bool available=ViewBag.RecoveryAvailable==true;
+}
+<link rel="stylesheet" href="~/css/demais-setores.css" asp-append-version="true" />
+<main class="ds-page ds-recovery" data-ds-recovery data-partner-origin="@ViewBag.PartnerOrigin">
+    <section class="ds-card" aria-labelledby="recovery-title">
+        <p class="ds-note">Sessão indisponível neste quadro</p>
+        <h1 id="recovery-title">Continue em uma janela do InovaGed</h1>
+        <p>O navegador pode ter bloqueado o cookie ou a sessão pode ter expirado. Para consultar o documento, abra uma nova janela e autorize o acesso.</p>
+        @if(available)
+        {
+            <a class="ds-primary-action" href="@Url.Action("Recuperar",new { reference=ViewBag.Reference,entrada=ViewBag.EntryTicket })" target="_blank" rel="noopener noreferrer">Abrir em nova janela</a>
+            <p class="ds-help">Como usar: entre com seu usuário e confirme a abertura. Ao terminar, volte ao sistema de origem. Esta tela não tenta redirecionar novamente.</p>
+        }
+        else
+        {
+            <p role="status">Este contexto não pode mais ser recuperado. Solicite uma nova abertura ao sistema de origem.</p>
+        }
+    </section>
+</main>
+<script src="~/js/demais-setores-recovery.js" asp-append-version="true"></script>

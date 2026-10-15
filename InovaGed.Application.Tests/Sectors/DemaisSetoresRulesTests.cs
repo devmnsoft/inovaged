@@ -85,6 +85,21 @@ public sealed class DemaisSetoresRulesTests
         Assert.Contains(blockers, item => item.Contains("falha individual", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Theory]
+    [InlineData("Medicamento 10 mg não administrado", "DS23")]
+    [InlineData("Medicamento 10 mg nao foi administrado", "DS23")]
+    [InlineData("Procedimento não realizado", "DS08")]
+    [InlineData("Procedimento nunca foi realizado", "DS08")]
+    [InlineData("Sem administração de medicamento 10 mg", "DS23")]
+    [InlineData("Sem realização do procedimento", "DS08")]
+    public void Explicit_nonperformance_is_not_suggested_as_administration_or_execution(string text,string catalog)
+    {
+        var fact=Assert.Single(SectorExtraction.Read(text,catalog));
+        Assert.Equal(SectorExtraction.Negado,fact.Context);
+        Assert.Equal(text,fact.Excerpt);
+        Assert.Null(fact.Page);
+    }
+
     [Fact]
     public void Duplicate_notice_hides_a_restricted_document()
     {

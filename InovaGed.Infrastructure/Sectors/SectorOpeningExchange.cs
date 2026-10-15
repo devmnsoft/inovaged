@@ -25,6 +25,7 @@ join ged.sector_patient p on p.id=c.patient_id and p.tenant_id=c.tenant_id
   and p.source_system=i.source_system and p.source_unit=i.source_unit
 join ged.sector_encounter e on e.id=c.encounter_id and e.tenant_id=c.tenant_id and e.patient_id=c.patient_id
 where c.code_hash=@hash and c.consumed_at is null and c.expires_at>now()
+  and ((c.origin='' and c.authorizing_user_id is not null) or c.origin=any(i.origins))
 for update of c
 """, new { hash = Hash(code) }, tx, cancellationToken: ct));
         if (row is null) return null;
@@ -136,6 +137,11 @@ where s.cookie_hash=@hash and s.public_id=@publicId and s.revoked_at is null and
     public static async Task<bool> AuthorizeAsync(NpgsqlConnection conn, string? cookieValue, Guid publicId, string? protectionToken, CancellationToken ct)
     {
         if (await ReadAsync(conn, cookieValue, publicId, ct) is null) return false;
+        return await VerifyProtectionAsync(conn, cookieValue, publicId, protectionToken, ct);
+    }
+
+    internal static async Task<bool> VerifyProtectionAsync(NpgsqlConnection conn, string? cookieValue, Guid publicId, string? protectionToken, CancellationToken ct)
+    {
         if (string.IsNullOrWhiteSpace(protectionToken) || protectionToken.Length != 64) return false;
         var expected = await conn.ExecuteScalarAsync<string?>(new CommandDefinition("""
 select protection_hash
@@ -169,6 +175,12 @@ where tenant_id=@tenantId and integration_id=@integrationId and revoked_at is nu
 update ged.sector_open_code set consumed_at=now()
 where tenant_id=@tenantId and integration_id=@integrationId and consumed_at is null
 """, new { tenantId, integrationId }, tx, cancellationToken: ct));
+        await conn.ExecuteAsync(new CommandDefinition("""
+update ged.sector_entry_ticket set revoked_at=now(),consumed_at=coalesce(consumed_at,now())
+where tenant_id=@tenantId and integration_id=@integrationId and revoked_at is null;
+update ged.sector_open_request set revoked_at=now()
+where tenant_id=@tenantId and integration_id=@integrationId and revoked_at is null;
+""",new { tenantId,integrationId },tx,cancellationToken:ct));
         await tx.CommitAsync(ct);
     }
 

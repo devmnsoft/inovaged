@@ -45,6 +45,7 @@ public sealed record SectorAttachUploadRequest(
     bool ConfirmAnotherOccurrence, bool PreviewQueued, bool OcrQueued, bool OcrApplicable);
 
 public sealed record SectorRegistrationResult(bool Stored, string Stage, string Message, Guid? LinkId, Guid? DocumentId, Guid? VersionId);
+public sealed record SectorUploadContext(Guid PatientId, Guid EncounterId, string CatalogCode);
 
 public sealed record SectorReviewRequest(Guid TenantId, Guid UserId, bool IsFullAdmin, Guid LinkId, string ToStatus, string? Justification, string Ip, string UserAgent);
 public sealed record SectorCorrectionRequest(Guid TenantId, Guid UserId, bool IsFullAdmin, Guid LinkId, Guid ToEncounterId, string Reason, string Ip, string UserAgent);

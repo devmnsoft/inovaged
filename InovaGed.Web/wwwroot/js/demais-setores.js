@@ -5,6 +5,7 @@
   let generation = 0;
   let current = null;
   let files = [];
+  let busy = false;
   const status = root.querySelector("[data-ds-status]");
   const send = root.querySelector("[data-ds-send]");
   const catalog = root.querySelector("[data-ds-catalog]");
@@ -54,8 +55,9 @@
   });
 
   async function confirmContextChange() {
+    if (busy) return false;
     if (files.length === 0) return true;
-    return window.confirm("Trocar o paciente ou o atendimento descarta os arquivos preparados nesta tela. Eles ainda não foram enviados.");
+    return window.confirm("Trocar o paciente ou o atendimento descarta a seleção local. Arquivos já gravados permanecem no GED; envios parciais continuam no contexto original.");
   }
 
   root.querySelector("[data-ds-find]").addEventListener("click", async function () {
@@ -130,6 +132,7 @@
   });
 
   function addFiles(list) {
+    if (busy) return;
     Array.from(list || []).forEach(function (file) {
       files.push({ file: file, catalog: "", sector: "", date: "", notes: "", confirm: false });
     });
@@ -154,6 +157,7 @@
 
   root.querySelector("[data-ds-apply]").addEventListener("click", function () {
     files.forEach(function (item) {
+      if (item.uploadId) return;
       item.catalog = catalog.value;
       item.sector = field("sectorCode").value;
       item.date = field("documentDate").value;
@@ -188,6 +192,7 @@
       const select = catalog.cloneNode(true);
       select.removeAttribute("data-ds-catalog");
       select.value = item.catalog;
+      select.disabled = !!item.uploadId;
       select.addEventListener("change", function () { item.catalog = select.value; });
       row.appendChild(label("Nome padronizado", select));
       row.appendChild(labeledInput("Setor", item.sector, function (value) { item.sector = value; }));
@@ -224,6 +229,7 @@
   }
 
   send.addEventListener("click", async function () {
+    if (busy) return;
     if (!current?.patientId || !current.encounterId) {
       setStatus("Confirme o paciente e o atendimento antes do envio.", "erro");
       return;
@@ -236,7 +242,10 @@
     if (missing) { setStatus("Cada arquivo precisa de um nome do catálogo.", "erro"); return; }
     const accepted = window.confirm("Paciente e atendimento confirmados.\nArquivos: " + files.length + "\n" + summary() + "\n\nA gravação não conclui OCR, extração nem conferência.");
     if (!accepted) return;
-    send.disabled = true;
+    busy = true;
+    const controls = Array.from(root.querySelectorAll("input,select,textarea,button"));
+    const disabledBefore = controls.map(function (control) { return control.disabled; });
+    controls.forEach(function (control) { control.disabled = true; });
     const results = root.querySelector("[data-ds-results]");
     results.replaceChildren();
     const pending = [];
@@ -248,11 +257,13 @@
         const stored = await sendInParts(item, row);
         if (!stored) pending.push(item);
       } catch {
-        row.textContent = item.file.name + " — a transferência não foi confirmada. O arquivo permanece nesta tela para nova tentativa.";
+        row.textContent = item.file.name + " — não foi possível confirmar esta etapa. Tente novamente: a situação será consultada antes de reenviar qualquer parte.";
         pending.push(item);
       }
     }
     files = pending;
+    controls.forEach(function (control,index) { control.disabled = disabledBefore[index]; });
+    busy = false;
     renderFiles();
     send.disabled = !current?.encounterId;
     setStatus("A tentativa de gravação terminou arquivo a arquivo. Pré-visualização, OCR e extração têm situação própria.", "info");
@@ -264,12 +275,13 @@
   }
 
   async function sendInParts(item, row) {
-    const catalogCode = item.catalog || catalog.value;
+    if (!item.uploadId) item.context = { patientId: current.patientId, encounterId: current.encounterId, catalogCode: item.catalog || catalog.value };
+    const catalogCode = item.context.catalogCode;
     if (!item.uploadId) {
       const start = new FormData();
       start.append("__RequestVerificationToken", token);
-      start.append("patientId", current.patientId);
-      start.append("encounterId", current.encounterId);
+      start.append("patientId", item.context.patientId);
+      start.append("encounterId", item.context.encounterId);
       start.append("catalogCode", catalogCode);
       start.append("fileName", item.file.name);
       start.append("contentType", item.file.type || "application/octet-stream");
@@ -280,6 +292,7 @@
         return false;
       }
       item.uploadId = started.uploadId;
+      item.catalog = catalogCode;
       item.chunkSize = started.chunkSize;
       item.totalChunks = started.totalChunks;
     }
@@ -287,7 +300,7 @@
     const statusResponse = await fetch(root.dataset.statusUrl + "?uploadId=" + encodeURIComponent(item.uploadId), { headers: { "X-Requested-With": "fetch" } });
     const status = await statusResponse.json();
     missing = status.missing || [];
-    if (status.status === "COMPLETED" && status.documentId) {
+    if ((status.status === "COMPLETED" || status.status === "COMPLETING") && status.documentId) {
       return finish(item, row, catalogCode);
     }
     const cancel = document.createElement("button");
@@ -299,7 +312,14 @@
       const body = new FormData();
       body.append("__RequestVerificationToken", token);
       body.append("uploadId", item.uploadId);
-      await postForm(root.dataset.cancelUrl, body);
+      const cancellation = await postForm(root.dataset.cancelUrl, body);
+      if (!cancellation.cancelled) {
+        cancelled = false;
+        row.appendChild(document.createTextNode(" O cancelamento não foi confirmado. Retome este envio para consultar sua situação."));
+        return;
+      }
+      item.uploadId = null;
+      item.context = null;
       row.textContent = item.file.name + " — transferência cancelada.";
     });
     row.appendChild(cancel);
@@ -327,8 +347,8 @@
   async function finish(item, row, catalogCode) {
     const body = new FormData();
     body.append("__RequestVerificationToken", token);
-    body.append("patientId", current.patientId);
-    body.append("encounterId", current.encounterId);
+    body.append("patientId", item.context.patientId);
+    body.append("encounterId", item.context.encounterId);
     body.append("catalogCode", catalogCode);
     body.append("uploadId", item.uploadId);
     body.append("confirmAnotherOccurrence", item.confirm || field("confirmAnotherOccurrence").checked ? "true" : "false");
@@ -433,11 +453,34 @@
     button.addEventListener("click", function () { openDocument(button); });
   });
 
-  workspace.querySelectorAll("[data-ds-tab]").forEach(function (tab) {
-    tab.addEventListener("click", function () {
+  const regionTabs = Array.from((page || workspace).querySelectorAll("[data-ds-tab]"));
+  function activateRegion(tab) {
       workspace.querySelectorAll("[data-region]").forEach(function (region) {
         region.classList.toggle("is-active", region.dataset.region === tab.dataset.dsTab);
       });
+      regionTabs.forEach(function (item) {
+        const selected = item === tab;
+        item.setAttribute("aria-selected", selected ? "true" : "false");
+        item.tabIndex = selected ? 0 : -1;
+      });
+  }
+  regionTabs.forEach(function (tab, index) {
+    tab.id = tab.id || "ds-region-tab-" + tab.dataset.dsTab;
+    tab.setAttribute("role", "tab");
+    tab.setAttribute("aria-selected", index === 0 ? "true" : "false");
+    tab.tabIndex = index === 0 ? 0 : -1;
+    const panel = workspace.querySelector("[data-region='" + tab.dataset.dsTab + "']");
+    panel?.setAttribute("role", "tabpanel");
+    panel?.setAttribute("aria-labelledby", tab.id);
+    tab.addEventListener("click", function () { activateRegion(tab); });
+    tab.addEventListener("keydown", function (event) {
+      const target = event.key === "Home" ? 0 : event.key === "End" ? regionTabs.length - 1
+        : event.key === "ArrowRight" ? (index + 1) % regionTabs.length
+        : event.key === "ArrowLeft" ? (index + regionTabs.length - 1) % regionTabs.length : -1;
+      if (target < 0) return;
+      event.preventDefault();
+      activateRegion(regionTabs[target]);
+      regionTabs[target].focus();
     });
   });
 

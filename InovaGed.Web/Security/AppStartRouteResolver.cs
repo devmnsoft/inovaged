@@ -36,6 +36,12 @@ public static class AppStartRouteResolver
         if (SectorEntryContract.IsContinuePath(returnUrl))
             return true;
 
+        // These pages perform their own canonical sector/tenant authorization.
+        // Preserve the requested journey after login without allowing a prefix match.
+        if (path.Equals("/DemaisSetores/Cadastrar",StringComparison.OrdinalIgnoreCase)
+            || path.Equals("/DemaisSetores/Consultar",StringComparison.OrdinalIgnoreCase))
+            return true;
+
         if (IsFullAdmin(user))
             return true;
 

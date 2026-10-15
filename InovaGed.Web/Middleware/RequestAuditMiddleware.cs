@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using InovaGed.Application.Audit;
 using InovaGed.Application.Identity;
+using InovaGed.Web.Security;
 
 namespace InovaGed.Web.Middleware;
 
@@ -12,7 +13,8 @@ public sealed class RequestAuditMiddleware
 
     public async Task Invoke(HttpContext ctx, ICurrentUser currentUser, IAppAuditLogService audit)
     {
-        var path = ctx.Request.Path.Value ?? string.Empty;
+        var sensitive = SectorRequestRedaction.Applies(ctx);
+        var path = SectorRequestRedaction.Path(ctx);
         var correlationId = ctx.TraceIdentifier;
         ctx.Response.Headers["X-Correlation-Id"] = correlationId;
         var userAgent = ctx.Request.Headers.UserAgent.ToString();
@@ -51,8 +53,8 @@ public sealed class RequestAuditMiddleware
                     CorrelationId = correlationId,
                     Data = new
                     {
-                        queryString = ctx.Request.QueryString.HasValue ? ctx.Request.QueryString.Value : null,
-                        routeValues = ctx.Request.RouteValues.ToDictionary(k => k.Key, v => v.Value?.ToString()),
+                        queryString = !sensitive && ctx.Request.QueryString.HasValue ? ctx.Request.QueryString.Value : null,
+                        routeValues = ctx.Request.RouteValues.Where(k => !sensitive || k.Key is "controller" or "action").ToDictionary(k => k.Key, v => v.Value?.ToString()),
                         correlationId
                     }
                 }, ctx.RequestAborted);
@@ -66,7 +68,7 @@ public sealed class RequestAuditMiddleware
         {
             if (!isKnownBot)
             {
-                await audit.LogAsync(new AppAuditLogEntry { TenantId = currentUser.TenantId, UserId = currentUser.UserId, EventType = "ERROR", Action = "HTTP", Source = "RequestAuditMiddleware", EntityName = "HTTP_REQUEST", EntityId = null, Summary = "Unhandled HTTP exception", Path = path, HttpMethod = ctx.Request.Method, HttpStatus = 500, ExceptionType = ex.GetType().Name, ExceptionMessage = ex.Message, StackTrace = ex.StackTrace, CorrelationId = correlationId }, CancellationToken.None);
+                await audit.LogAsync(new AppAuditLogEntry { TenantId = currentUser.TenantId, UserId = currentUser.UserId, EventType = "ERROR", Action = "HTTP", Source = "RequestAuditMiddleware", EntityName = "HTTP_REQUEST", EntityId = null, Summary = "Unhandled HTTP exception", Path = path, HttpMethod = ctx.Request.Method, HttpStatus = 500, ExceptionType = ex.GetType().Name, ExceptionMessage = sensitive ? "Falha na integração; consulte a correlação." : ex.Message, StackTrace = sensitive ? null : ex.StackTrace, CorrelationId = correlationId }, CancellationToken.None);
             }
             throw;
         }

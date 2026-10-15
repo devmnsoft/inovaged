@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Data;
 using System.IO;
 using System.Threading;
@@ -49,11 +49,18 @@ public sealed class DocumentAppService
     // ==========================================================
     // UPLOAD (cria documento + versão 1)
     // ==========================================================
-    public async Task<Result<Guid>> UploadAsync(
+    public Task<Result<Guid>> UploadAsync(UploadDocumentCommand cmd,string ip,string userAgent,CancellationToken ct)
+        => UploadCoreAsync(cmd,ip,userAgent,ct,null);
+
+    // Receipt identifiers are supplied by the server, never model-bound from upload metadata.
+    public Task<Result<Guid>> UploadWithReceiptAsync(UploadDocumentCommand cmd,string ip,string userAgent,Guid uploadSessionId,CancellationToken ct)
+        => UploadCoreAsync(cmd,ip,userAgent,ct,uploadSessionId);
+
+    private async Task<Result<Guid>> UploadCoreAsync(
         UploadDocumentCommand cmd,
         string ip,
         string userAgent,
-        CancellationToken ct)
+        CancellationToken ct, Guid? uploadSessionId)
     {
         if (!_currentUser.IsAuthenticated)
             return Result<Guid>.Fail("AUTH", "Usuário não autenticado.");
@@ -220,6 +227,7 @@ public sealed class DocumentAppService
                 _logger.LogWarning(auditEx, "Falha ao gravar audit_log (não bloqueia upload).");
             }
 
+            await BindUploadReceiptAsync(conn,tx,uploadSessionId,tenantId,userId,documentId,versionId,ct);
             try
             {
                 await tx.CommitAsync(ct);
@@ -433,7 +441,7 @@ public sealed class DocumentAppService
         string ocrText,
         string ip,
         string userAgent,
-        CancellationToken ct)
+        CancellationToken ct, Guid? uploadSessionId=null)
     {
         if (!_currentUser.IsAuthenticated)
             return Result<Guid>.Fail("AUTH", "Usuário não autenticado.");
@@ -454,7 +462,7 @@ public sealed class DocumentAppService
             ocrText: ocrText ?? "",
             ip: ip,
             userAgent: userAgent,
-            ct: ct);
+            ct: ct, uploadSessionId: uploadSessionId);
     }
 
     // ==========================================================
@@ -470,7 +478,7 @@ public sealed class DocumentAppService
         string ocrText,
         string ip,
         string userAgent,
-        CancellationToken ct)
+        CancellationToken ct, Guid? uploadSessionId=null)
     {
         if (documentId == Guid.Empty)
             return Result<Guid>.Fail("VALIDATION", "Documento inválido.");
@@ -570,6 +578,7 @@ WHERE tenant_id = @tenantId
                 _logger.LogWarning(auditEx, "Falha ao gravar audit_log (não bloqueia AddVersion).");
             }
 
+            await BindUploadReceiptAsync(conn,tx,uploadSessionId,tenantId,actorId,documentId,versionId,ct);
             await tx.CommitAsync(ct);
             return Result<Guid>.Ok(versionId);
         }
@@ -592,6 +601,20 @@ WHERE tenant_id = @tenantId
             "PUBLIC" => "PUBLIC",
             _ => "INTERNAL"
         };
+    }
+
+    public Task<Result<Guid>> AddVersionWithUploadReceiptAsync(Guid documentId,Stream content,string fileName,string contentType,string ip,string userAgent,Guid uploadSessionId,CancellationToken ct)
+        => AddVersionInternalAsync(documentId,content,fileName,contentType,"",ip,userAgent,ct,uploadSessionId);
+
+    private static async Task BindUploadReceiptAsync(NpgsqlConnection conn,NpgsqlTransaction tx,Guid? uploadSessionId,Guid tenantId,Guid userId,Guid documentId,Guid versionId,CancellationToken ct)
+    {
+        if (!uploadSessionId.HasValue) return;
+        var changed=await conn.ExecuteAsync(new CommandDefinition("""
+update ged.upload_session set document_id=@documentId,version_id=@versionId,updated_at=now()
+where tenant_id=@tenantId and user_id=@userId and id=@uploadSessionId and status='COMPLETING'
+ and document_id is null and version_id is null;
+""",new{tenantId,userId,uploadSessionId,documentId,versionId},tx,cancellationToken:ct));
+        if (changed!=1) throw new InvalidOperationException("A confirmação do armazenamento não corresponde à sessão de upload em conclusão.");
     }
 
     private static string EscapeJson(string? s)

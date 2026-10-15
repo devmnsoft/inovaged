@@ -39,6 +39,21 @@ public sealed class GovernedDocumentAiGateway : IDocumentAiGateway
         try { lease = await _governance.ReserveAsync(request, provider, model, policy.Revision, reservation, cancellationToken); }
         catch (AiIdempotencyConflictException ex) { return Failure(AiFailureKind.IdempotencyConflict, ex.Message, provider, model); }
         catch (InvalidOperationException ex) { return Failure(AiFailureKind.QuotaExceeded, ex.Message, provider, model); }
+        // Bind the durable local receipt before a provider can receive the document.
+        // Replays also expose the same lease id; the callback must never initiate a send.
+        if(request.OnExecutionReserved is not null)
+        {
+            try { await request.OnExecutionReserved(lease.ExecutionId,cancellationToken); }
+            catch(Exception ex)
+            {
+                if(lease.IsOwner)
+                    await _governance.CompleteAsync(lease.ExecutionId,
+                        Failure(ex is OperationCanceledException?AiFailureKind.Cancelled:AiFailureKind.Internal,
+                            "Não foi possível registrar a execução antes do envio.",provider,model,lease.ExecutionId.ToString("N")),
+                        reservation,TimeSpan.Zero,CancellationToken.None);
+                throw;
+            }
+        }
         if (!lease.IsOwner)
         {
             if (lease.ResultExpired)

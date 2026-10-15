@@ -117,7 +117,18 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddHttpClient<InovaGed.Application.Sectors.IClinicalSource, InovaGed.Infrastructure.Sectors.ConfigurableClinicalSource>()
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
         services.AddScoped<InovaGed.Application.Sectors.IDemaisSetoresService, InovaGed.Infrastructure.Sectors.DemaisSetoresService>();
+        services.AddScoped<InovaGed.Infrastructure.Sectors.SectorVersionProcessor>();
+        services.AddScoped<InovaGed.Application.Sectors.ISectorClinicalExtractionService,InovaGed.Infrastructure.Sectors.SectorClinicalExtractionService>();
         services.AddScoped<InovaGed.Application.Sectors.ISectorOpeningService, InovaGed.Infrastructure.Sectors.SectorOpeningService>();
+        services.AddOptions<InovaGed.Infrastructure.Sectors.SectorTemporaryContextOptions>()
+            .Bind(configuration.GetSection("DemaisSetores:TemporaryContexts"))
+            .Validate(o => o.TicketMinutes is >= 1 and <= 60 && o.TicketsPerMinute is >= 1 and <= 1000
+                && o.MaxPendingTickets is >= 1 and <= 10000 && o.RetentionHours is >= 2 and <= 8760
+                && o.MaxRetainedTickets >= o.MaxPendingTickets && o.MaxRetainedTickets <= 1000000
+                && o.BatchSize is >= 1 and <= 5000 && o.CleanupSeconds is >= 10 and <= 3600,
+                "Política de contextos temporários inválida.").ValidateOnStart();
+        services.AddScoped<InovaGed.Infrastructure.Sectors.SectorTemporaryContextMaintenance>();
+        services.AddHostedService<InovaGed.Infrastructure.Sectors.SectorTemporaryContextWorker>();
 
         return services;
     }

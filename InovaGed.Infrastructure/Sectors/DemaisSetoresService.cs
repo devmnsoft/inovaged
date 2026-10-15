@@ -414,8 +414,11 @@ values
         var owned = await conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
 select exists(
   select 1 from ged.upload_session
-  where tenant_id=@tenantId and user_id=@userId and id=@uploadId and document_id=@documentId and version_id=@versionId and status='COMPLETED')
-""", new { tenantId = request.TenantId, userId = request.UserId, uploadId = request.UploadId, documentId = request.DocumentId, versionId = request.VersionId }, cancellationToken: ct));
+  where tenant_id=@tenantId and user_id=@userId and id=@uploadId and document_id=@documentId and version_id=@versionId and status='COMPLETED'
+    and metadata_json->'SectorContext'->>'PatientId'=@patient
+    and metadata_json->'SectorContext'->>'EncounterId'=@encounter
+    and metadata_json->'SectorContext'->>'CatalogCode'=@catalog)
+""", new { tenantId = request.TenantId, userId = request.UserId, uploadId = request.UploadId, documentId = request.DocumentId, versionId = request.VersionId,patient=request.PatientId.ToString("D"),encounter=request.EncounterId.ToString("D"),catalog=request.CatalogCode }, cancellationToken: ct));
         if (!owned)
             return new(false, "TRANSFERENCIA", "A transferência concluída não foi encontrada para este usuário. O arquivo não será enviado de novo automaticamente.", null, request.DocumentId, request.VersionId);
         var stored = await conn.QuerySingleOrDefaultAsync<(bool Active, bool Multiple, string Name, string[] Sectors)>(new CommandDefinition("""
@@ -427,24 +430,28 @@ from ged.sector_document_type where tenant_id=@tenantId and catalog_code=@catalo
         var visible = await VisibleCatalogCodesAsync(request.TenantId, request.UserId, false, ct);
         if (!visible.Contains(request.CatalogCode, StringComparer.Ordinal))
             return new(false, "AUTORIZACAO", "Seu setor não cadastra este tipo.", null, request.DocumentId, request.VersionId);
-        var encounterOk = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
-            "select exists(select 1 from ged.sector_encounter where tenant_id=@tenantId and id=@encounterId and patient_id=@patientId)",
-            new { tenantId = request.TenantId, encounterId = request.EncounterId, patientId = request.PatientId }, cancellationToken: ct));
-        if (!encounterOk)
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        var encounterOk = await conn.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+            "select id from ged.sector_encounter where tenant_id=@tenantId and id=@encounterId and patient_id=@patientId for update",
+            new { tenantId = request.TenantId, encounterId = request.EncounterId, patientId = request.PatientId }, tx, cancellationToken: ct));
+        if (!encounterOk.HasValue)
             return new(false, "ATENDIMENTO", ClinicalSourceMessages.EncounterMissing, null, request.DocumentId, request.VersionId);
         var version = await conn.QuerySingleOrDefaultAsync<(string FileName, string? Hash)>(new CommandDefinition("""
 select v.file_name as FileName, v.checksum_sha256 as Hash
 from ged.document_version v
 join ged.document d on d.tenant_id=v.tenant_id and d.id=v.document_id and coalesce(d.reg_status,'A')='A'
 where v.tenant_id=@tenantId and v.id=@versionId and v.document_id=@documentId
+for update of d
 """, new { tenantId = request.TenantId, versionId = request.VersionId, documentId = request.DocumentId }, cancellationToken: ct));
         if (string.IsNullOrWhiteSpace(version.Hash))
             return new(false, "ARQUIVO", "A versão gravada não tem integridade confirmada. O vínculo não foi criado e o arquivo permanece no GED.", null, request.DocumentId, request.VersionId);
-        var existing = await conn.ExecuteScalarAsync<Guid?>(new CommandDefinition(
-            "select id from ged.sector_document_link where tenant_id=@tenantId and version_id=@versionId and reg_status='A'",
+        var existing = await conn.QuerySingleOrDefaultAsync<(Guid Id,Guid Patient,Guid Encounter,string Catalog,string Status)>(new CommandDefinition(
+            "select id as Id,patient_id as Patient,encounter_id as Encounter,catalog_code as Catalog,reg_status::text as Status from ged.sector_document_link where tenant_id=@tenantId and version_id=@versionId",
             new { tenantId = request.TenantId, versionId = request.VersionId }, cancellationToken: ct));
-        if (existing.HasValue)
-            return new(true, "VINCULADO", "O documento já estava vinculado a esta versão. Nada foi gravado de novo.", existing, request.DocumentId, request.VersionId);
+        if (existing.Id != Guid.Empty)
+            return existing.Patient==request.PatientId && existing.Encounter==request.EncounterId && existing.Catalog==request.CatalogCode && existing.Status=="A"
+                ? new(true,"VINCULADO","O documento já estava vinculado neste contexto. Nada foi gravado de novo.",existing.Id,request.DocumentId,request.VersionId)
+                : new(false,"CONTEXTO","Esta versão já possui outro vínculo ou histórico. Use a correção de vínculo autorizada; o arquivo permanece no GED.",null,request.DocumentId,request.VersionId);
         if (!stored.Multiple && !request.ConfirmAnotherOccurrence)
         {
             var another = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
@@ -476,6 +483,7 @@ values
             documentId = request.DocumentId, versionId = request.VersionId, catalog = request.CatalogCode,
             fileName = version.FileName, hash = version.Hash, userId = request.UserId, previewStatus, ocrStatus
         }, cancellationToken: ct));
+        await tx.CommitAsync(ct);
         await AuditAsync(request.TenantId, request.UserId, "UPLOAD", request.DocumentId, "Documento recebido em partes e vinculado ao atendimento, sem novo envio.", request.Ip, request.UserAgent, ct);
         return new(true, "GRAVADO", "Transferência concluída e documento vinculado. Pré-visualização, leitura e extração seguem como etapas separadas.", linkId, request.DocumentId, request.VersionId);
     }
@@ -589,57 +597,11 @@ limit @take offset @skip
     public async Task RefreshExtractionAsync(Guid tenantId, Guid encounterId, CancellationToken ct)
     {
         await using var conn = await _db.OpenAsync(ct);
-        var rows = await conn.QueryAsync<(Guid LinkId, Guid VersionId, string Code, string? Text, string? OcrStatus, string? LinkOcr)>(new CommandDefinition("""
-select l.id as LinkId, l.version_id as VersionId, l.catalog_code as Code,
-       coalesce(v.ocr_text, s.ocr_text, v.content_text) as Text, oj.status as OcrStatus, l.ocr_status as LinkOcr
-from ged.sector_document_link l
-join ged.document_version v on v.tenant_id=l.tenant_id and v.id=l.version_id
-left join ged.document_search s on s.tenant_id=l.tenant_id and s.version_id=l.version_id
-left join lateral (
-    select j.status::text as status from ged.ocr_job j
-    where j.tenant_id=l.tenant_id and j.document_version_id=l.version_id
-    order by j.requested_at desc limit 1) oj on true
-where l.tenant_id=@tenantId and l.encounter_id=@encounterId and l.reg_status='A'
+        await conn.ExecuteAsync(new CommandDefinition("""
+select ged.sector_request_extraction(tenant_id,version_id)
+from ged.sector_document_link
+where tenant_id=@tenantId and encounter_id=@encounterId and reg_status='A'
 """, new { tenantId, encounterId }, cancellationToken: ct));
-        foreach (var row in rows)
-        {
-            var ocr = row.OcrStatus?.ToUpperInvariant() switch
-            {
-                "COMPLETED" => string.IsNullOrWhiteSpace(row.Text) ? "CONCLUIDO_COM_PENDENCIAS" : "CONCLUIDO",
-                "FAILED" => "FALHOU",
-                "PROCESSING" or "PENDING" => "PROCESSANDO",
-                "CANCELLED" or "CANCELED" => "CANCELADO",
-                _ when string.Equals(row.LinkOcr, "ENFILEIRADO", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(row.Text) => "CONCLUIDO",
-                _ when string.Equals(row.LinkOcr, "ENFILEIRADO", StringComparison.OrdinalIgnoreCase) => "AGUARDANDO",
-                _ => (string?)null
-            };
-            var extraction = ocr ?? (string.IsNullOrWhiteSpace(row.Text) ? "AGUARDANDO" : "CONCLUIDO");
-            await conn.ExecuteAsync(new CommandDefinition(
-                "update ged.sector_document_link set extraction_status=@extraction, ocr_status=coalesce(@ocr, ocr_status) where id=@id and tenant_id=@tenantId",
-                new { extraction, ocr, id = row.LinkId, tenantId }, cancellationToken: ct));
-            foreach (var fact in SectorExtraction.Read(row.Text, row.Code))
-            {
-                var kept = await conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
-select exists(select 1 from ged.sector_extracted_field
- where tenant_id=@tenantId and link_id=@linkId and evidence_excerpt=@excerpt and status in ('CONFIRMADO','CORRIGIDO','REJEITADO','INCONCLUSIVO'))
-""", new { tenantId, linkId = row.LinkId, excerpt = fact.Excerpt }, cancellationToken: ct));
-                if (kept) continue;
-                await conn.ExecuteAsync(new CommandDefinition("""
-insert into ged.sector_extracted_field
- (id, tenant_id, link_id, version_id, field_key, context_code, suggested_value, evidence_excerpt, page_number, status, source_kind, mechanism)
-select gen_random_uuid(), @tenantId, @linkId, @versionId, @key, @context, @value, @excerpt, @page, 'SUGERIDO', 'TEXTO_VERSIONADO', 'REGRAS_LOCAIS'
-where not exists (
-    select 1 from ged.sector_extracted_field
-    where tenant_id=@tenantId and link_id=@linkId and evidence_excerpt=@excerpt and status='SUGERIDO')
-""", new { tenantId, linkId = row.LinkId, versionId = row.VersionId, key = fact.Category, context = fact.Context, value = fact.Excerpt, excerpt = fact.Excerpt, page = fact.Page }, cancellationToken: ct));
-                await conn.ExecuteAsync(new CommandDefinition("""
-insert into ged.sector_finding (id, tenant_id, encounter_id, link_id, description, category, evidence_excerpt, page_number)
-select gen_random_uuid(), @tenantId, @encounterId, @linkId, @description, 'INFORMACAO_LOCALIZADA', @excerpt, @page
-where not exists (
-    select 1 from ged.sector_finding where tenant_id=@tenantId and link_id=@linkId and evidence_excerpt=@excerpt)
-""", new { tenantId, encounterId, linkId = row.LinkId, description = SectorFindings.Describe(fact), excerpt = fact.Excerpt, page = fact.Page }, cancellationToken: ct));
-            }
-        }
     }
 
     public async Task<string?> ReviewFieldAsync(SectorFieldReviewRequest request, CancellationToken ct)
@@ -655,17 +617,20 @@ where not exists (
         if (linkId is null) return "Campo não encontrado.";
         var denied = await GuardLinkAsync(conn, request.TenantId, request.UserId, linkId.Value, ct);
         if (denied is not null) return denied;
+        await using var tx = await conn.BeginTransactionAsync(ct);
         var current = await conn.QuerySingleOrDefaultAsync<(string Status, string? Confirmed)>(new CommandDefinition(
-            "select status as Status, confirmed_value as Confirmed from ged.sector_extracted_field where tenant_id=@TenantId and id=@FieldId",
-            request, cancellationToken: ct));
+            "select status as Status, confirmed_value as Confirmed from ged.sector_extracted_field where tenant_id=@TenantId and id=@FieldId for update",
+            request, tx, cancellationToken: ct));
         if (string.IsNullOrWhiteSpace(current.Status)) return "Campo não encontrado.";
+        if (current.Status=="SUPERADO") return "Esta sugestão foi substituída por uma nova leitura. Consulte os itens atuais antes de revisar.";
         await conn.ExecuteAsync(new CommandDefinition("""
 insert into ged.sector_field_review (id, tenant_id, field_id, from_status, to_status, from_value, to_value, actor_id)
 values (gen_random_uuid(), @TenantId, @FieldId, @fromStatus, @Status, @fromValue, @Value, @UserId);
 update ged.sector_extracted_field
 set status=@Status, confirmed_value=coalesce(@Value, confirmed_value), updated_by=@UserId, updated_at=now()
 where tenant_id=@TenantId and id=@FieldId
-""", new { request.TenantId, request.FieldId, request.Status, request.Value, request.UserId, fromStatus = current.Status, fromValue = current.Confirmed }, cancellationToken: ct));
+""", new { request.TenantId, request.FieldId, request.Status, request.Value, request.UserId, fromStatus = current.Status, fromValue = current.Confirmed }, tx, cancellationToken: ct));
+        await tx.CommitAsync(ct);
         await AuditAsync(request.TenantId, request.UserId, "UPDATE", request.FieldId, "Revisão humana de campo extraído.", request.Ip, request.UserAgent, ct);
         return null;
     }

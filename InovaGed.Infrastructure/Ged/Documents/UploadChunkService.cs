@@ -88,6 +88,7 @@ public sealed class UploadChunkService : IUploadChunkService
             request.DuplicateStrategy,
             request.RunOcr,
             request.GeneratePreview,
+            request.SectorContext,
             request.FolderName,
             request.ExistingDocumentId,
             request.UploadName,
@@ -209,11 +210,10 @@ WHERE s.tenant_id=@tenantId AND s.id=@uploadId;
     {
         var session = await LoadSessionAsync(tenantId, userId, uploadId, ct);
         if (session is null) return Result<UploadBatchFileResultDto>.Fail("NOT_FOUND", "Sessão de upload não encontrada.");
+        if(session.Status=="COMPLETING"&&session.DocumentId.HasValue)
+            return (await TryRecoverCompletingAsync(tenantId,userId,session,ct))!;
         if (session.Status == "COMPLETED" && session.DocumentId.HasValue)
-        {
-            var completedVersion = session.VersionId.HasValue ? await GetVersionAsync(tenantId, session.DocumentId.Value, session.VersionId.Value, ct) : await GetCurrentVersionAsync(tenantId, session.DocumentId.Value, ct);
-            return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = session.BatchItemId ?? uploadId, DocumentId = session.DocumentId, VersionId = session.VersionId, RequestedFolderId = session.RequestedFolderId, ResolvedFolderId = session.FolderId, FolderName = session.Metadata.FolderName, FileName = completedVersion?.FileName ?? session.OriginalFileName, UploadedAtUtc = completedVersion?.UploadedAtUtc, UploadedAtLocalFormatted = completedVersion?.UploadedAtUtc?.ToUniversalTime().ToString("dd/MM/yyyy HH:mm"), Status = "COMPLETED", Message = "Upload em partes já concluído.", CorrelationId = session.CorrelationId });
-        }
+            return await CompletedReplyAsync(tenantId,userId,session,"Upload em partes já concluído.",ct);
         if (DocumentUploadSizePolicy.Exceeds(_options, session.TotalSizeBytes, out var completionLimit)) return Result<UploadBatchFileResultDto>.Fail("LIMIT", $"O arquivo excede o limite configurado de {completionLimit.DisplayText}.");
         var status = await BuildStatusAsync(session, ct);
         if (status.MissingChunks.Count > 0) return Result<UploadBatchFileResultDto>.Fail("MISSING_CHUNKS", "Ainda existem partes pendentes para concluir o upload.");
@@ -224,10 +224,7 @@ WHERE s.tenant_id=@tenantId AND s.id=@uploadId;
         {
             session = await LoadSessionAsync(tenantId, userId, uploadId, ct);
             if (session?.Status == "COMPLETED" && session.DocumentId.HasValue)
-            {
-                var completedVersion = session.VersionId.HasValue ? await GetVersionAsync(tenantId, session.DocumentId.Value, session.VersionId.Value, ct) : await GetCurrentVersionAsync(tenantId, session.DocumentId.Value, ct);
-                return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = session.BatchItemId ?? uploadId, DocumentId = session.DocumentId, VersionId = session.VersionId, RequestedFolderId = session.RequestedFolderId, ResolvedFolderId = session.FolderId, FolderName = session.Metadata.FolderName, FileName = completedVersion?.FileName ?? session.OriginalFileName, UploadedAtUtc = completedVersion?.UploadedAtUtc, UploadedAtLocalFormatted = completedVersion?.UploadedAtUtc?.ToUniversalTime().ToString("dd/MM/yyyy HH:mm"), Status = "COMPLETED", Message = "Upload em partes já concluído.", CorrelationId = session.CorrelationId });
-            }
+                return await CompletedReplyAsync(tenantId,userId,session,"Upload em partes já concluído.",ct);
             if (session?.Status == "COMPLETING")
             {
                 var recovered = await TryRecoverCompletingAsync(tenantId, userId, session, ct);
@@ -259,23 +256,26 @@ WHERE s.tenant_id=@tenantId AND s.id=@uploadId;
         await using var finalStream = new FileStream(assembled, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
         var md = session.Metadata;
         var bulkMd = new DocumentBulkUploadMetadata { BatchId = session.BatchId, DuplicateStrategy = md.DuplicateStrategy, ExistingDocumentId = md.ExistingDocumentId, UploadName = md.UploadName, DocumentTypeId = md.DocumentTypeId, ClassificationId = md.ClassificationId, Notes = md.Notes, Visibility = md.Visibility, RunOcr = md.RunOcr, GeneratePreview = md.GeneratePreview, IsDocumentPart = md.IsDocumentPart, PartNumber = md.PartNumber, TotalParts = md.TotalParts, ConsolidateIntoDocumentId = md.ConsolidateIntoDocumentId, MarkAsIncomplete = md.MarkAsIncomplete, IncompleteReason = md.IncompleteReason, IncompleteSource = md.IncompleteSource };
-        var upload = await _bulkUpload.UploadStreamAsync(tenantId, userId, md.UserName, finalStream, session.OriginalFileName, session.ContentType ?? "application/octet-stream", session.TotalSizeBytes, session.FolderId, bulkMd, md.IsAdmin, ct);
+        var upload = await _bulkUpload.UploadStreamWithReceiptAsync(tenantId,userId,md.UserName,finalStream,session.OriginalFileName,session.ContentType??"application/octet-stream",session.TotalSizeBytes,session.FolderId,bulkMd,md.IsAdmin,uploadId,ct);
         if (!upload.Success)
         {
             await MarkFailedAsync(tenantId, session, upload.Error?.Message ?? "Falha ao persistir arquivo.", upload.Error?.Code ?? "Persistência", sw.ElapsedMilliseconds, ct);
             return Result<UploadBatchFileResultDto>.Fail(upload.Error?.Code ?? "UPLOAD", upload.Error?.Message ?? "Falha ao concluir upload.");
         }
-        var version = await GetCurrentVersionAsync(tenantId, upload.Value!.DocumentId, ct);
-        var ocrQueued = false;
-        var previewQueued = false;
-        await MarkCompletedAsync(tenantId, session, upload.Value.DocumentId, version?.VersionId, version?.FileName, version?.ChecksumSha256, sw.ElapsedMilliseconds, ct);
-        if (md.RunOcr && version?.VersionId is Guid ocrVersionId) { try { await _ocrJobs.EnqueueAsync(tenantId, ocrVersionId, userId, false, ct); ocrQueued = true; _logger.LogInformation("OCR queued Tenant={TenantId} User={UserId} Upload={UploadId} VersionId={VersionId} CorrelationId={CorrelationId}", tenantId, userId, uploadId, ocrVersionId, session.CorrelationId); } catch (Exception ex) { await MarkPostProcessingWarningAsync(tenantId, session, "OCR", ex.Message, CancellationToken.None); } }
-        if (md.GeneratePreview && version is not null) { try { await _previewStatus.UpsertAsync(tenantId, version.VersionId, PreviewProcessingStatus.Pending, null, null, DateTimeOffset.UtcNow, null, ct); await _previewQueue.EnqueueAsync(tenantId, upload.Value.DocumentId, version.VersionId, version.StoragePath, version.FileName, ct); previewQueued = true; _logger.LogInformation("Preview queued Tenant={TenantId} User={UserId} Upload={UploadId} VersionId={VersionId} CorrelationId={CorrelationId}", tenantId, userId, uploadId, version.VersionId, session.CorrelationId); } catch (Exception ex) { await MarkPostProcessingWarningAsync(tenantId, session, "PREVIEW", ex.Message, CancellationToken.None); } }
+        var receipt=await LoadSessionAsync(tenantId,userId,uploadId,ct);
+        if (receipt?.DocumentId!=upload.Value!.DocumentId || !receipt.VersionId.HasValue)
+            throw new InvalidOperationException("A versão gravada não possui confirmação durável correspondente à sessão.");
+        var version=await GetVersionAsync(tenantId,receipt.DocumentId.Value,receipt.VersionId.Value,ct);
+        if (version is null) throw new InvalidOperationException("A versão confirmada não foi localizada.");
+        await MarkCompletedAsync(tenantId, session, receipt.DocumentId.Value, version.VersionId, version.FileName, version.ChecksumSha256, sw.ElapsedMilliseconds, ct);
+        var processing=await EnsureStoredProcessingAsync(tenantId,userId,session,receipt.DocumentId.Value,version,ct);
+        var ocrQueued=processing.OcrQueued;
+        var previewQueued=processing.PreviewQueued;
         _logger.LogInformation("Chunk complete finished Tenant={TenantId} User={UserId} Upload={UploadId} DocumentId={DocumentId} VersionId={VersionId} ElapsedMs={ElapsedMs} CorrelationId={CorrelationId}", tenantId, userId, uploadId, upload.Value.DocumentId, version?.VersionId, sw.ElapsedMilliseconds, session.CorrelationId);
         if (!string.IsNullOrWhiteSpace(upload.Value.ProcessingWarning))
             await MarkPostProcessingWarningAsync(tenantId, session, "CLASSIFICATION", upload.Value.ProcessingWarning, CancellationToken.None);
 
-        return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = session.BatchItemId ?? uploadId, DocumentId = upload.Value.DocumentId, VersionId = version?.VersionId, RequestedFolderId = session.RequestedFolderId, ResolvedFolderId = session.FolderId, FolderName = md.FolderName, Title = upload.Value.Title, FileName = upload.Value.FileName, UploadedAtUtc = version?.UploadedAtUtc, UploadedAtLocalFormatted = version?.UploadedAtUtc?.ToUniversalTime().ToString("dd/MM/yyyy HH:mm"), Status = "COMPLETED", Message = upload.Value.ProcessingWarning ?? "Arquivo grande recebido em partes com sucesso.", OcrQueued = ocrQueued, PreviewQueued = previewQueued, CorrelationId = session.CorrelationId, ProcessingWarning = upload.Value.ProcessingWarning });
+        return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = session.BatchItemId ?? uploadId, DocumentId = upload.Value.DocumentId, VersionId = version?.VersionId, RequestedFolderId = session.RequestedFolderId, ResolvedFolderId = session.FolderId, FolderName = md.FolderName, Title = upload.Value.Title, FileName = upload.Value.FileName, UploadedAtUtc = version?.UploadedAtUtc, UploadedAtLocalFormatted = version?.UploadedAtUtc?.ToUniversalTime().ToString("dd/MM/yyyy HH:mm"), Status = "COMPLETED", Message = upload.Value.ProcessingWarning ?? "Arquivo grande recebido em partes com sucesso.", OcrQueued = ocrQueued, PreviewQueued = previewQueued, CorrelationId = session.CorrelationId, ProcessingWarning = upload.Value.ProcessingWarning ?? processing.Warning });
     }
 
     public async Task<Result<UploadChunkStatusDto>> GetStatusAsync(Guid tenantId, Guid userId, Guid uploadId, CancellationToken ct)
@@ -286,9 +286,23 @@ WHERE s.tenant_id=@tenantId AND s.id=@uploadId;
 
     public async Task<Result<UploadChunkStatusDto>> CancelAsync(Guid tenantId, Guid userId, Guid uploadId, CancellationToken ct)
     {
-        const string sql = "UPDATE ged.upload_session SET status='CANCELLED', updated_at=now(), error_message='Cancelado pelo usuário.' WHERE tenant_id=@tenantId AND user_id=@userId AND id=@uploadId; UPDATE ged.upload_batch_item SET status='CANCELLED', finished_at=now(), error_message='Cancelado pelo usuário.' WHERE tenant_id=@tenantId AND upload_session_id=@uploadId;";
         await using var conn = await _db.OpenAsync(ct);
-        await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, userId, uploadId }, cancellationToken: ct));
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        var status=await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
+            "select status from ged.upload_session where tenant_id=@tenantId and user_id=@userId and id=@uploadId for update",
+            new { tenantId,userId,uploadId },tx,cancellationToken:ct));
+        if (status is null) return Result<UploadChunkStatusDto>.Fail("NOT_FOUND","Sessão de upload não encontrada.");
+        if (status is not ("OPEN" or "RECEIVING" or "ERROR" or "CANCELLED"))
+            return Result<UploadChunkStatusDto>.Fail("STATE","O arquivo já está em conclusão ou foi gravado. Consulte sua situação; o cancelamento não foi aplicado.");
+        const string sql = """
+UPDATE ged.upload_session SET status='CANCELLED', updated_at=now(), error_message='Cancelado pelo usuário.'
+WHERE tenant_id=@tenantId AND user_id=@userId AND id=@uploadId;
+UPDATE ged.upload_batch_item SET status='CANCELLED', finished_at=now(), error_message='Cancelado pelo usuário.'
+WHERE tenant_id=@tenantId AND upload_session_id=@uploadId
+ AND EXISTS(select 1 from ged.upload_session where tenant_id=@tenantId and user_id=@userId and id=@uploadId and status='CANCELLED');
+""";
+        await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, userId, uploadId }, tx, cancellationToken: ct));
+        await tx.CommitAsync(ct);
         _logger.LogInformation("Chunk upload cancelled Tenant={TenantId} User={UserId} Upload={UploadId}", tenantId, userId, uploadId);
         return await GetStatusAsync(tenantId, userId, uploadId, ct);
     }
@@ -316,8 +330,8 @@ FROM ged.upload_session WHERE tenant_id=@tenantId AND user_id=@userId AND id=@up
     private async Task MarkCompletedAsync(Guid tenantId, SessionRow session, Guid documentId, Guid? versionId, string? storedFileName, string? checksum, long elapsedMs, CancellationToken ct)
     {
         const string sql = """
-UPDATE ged.upload_session SET status='COMPLETED', document_id=@documentId, version_id=@versionId, completed_at=now(), updated_at=now() WHERE tenant_id=@tenantId AND id=@uploadId AND status='COMPLETING';
-UPDATE ged.upload_batch_item SET document_id=@documentId, version_id=@versionId, stored_file_name=@storedFileName, checksum_sha256=@checksum, status='COMPLETED', finished_at=now(), elapsed_ms=@elapsedMs WHERE tenant_id=@tenantId AND upload_session_id=@uploadId;
+UPDATE ged.upload_session SET status='COMPLETED', document_id=@documentId, version_id=@versionId, completed_at=now(), updated_at=now() WHERE tenant_id=@tenantId AND id=@uploadId AND status='COMPLETING' AND (document_id is null or (document_id=@documentId and version_id=@versionId));
+UPDATE ged.upload_batch_item SET document_id=@documentId, version_id=@versionId, stored_file_name=@storedFileName, checksum_sha256=@checksum, status='COMPLETED', finished_at=now(), elapsed_ms=@elapsedMs WHERE tenant_id=@tenantId AND upload_session_id=@uploadId AND EXISTS(select 1 from ged.upload_session where id=@uploadId and tenant_id=@tenantId and status='COMPLETED' and document_id=@documentId and version_id=@versionId);
 WITH c AS (SELECT batch_id, count(*) FILTER (WHERE status='COMPLETED')::int success, count(*) FILTER (WHERE status='ERROR')::int failed, count(*) FILTER (WHERE status='SKIPPED')::int skipped FROM ged.upload_batch_item WHERE tenant_id=@tenantId AND batch_id=@batchId AND reg_status='A' GROUP BY batch_id)
 UPDATE ged.upload_batch b SET success_files=c.success, failed_files=c.failed, skipped_files=c.skipped FROM c WHERE b.tenant_id=@tenantId AND b.id=c.batch_id;
 """;
@@ -327,7 +341,7 @@ UPDATE ged.upload_batch b SET success_files=c.success, failed_files=c.failed, sk
 
     private async Task MarkFailedAsync(Guid tenantId, SessionRow session, string message, string step, long elapsedMs, CancellationToken ct)
     {
-        const string sql = "UPDATE ged.upload_session SET status='ERROR', error_message=@message, updated_at=now() WHERE tenant_id=@tenantId AND id=@uploadId; UPDATE ged.upload_batch_item SET status='ERROR', error_message=@message, error_step=@step, can_retry=true, finished_at=now(), elapsed_ms=@elapsedMs WHERE tenant_id=@tenantId AND upload_session_id=@uploadId;";
+        const string sql = "UPDATE ged.upload_session SET status=case when document_id is not null then 'COMPLETING' else 'ERROR' end, error_message=@message, updated_at=now() WHERE tenant_id=@tenantId AND id=@uploadId; UPDATE ged.upload_batch_item SET status='ERROR', error_message=@message, error_step=@step, can_retry=true, finished_at=now(), elapsed_ms=@elapsedMs WHERE tenant_id=@tenantId AND upload_session_id=@uploadId;";
         await using var conn = await _db.OpenAsync(ct);
         await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, session.UploadId, message, step, elapsedMs }, cancellationToken: ct));
         _logger.LogWarning("Chunk upload failed Tenant={TenantId} Upload={UploadId} Step={Step} Message={Message}", tenantId, session.UploadId, step, message);
@@ -428,9 +442,9 @@ WHERE c.session_id=@uploadId AND c.chunk_index=@chunkIndex;
     {
         if (session.DocumentId.HasValue)
         {
-            await MarkCompletedAsync(tenantId, session, session.DocumentId.Value, session.VersionId, null, null, 0, ct);
-            var version = session.VersionId.HasValue ? await GetVersionAsync(tenantId, session.DocumentId.Value, session.VersionId.Value, ct) : await GetCurrentVersionAsync(tenantId, session.DocumentId.Value, ct);
-            return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto { ItemId = session.BatchItemId ?? session.UploadId, DocumentId = session.DocumentId, VersionId = session.VersionId, RequestedFolderId = session.RequestedFolderId, ResolvedFolderId = session.FolderId, FolderName = session.Metadata.FolderName, FileName = version?.FileName ?? session.OriginalFileName, UploadedAtUtc = version?.UploadedAtUtc, UploadedAtLocalFormatted = version?.UploadedAtUtc?.ToUniversalTime().ToString("dd/MM/yyyy HH:mm"), Status = "COMPLETED", Message = "Upload em partes recuperado; documento já persistido.", CorrelationId = session.CorrelationId });
+            if (!session.VersionId.HasValue) return Result<UploadBatchFileResultDto>.Fail("RECEIPT_VERSION","O arquivo permanece no GED, mas a versão desta sessão precisa de verificação. Não houve novo envio.");
+            await MarkCompletedAsync(tenantId,session,session.DocumentId.Value,session.VersionId,null,null,0,ct);
+            return await CompletedReplyAsync(tenantId,userId,session,"Upload em partes recuperado; documento já persistido.",ct);
         }
 
         if (DateTimeOffset.UtcNow - session.UpdatedAt < TimeSpan.FromMinutes(5))
@@ -445,6 +459,50 @@ WHERE c.session_id=@uploadId AND c.chunk_index=@chunkIndex;
         const string sql = "UPDATE ged.upload_session SET status='RECEIVING', error_message='Conclusão anterior interrompida; pronta para nova tentativa.', updated_at=now() WHERE tenant_id=@tenantId AND user_id=@userId AND id=@uploadId AND status='COMPLETING' AND document_id IS NULL;";
         await using var conn = await _db.OpenAsync(ct);
         await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, userId, uploadId }, cancellationToken: ct));
+    }
+
+    private async Task<Result<UploadBatchFileResultDto>> CompletedReplyAsync(Guid tenantId,Guid userId,SessionRow session,string message,CancellationToken ct)
+    {
+        if (!session.VersionId.HasValue || !session.DocumentId.HasValue)
+            return Result<UploadBatchFileResultDto>.Fail("RECEIPT_VERSION","O arquivo permanece no GED, mas a versão desta sessão precisa de verificação. Não houve novo envio.");
+        var version=await GetVersionAsync(tenantId,session.DocumentId.Value,session.VersionId.Value,ct);
+        if (version is null) return Result<UploadBatchFileResultDto>.Fail("RECEIPT_VERSION","A versão confirmada precisa de verificação. Não houve novo envio.");
+        var processing=await EnsureStoredProcessingAsync(tenantId,userId,session,session.DocumentId.Value,version,ct);
+        return Result<UploadBatchFileResultDto>.Ok(new UploadBatchFileResultDto
+        {
+            ItemId=session.BatchItemId??session.UploadId,DocumentId=session.DocumentId,VersionId=session.VersionId,
+            RequestedFolderId=session.RequestedFolderId,ResolvedFolderId=session.FolderId,FolderName=session.Metadata.FolderName,
+            FileName=version.FileName,UploadedAtUtc=version.UploadedAtUtc,UploadedAtLocalFormatted=version.UploadedAtUtc?.ToUniversalTime().ToString("dd/MM/yyyy HH:mm"),
+            Status="COMPLETED",Message=message,CorrelationId=session.CorrelationId,OcrQueued=processing.OcrQueued,PreviewQueued=processing.PreviewQueued,
+            ProcessingWarning=processing.Warning??(session.ErrorMessage is null?null:"Arquivo recuperado; confira o processamento posterior à gravação.")
+        });
+    }
+
+    private async Task<(bool OcrQueued,bool PreviewQueued,string? Warning)> EnsureStoredProcessingAsync(Guid tenantId,Guid userId,SessionRow session,Guid documentId,VersionInfo? version,CancellationToken ct)
+    {
+        if (version is null) return (false,false,"Arquivo gravado; os dados da versão precisam de verificação.");
+        await using var conn=await _db.OpenAsync(ct);
+        var seen=await conn.QuerySingleAsync<(bool Ocr,bool Preview)>(new CommandDefinition("""
+select exists(select 1 from ged.ocr_job where tenant_id=@tenantId and document_version_id=@versionId) as Ocr,
+ (exists(select 1 from ged.processing_job where tenant_id=@tenantId and document_version_id=@versionId and job_type='PREVIEW' and reg_status='A')
+  or exists(select 1 from ged.preview_status where tenant_id=@tenantId and document_version_id=@versionId and status::text in ('READY','FAILED','ERROR','CANCELED'))) as Preview;
+""",new{tenantId,versionId=version.VersionId},cancellationToken:ct));
+        var ocrQueued=false;var previewQueued=false;string? warning=null;
+        if(session.Metadata.RunOcr && !seen.Ocr)
+        {
+            try { await _ocrJobs.EnqueueAsync(tenantId,version.VersionId,userId,false,ct);ocrQueued=true; }
+            catch(Exception ex) when(ex is not OperationCanceledException) { warning="Arquivo gravado; solicite novamente o processamento OCR.";await MarkPostProcessingWarningAsync(tenantId,session,"OCR",ex.Message,CancellationToken.None); }
+        }
+        if(session.Metadata.GeneratePreview && !seen.Preview)
+        {
+            try
+            {
+                await _previewStatus.UpsertAsync(tenantId,version.VersionId,PreviewProcessingStatus.Pending,null,null,DateTimeOffset.UtcNow,null,ct);
+                await _previewQueue.EnqueueAsync(tenantId,documentId,version.VersionId,version.StoragePath,version.FileName,ct);previewQueued=true;
+            }
+            catch(Exception ex) when(ex is not OperationCanceledException) { warning="Arquivo gravado; solicite novamente a pré-visualização.";await MarkPostProcessingWarningAsync(tenantId,session,"PREVIEW",ex.Message,CancellationToken.None); }
+        }
+        return (ocrQueued,previewQueued,warning);
     }
 
     private async Task MarkPostProcessingWarningAsync(Guid tenantId, SessionRow session, string step, string message, CancellationToken ct)

@@ -1,5 +1,6 @@
 using InovaGed.Application.SystemHealth.Incidents;
 using Microsoft.AspNetCore.Routing;
+using InovaGed.Web.Security;
 
 namespace InovaGed.Web.Observability;
 
@@ -15,7 +16,8 @@ public sealed class IncidentCaptureMiddleware(RequestDelegate next,ILogger<Incid
             try
             {
                 var route=context.GetRouteData()?.Values;
-                await incidents.RegisterAsync(new(classification.IncidentType,classification.Severity,classification.Title,"Ocorreu uma falha técnica. Informe o CorrelationId ao suporte.",exception.Message,classification.RecommendedAction,null,null,context.TraceIdentifier,route?["controller"]?.ToString(),route?["action"]?.ToString(),context.Request.Path,context.Request.Method,classification.SqlState,classification.DatabaseObject,exception.GetType().FullName,exception.StackTrace),CancellationToken.None);
+                var sensitive = SectorRequestRedaction.Applies(context);
+                await incidents.RegisterAsync(new(classification.IncidentType,classification.Severity,classification.Title,"Ocorreu uma falha técnica. Informe o CorrelationId ao suporte.",sensitive ? "Falha na integração; consulte a correlação." : exception.Message,classification.RecommendedAction,null,null,context.TraceIdentifier,route?["controller"]?.ToString(),route?["action"]?.ToString(),SectorRequestRedaction.Path(context),context.Request.Method,classification.SqlState,classification.DatabaseObject,exception.GetType().FullName,sensitive ? null : exception.StackTrace),CancellationToken.None);
             }
             catch(Exception registrationError) { logger.LogError(registrationError,"Falha ao registrar incidente; a exceção original será preservada. CorrelationId={CorrelationId}",context.TraceIdentifier); }
             throw;

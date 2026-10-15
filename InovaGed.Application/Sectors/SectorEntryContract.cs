@@ -11,11 +11,13 @@ public static class SectorEntryContract
     public static readonly string[] Keys =
     [
         "integracao", "tipoIdentificador", "paciente", "codigoAtendimento", "nomeDocumento",
-        "modo", "codigoDocumento", "documentoId", "versaoId"
+        "modo", "codigoDocumento", "documentoId", "versaoId", "destino", "origemIncorporacao"
     ];
 
     public static SectorEntryParse Parse(IReadOnlyDictionary<string, string?> query)
     {
+        if (query.Keys.Distinct(StringComparer.OrdinalIgnoreCase).Count() != query.Count)
+            return SectorEntryParse.Invalid();
         foreach (var key in query.Keys)
         {
             if (!Keys.Contains(key, StringComparer.OrdinalIgnoreCase))
@@ -31,7 +33,7 @@ public static class SectorEntryContract
         var modeRaw = Text(query, "modo");
         if (client is null || patient is null || encounter is null || kindRaw is null)
             return SectorEntryParse.Invalid();
-        if (client.Length > ClientMax || encounter.Length > EncounterMax)
+        if (client.Length > ClientMax || encounter.Length > EncounterMax || client.Any(char.IsControl) || encounter.Any(char.IsControl))
             return SectorEntryParse.Invalid();
         if (name is not null && (name.Length > NameMax || name.Any(char.IsControl)))
             return SectorEntryParse.Invalid();
@@ -64,8 +66,18 @@ public static class SectorEntryContract
             return SectorEntryParse.Invalid();
         if (!GuidOrEmpty(query, "documentoId", out var documentId) || !GuidOrEmpty(query, "versaoId", out var versionId))
             return SectorEntryParse.Invalid();
+        var destination = (Text(query, "destino") ?? "pagina").ToLowerInvariant();
+        var presentedOrigin = Text(query, "origemIncorporacao");
+        string? origin = null;
+        if (destination is not "pagina" and not "iframe") return SectorEntryParse.Invalid();
+        if (destination == "iframe")
+        {
+            if (!SectorOrigin.TryNormalize(presentedOrigin, out var normalized)) return SectorEntryParse.Invalid();
+            origin = normalized;
+        }
+        else if (presentedOrigin is not null) return SectorEntryParse.Invalid();
 
-        return new SectorEntryParse(true, new SectorEntryDraft(client, kind, identifier, encounter, name, code, documentId, versionId, mode));
+        return new SectorEntryParse(true, new SectorEntryDraft(client, kind, identifier, encounter, name, code, documentId, versionId, mode, origin, destination));
     }
 
     public static bool IdempotencyKey(string? value, out string? key)
@@ -101,7 +113,7 @@ public static class SectorEntryContract
         id = null;
         var text = Text(query, key);
         if (text is null) return true;
-        if (!Guid.TryParse(text, out var parsed)) return false;
+        if (!Guid.TryParse(text, out var parsed) || parsed == Guid.Empty) return false;
         id = parsed;
         return true;
     }
@@ -121,8 +133,11 @@ public sealed record SectorEntryDraft(
     string? DocumentCode,
     Guid? DocumentId,
     Guid? VersionId,
-    string Mode);
+    string Mode,
+    string? Origin = null,
+    string Destination = "pagina");
 
 public sealed record SectorEntryIssue(bool Accepted, Guid? TicketId);
 
 public sealed record SectorEntryContinuation(bool Redirect, string? PageUrl, int Status, string Message);
+public sealed record SectorRecoveryInfo(bool Available, string? Origin);

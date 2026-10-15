@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace InovaGed.Application.ArtificialIntelligence;
 
-public enum AiTask { AskCollection, Summarize, ExtractMetadata, SuggestClassification, SupportProtocol, CompareDocuments, SuggestArchivalClassification }
+public enum AiTask { AskCollection, Summarize, ExtractMetadata, SuggestClassification, SupportProtocol, CompareDocuments, SuggestArchivalClassification, ExtractClinicalItems }
 public enum AiFailureKind { None, Disabled, CredentialMissing, InvalidCredential, ModelUnavailable, QuotaExceeded, IdempotencyConflict, RateLimited, Cancelled, Timeout, InvalidOutput, ProviderUnavailable, Internal }
 public sealed class AiIdempotencyConflictException(string message) : InvalidOperationException(message) { }
 
@@ -21,7 +21,8 @@ public sealed record AiRequest(
     string? IdempotencyKey = null,
     IReadOnlyList<AiExecutionSource>? Sources = null,
     Func<CancellationToken, Task>? OnRequestSent = null,
-    JsonDocument? ExecutionMetadata = null)
+    JsonDocument? ExecutionMetadata = null,
+    Func<Guid,CancellationToken,Task>? OnExecutionReserved = null)
 {
     /// <summary>Sources registered server-side. Never trusted from the client.</summary>
     public IReadOnlyList<AiExecutionSource> SourceDocuments => Sources ?? [];
@@ -58,7 +59,8 @@ public static class AiTaskCatalog
         AiTask.ExtractMetadata,
         AiTask.SuggestClassification,
         AiTask.SuggestArchivalClassification,
-        AiTask.SupportProtocol
+        AiTask.SupportProtocol,
+        AiTask.ExtractClinicalItems
     ];
 
     public static readonly AiTask[] Unavailable = [AiTask.CompareDocuments];
@@ -73,6 +75,7 @@ public static class AiTaskCatalog
         AiTask.SuggestClassification => "Sugerir tipo documental",
         AiTask.SuggestArchivalClassification => "Sugerir classificação arquivística",
         AiTask.SupportProtocol => "Protocolo assistido",
+        AiTask.ExtractClinicalItems => "Itens clínicos com evidências",
         AiTask.CompareDocuments => "Comparar documentos",
         _ => task.ToString()
     };

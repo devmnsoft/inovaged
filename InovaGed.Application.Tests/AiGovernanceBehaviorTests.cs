@@ -435,6 +435,39 @@ $cleanup$;
 public sealed class GovernedDocumentAiGatewayReservationTests
 {
     [Fact]
+    public async Task Failed_receipt_binding_prevents_send_and_settles_the_own_reservation()
+    {
+        var store=new FakeStore();var observed=false;
+        var request=new AiRequest(Guid.NewGuid(),Guid.NewGuid(),AiTask.Summarize,"test",[],OnExecutionReserved:(id,ct)=>
+        {
+            Assert.NotEqual(Guid.Empty,id);Assert.Equal(0,store.SentStamps);observed=true;
+            throw new InvalidOperationException("Synthetic local receipt failure");
+        });
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>Governed(store,GroqOptions(1000)).ExecuteAsync(request,CancellationToken.None));
+        Assert.True(observed);Assert.Equal(0,store.SentStamps);
+        Assert.Equal(AiFailureKind.Internal,store.LastCompletion!.Failure);Assert.False(store.LastCompletion.ProviderReached);
+    }
+
+    [Fact]
+    public async Task A_replay_binds_the_same_execution_without_new_send_or_settlement()
+    {
+        var id=Guid.NewGuid();var store=new FakeStore{NextLease=new(id,false,AiExecutionState.Completed,new(true,"prior",null,null,"Groq","test-model"))};
+        Guid? observed=null;
+        var request=new AiRequest(Guid.NewGuid(),Guid.NewGuid(),AiTask.Summarize,"test",[],OnExecutionReserved:(execution,ct)=>{observed=execution;return Task.CompletedTask;});
+        var result=await Governed(store,GroqOptions(1000)).ExecuteAsync(request,CancellationToken.None);
+        Assert.Equal(id,observed);Assert.Equal(id,result.ExecutionId);Assert.Equal(0,store.SentStamps);Assert.Null(store.LastCompletion);
+    }
+    [Fact]
+    public async Task Metadata_permission_does_not_enable_clinical_extraction_or_reserve_quota()
+    {
+        var store=new FakeStore { AllowedTasksOverride=[AiTask.ExtractMetadata] };
+        var result=await Governed(store,new DocumentAiOptions()).ExecuteAsync(new(Guid.NewGuid(),Guid.NewGuid(),AiTask.ExtractClinicalItems,"clinical",[new("version","synthetic")]),CancellationToken.None);
+        Assert.Equal(AiFailureKind.Disabled,result.Failure);
+        Assert.False(result.ProviderReached);
+        Assert.Equal(long.MinValue,store.LastReservation);
+        Assert.Equal(0,store.SentStamps);
+    }
+    [Fact]
     public async Task Reservation_equals_input_estimate_plus_effective_max_output_and_stamps_real_send()
     {
         var store = new FakeStore(); var options = GroqOptions(maxOutputTokens: 1000);
@@ -523,11 +556,12 @@ public sealed class GovernedDocumentAiGatewayReservationTests
 
     private sealed class FakeStore : IAiGovernanceStore
     {
+        public IReadOnlyCollection<AiTask>? AllowedTasksOverride { get; set; }
         public long LastReservation { get; set; } = long.MinValue;
         public int SentStamps { get; private set; }
         public AiResult? LastCompletion { get; private set; }
         public Task<AiEffectivePolicy?> GetEffectivePolicyAsync(Guid tenantId, AiTask task, CancellationToken ct) =>
-            Task.FromResult<AiEffectivePolicy?>(new AiEffectivePolicy(tenantId, 1, true, [task], ["Groq"], new Dictionary<AiTask, string> { [task] = "test-model" }, 1_000_000, 50_000, DateTimeOffset.UtcNow, 0, 0));
+            Task.FromResult<AiEffectivePolicy?>(new AiEffectivePolicy(tenantId, 1, true, AllowedTasksOverride??[task], ["Groq"], new Dictionary<AiTask, string> { [task] = "test-model" }, 1_000_000, 50_000, DateTimeOffset.UtcNow, 0, 0));
         public AiExecutionLease? NextLease { get; set; }
         public Task<AiExecutionLease> ReserveAsync(AiRequest request, string provider, string model, long policyRevision, long estimatedTokens, CancellationToken ct)
         {

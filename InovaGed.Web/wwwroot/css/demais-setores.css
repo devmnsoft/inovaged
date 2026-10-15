@@ -1,4 +1,7 @@
-.ds-page { color: #1f2933; background: #f4f6f2; }
+.ds-page { color: #1f2933; background: #f4f6f2; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.5; padding: 16px; min-width: 0; }
+.ds-page *, .ds-page *::before, .ds-page *::after { box-sizing: border-box; }
+.ds-context p { margin: .35rem 0; }
+.ds-page h2 { font-size: 1.15rem; }
 .ds-page h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
 .ds-help, .ds-note { color: #3d4a42; font-size: .92rem; }
 .ds-context, .ds-card, .ds-panel { background: #fff; border: 1px solid #d5ddd4; border-radius: 8px; padding: 12px 14px; margin: 12px 0; }
@@ -13,7 +16,7 @@
 .ds-viewer { width: 100%; }
 .ds-tabs { overflow: auto; }
 .ds-page button { background: #1f4d3a; color: #fff; border: 0; border-radius: 6px; padding: 8px 12px; }
-.ds-page button:disabled { background: #8aa093; color: #f4f6f2; }
+.ds-page button:disabled { background: #d7e0da; color: #34493d; opacity: 1; }
 .ds-actions a { display: inline-flex; align-items: center; background: #1f4d3a; color: #fff; border-radius: 6px; padding: 8px 12px; text-decoration: none; }
 .ds-page a[aria-disabled="true"] { color: #24312b; background: #d5ddd6; border-radius: 6px; padding: 8px 12px; text-decoration: none; cursor: not-allowed; }
 .ds-pager { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
@@ -25,13 +28,19 @@
 .ds-viewer { min-height: 68vh; border: 1px solid #d5ddd4; background: #fff; }
 .ds-list, .ds-analysis { overflow: auto; max-height: 78vh; }
 .ds-tabs { display: none; gap: 6px; margin-bottom: 8px; }
-.ds-doc { display: block; width: 100%; text-align: left; background: #fff; color: #1f2933; border: 1px solid #d5ddd4; margin: 0 0 8px; }
-.ds-doc[aria-current="true"] { border-color: #1f4d3a; }
+.ds-page button.ds-doc { display: block; width: 100%; text-align: left; background: #fff; color: #1f2933; border: 1px solid #b4c5b8; margin: 0 0 8px; overflow-wrap: anywhere; }
+.ds-page button.ds-doc[aria-current="true"] { border-color: #1f4d3a; box-shadow: inset 4px 0 #1f4d3a; background: #edf5ef; }
+.ds-doc .ds-note { display: block; margin-top: 6px; color: #34473b; }
 .ds-badge { display: inline-block; border: 1px solid #c5d0c6; border-radius: 999px; padding: 1px 8px; font-size: .8rem; }
 .ds-drop { border: 1px dashed #1f4d3a; border-radius: 8px; padding: 16px; background: #f7faf7; }
 .ds-drop.is-over { background: #e7f2ea; }
 .ds-thumb { max-width: 120px; max-height: 90px; display: block; }
 .ds-inline { display: grid; gap: 6px; margin: 0 0 12px; }
+.ds-recovery { max-width: 48rem; margin: 0 auto; min-height: 80vh; display: grid; align-content: center; }
+.ds-primary-action { display: inline-block; max-width: 100%; overflow-wrap: anywhere; padding: .8rem 1rem; border-radius: .5rem; background: #174886; color: #fff; font-weight: 600; text-decoration: none; }
+.ds-page [hidden] { display: none !important; }
+.ds-page :focus-visible { outline: 3px solid #b25a00; outline-offset: 3px; }
+.ds-page textarea, .ds-page pre { max-width: 100%; overflow-wrap: anywhere; white-space: pre-wrap; }
 .ds-tabs-always { display: flex; flex-wrap: wrap; }
 .ds-analysis [data-ds-panel-body] { margin-top: 8px; }
 @media (min-width: 769px) {
@@ -45,6 +54,7 @@
   .ds-page { background: #fff; color: #000; }
 }
 @media (max-width: 768px) {
+  [data-ds-collapse] { display: none; }
   .ds-workspace { grid-template-columns: 1fr; }
   .ds-tabs { display: flex; }
   .ds-workspace [data-region] { display: none; }

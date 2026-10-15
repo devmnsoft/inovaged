@@ -1,5 +1,6 @@
 ﻿using InovaGed.Application.Audit;
 using InovaGed.Application.Identity;
+using InovaGed.Web.Security;
 
 namespace InovaGed.Web.Middleware;
 
@@ -27,13 +28,13 @@ public sealed class AuditMiddleware
                 action: "HTTP",                 // precisa existir no enum ged.audit_action_enum
                 entityName: "http_request",
                 entityId: null,
-                summary: $"{ctx.Request.Method} {ctx.Request.Path}",
+                summary: $"{ctx.Request.Method} {SectorRequestRedaction.Path(ctx)}",
                 ipAddress: ip,
                 userAgent: ua,
                 data: new
                 {
                     method = ctx.Request.Method,
-                    path = ctx.Request.Path.Value,
+                    path = SectorRequestRedaction.Path(ctx),
                     status = ctx.Response.StatusCode
                 },
                 ct: ctx.RequestAborted);
@@ -47,10 +48,10 @@ public sealed class AuditMiddleware
                 action: "ERROR",                // precisa existir no enum
                 entityName: "http_request",
                 entityId: null,
-                summary: $"EXCEPTION {ctx.Request.Method} {ctx.Request.Path}: {ex.Message}",
+                summary: $"EXCEPTION {ctx.Request.Method} {SectorRequestRedaction.Path(ctx)}: {(SectorRequestRedaction.Applies(ctx) ? ex.GetType().Name : ex.Message)}",
                 ipAddress: ip,
                 userAgent: ua,
-                data: new { ex.Message, ex.StackTrace },
+                data: new { Message = SectorRequestRedaction.Applies(ctx) ? ex.GetType().Name : ex.Message, StackTrace = SectorRequestRedaction.Applies(ctx) ? null : ex.StackTrace },
                 ct: CancellationToken.None);
 
             throw;

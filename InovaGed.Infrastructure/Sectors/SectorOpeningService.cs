@@ -6,11 +6,12 @@ using InovaGed.Application.Common.Database;
 using InovaGed.Application.Sectors;
 using InovaGed.Application.Security;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace InovaGed.Infrastructure.Sectors;
 
-public sealed class SectorOpeningService : ISectorOpeningService
+public sealed partial class SectorOpeningService : ISectorOpeningService
 {
     public const string CookieName = "ds_abertura";
     public const int RequestsPerMinute = 30;
@@ -20,14 +21,16 @@ public sealed class SectorOpeningService : ISectorOpeningService
     private readonly IAuditWriter _audit;
     private readonly ILogger<SectorOpeningService> _logger;
     private readonly IAbacAuthorizationService? _authorization;
+    private readonly SectorTemporaryContextOptions _temporaryContexts;
 
-    public SectorOpeningService(IDbConnectionFactory db, IDemaisSetoresService sectors, IAuditWriter audit, ILogger<SectorOpeningService> logger, IAbacAuthorizationService? authorization = null)
+    public SectorOpeningService(IDbConnectionFactory db, IDemaisSetoresService sectors, IAuditWriter audit, ILogger<SectorOpeningService> logger, IAbacAuthorizationService? authorization = null, IOptions<SectorTemporaryContextOptions>? temporaryContexts = null)
     {
         _db = db;
         _sectors = sectors;
         _audit = audit;
         _logger = logger;
         _authorization = authorization;
+        _temporaryContexts = temporaryContexts?.Value ?? new SectorTemporaryContextOptions();
     }
 
     public async Task<SectorOpeningResponse> OpenAsync(SectorOpeningRequest request, CancellationToken ct)
@@ -59,14 +62,33 @@ where client_id=@clientId and active
         var unit = request.SourceUnit?.Trim() ?? "";
         if (!string.Equals(system, integration.SourceSystem, StringComparison.Ordinal) || !string.Equals(unit, integration.SourceUnit ?? "", StringComparison.Ordinal))
             return await Fail(conn, integration, SectorOpeningCodes.Invalid, "O sistema ou a unidade não correspondem ao cadastro da integração.", correlation, null, true, ct);
+        if (!SectorEntryContract.IdempotencyKey(request.IdempotencyKey, out var key))
+            return Refuse(SectorOpeningCodes.Invalid, "A chave de idempotência não é válida.", correlation);
+        if (key is not null)
+        {
+            var previous = await ExistingRequestAsync(conn, integration, key, Fingerprint(request, integration, origin), ct);
+            if (previous is not null) return previous;
+        }
         return await GrantAsync(conn, integration, request, correlation, null, null, origin, ct);
     }
 
-    public async Task<SectorEntryIssue> CreateEntryAsync(SectorEntryDraft draft, CancellationToken ct)
+    public Task<SectorEntryIssue> CreateEntryAsync(SectorEntryDraft draft,CancellationToken ct)=>CreateEntryCoreAsync(draft,null,ct);
+
+    private async Task<SectorEntryIssue> CreateEntryCoreAsync(SectorEntryDraft draft,string? expectedConfiguration,CancellationToken ct)
     {
+        var parsed = SectorEntryContract.Parse(new Dictionary<string, string?>
+        {
+            ["integracao"] = draft.ClientId, ["tipoIdentificador"] = draft.IdentifierKind,
+            ["paciente"] = draft.Identifier, ["codigoAtendimento"] = draft.EncounterCode,
+            ["nomeDocumento"] = draft.DocumentName, ["codigoDocumento"] = draft.DocumentCode,
+            ["documentoId"] = draft.DocumentId?.ToString("D"), ["versaoId"] = draft.VersionId?.ToString("D"), ["modo"] = draft.Mode,
+            ["origemIncorporacao"] = draft.Origin, ["destino"] = draft.Destination
+        });
+        if (!parsed.IsValid || parsed.Draft is null) return new SectorEntryIssue(false, null);
+        draft = parsed.Draft;
         await using var conn = await _db.OpenAsync(ct);
         var integrations = (await conn.QueryAsync<IntegrationRow>(new CommandDefinition("""
-select id as Id, tenant_id as TenantId
+select id as Id, tenant_id as TenantId, origins as Origins
 from ged.sector_integration
 where client_id=@clientId and active
 """, new { clientId = draft.ClientId }, cancellationToken: ct))).ToArray();
@@ -77,18 +99,43 @@ where client_id=@clientId and active
         }
 
         var ticketId = Guid.NewGuid();
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        // Serialize the admission check with creation for this integration, including across hosts.
+        var current = await conn.QuerySingleOrDefaultAsync<IntegrationRow>(new CommandDefinition("""
+select id as Id,tenant_id as TenantId,client_id as ClientId,secret_hash as SecretHash,source_system as SourceSystem,
+ source_unit as SourceUnit,origins as Origins,catalog_codes as CatalogCodes,allow_encounter_list as AllowEncounterList,
+ allow_encounter_switch as AllowEncounterSwitch,max_minutes as MaxMinutes,active as Active
+from ged.sector_integration where id=@id for update
+""",new { id=integrations[0].Id },tx,cancellationToken:ct));
+        if (current is null || !current.Active) return new SectorEntryIssue(false,null);
+        if (expectedConfiguration is not null && expectedConfiguration!=ConfigurationFingerprint(current)) return new(false,null);
+        if (draft.Destination == "iframe" && !OriginAllowed(current.Origins, draft.Origin, out _)) return new SectorEntryIssue(false,null);
+        var limited = await conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
+select (select count(*) from ged.sector_entry_ticket where integration_id=@id and created_at>now()-interval '1 minute')>=@perMinute
+    or (select count(*) from ged.sector_entry_ticket where integration_id=@id and consumed_at is null and expires_at>now())>=@maxPending
+    or (select count(*) from ged.sector_entry_ticket where integration_id=@id)>=@maxRetained
+""", new { id = integrations[0].Id, perMinute = _temporaryContexts.TicketsPerMinute, maxPending = _temporaryContexts.MaxPendingTickets,
+            maxRetained = _temporaryContexts.MaxRetainedTickets }, tx, cancellationToken: ct));
+        if (limited)
+        {
+            SectorTemporaryContextMaintenance.Rejected.Add(1);
+            return new SectorEntryIssue(false, null);
+        }
         await conn.ExecuteAsync(new CommandDefinition("""
 insert into ged.sector_entry_ticket
- (id, integration_id, tenant_id, identifier_kind, identifier_value, encounter_code, document_name, document_code, document_id, version_id, mode, expires_at)
+ (id, integration_id, tenant_id, identifier_kind, identifier_value, encounter_code, document_name, document_code, document_id, version_id, mode, expires_at, origin, destination,integration_fingerprint)
 values
- (@id, @integrationId, @tenantId, @kind, @identifier, @encounter, @name, @code, @documentId, @versionId, @mode, now() + interval '15 minutes')
+ (@id, @integrationId, @tenantId, @kind, @identifier, @encounter, @name, @code, @documentId, @versionId, @mode, now() + make_interval(mins=>@minutes), @origin, @destination,@configuration)
 """, new
         {
             id = ticketId, integrationId = integrations[0].Id, tenantId = integrations[0].TenantId,
             kind = draft.IdentifierKind, identifier = draft.Identifier, encounter = draft.EncounterCode,
-            name = draft.DocumentName, code = draft.DocumentCode, documentId = draft.DocumentId, versionId = draft.VersionId, mode = draft.Mode
-        }, cancellationToken: ct));
-        _logger.LogInformation("Entrada por URL aceita para continuação. Ticket={TicketId} Integracao={IntegrationId}", ticketId, integrations[0].Id);
+            name = draft.DocumentName, code = draft.DocumentCode, documentId = draft.DocumentId, versionId = draft.VersionId, mode = draft.Mode,
+            minutes = _temporaryContexts.TicketMinutes, origin=draft.Origin ?? "", destination=draft.Destination,configuration=ConfigurationFingerprint(current)
+        }, tx, cancellationToken: ct));
+        await tx.CommitAsync(ct);
+        SectorTemporaryContextMaintenance.Created.Add(1);
+        _logger.LogInformation("Entrada por URL aceita para continuação. Integracao={IntegrationId}", integrations[0].Id);
         return new SectorEntryIssue(true, ticketId);
     }
 
@@ -98,9 +145,10 @@ values
         var ticket = await conn.QuerySingleOrDefaultAsync<TicketRow>(new CommandDefinition("""
 select id as Id, integration_id as IntegrationId, tenant_id as TenantId, identifier_kind as IdentifierKind,
        identifier_value as IdentifierValue, encounter_code as EncounterCode, document_name as DocumentName,
-       document_code as DocumentCode, document_id as DocumentId, version_id as VersionId, mode as Mode, expires_at as ExpiresAt
+       document_code as DocumentCode, document_id as DocumentId, version_id as VersionId, mode as Mode, expires_at as ExpiresAt,
+       origin as Origin, destination as Destination,integration_fingerprint as IntegrationFingerprint
 from ged.sector_entry_ticket
-where id=@ticketId and consumed_at is null and expires_at>now()
+where id=@ticketId and consumed_at is null and revoked_at is null and expires_at>now()
 """, new { ticketId }, cancellationToken: ct));
         if (ticket is null)
             return new SectorEntryContinuation(false, null, 400, "Este link não pode ser usado.");
@@ -118,6 +166,8 @@ where id=@id and tenant_id=@tenantId and active
 """, new { id = ticket.IntegrationId, tenantId }, cancellationToken: ct));
         if (integration is null)
             return new SectorEntryContinuation(false, null, 403, "A integração não permite consultar este documento.");
+        if (ticket.IntegrationFingerprint != ConfigurationFingerprint(integration))
+            return new SectorEntryContinuation(false,null,403,"A configuração da integração mudou. Inicie uma nova abertura no sistema de origem.");
 
         var visible = await _sectors.VisibleCatalogCodesAsync(tenantId, userId, false, ct);
         var granted = integration.CatalogCodes.Length == 0
@@ -126,11 +176,14 @@ where id=@id and tenant_id=@tenantId and active
         if (granted.Length == 0)
             return new SectorEntryContinuation(false, null, 403, "A integração não permite consultar este documento.");
 
-        var origin = "";
+        var origin = ticket.Origin;
+        if (ticket.Destination == "iframe" && !OriginAllowed(integration.Origins, origin, out _))
+            return new SectorEntryContinuation(false,null,403,"A origem não está autorizada para esta integração.");
         var request = new SectorOpeningRequest(integration.ClientId, "continuacao", ticket.IdentifierKind, ticket.IdentifierValue, integration.SourceSystem, integration.SourceUnit, ticket.EncounterCode, ticket.DocumentName, ticket.DocumentCode, ticket.DocumentId, ticket.VersionId, ticket.Mode, origin);
         var opened = await GrantAsync(conn, integration, request, Guid.NewGuid().ToString("N"), granted, ticket.Id, origin, ct, userId);
-        if (!string.IsNullOrWhiteSpace(opened.PageUrl))
-            return new SectorEntryContinuation(true, opened.PageUrl, 200, opened.Message);
+        var target = ticket.Destination == "iframe" ? opened.FrameUrl : opened.PageUrl;
+        if (!string.IsNullOrWhiteSpace(target))
+            return new SectorEntryContinuation(true, target, 200, opened.Message);
         var status = opened.Code == SectorOpeningCodes.Unauthorized ? 401 : 422;
         return new SectorEntryContinuation(false, null, status, opened.Message);
     }
@@ -152,7 +205,7 @@ where id=@id and tenant_id=@tenantId and active
         }
     }
 
-    public async Task<SectorSessionAccess?> ReadSessionAsync(string? cookieValue, Guid publicId, CancellationToken ct)
+    public async Task<SectorSessionAccess?> ReadSessionAsync(string? cookieValue, Guid publicId, CancellationToken ct, bool includeOtherEncounters = false)
     {
         await using var conn = await _db.OpenAsync(ct);
         var session = await SectorOpeningExchange.ReadAsync(conn, cookieValue, publicId, ct);
@@ -162,11 +215,19 @@ where id=@id and tenant_id=@tenantId and active
         var visible = await _sectors.VisibleCatalogCodesAsync(session.TenantId, userId, false, ct);
         var catalog = session.AllowedCatalogCodes.Intersect(visible, StringComparer.Ordinal).ToArray();
         if (catalog.Length == 0) return null;
+        var expand = includeOtherEncounters && session.AllowEncounterSwitch && session.ScopeKind == "atendimento"
+            && session.DocumentId is null && session.VersionId is null;
         var candidates = (await conn.QueryAsync<Guid>(new CommandDefinition("""
 select distinct l.document_id from ged.sector_document_link l
 where l.tenant_id=@tenantId and l.patient_id=@patientId and l.reg_status='A'
+  and (@expand or l.encounter_id=@encounterId)
+  and (@documentId is null or l.document_id=@documentId)
+  and (@versionId is null or l.version_id=@versionId)
+  and (@catalogCode is null or l.catalog_code=@catalogCode)
   and l.catalog_code=any(@catalog)
-""", new { tenantId = session.TenantId, patientId = session.PatientId, catalog }, cancellationToken: ct))).ToArray();
+  and exists (select 1 from ged.document d where d.tenant_id=l.tenant_id and d.id=l.document_id and (d.reg_status='A' or d.reg_status is null))
+""", new { tenantId = session.TenantId, patientId = session.PatientId, encounterId = session.EncounterId,
+            documentId = session.DocumentId, versionId = session.VersionId, catalogCode = session.CatalogCode, expand, catalog }, cancellationToken: ct))).ToArray();
         var documents = await _authorization.FilterDocumentsAsync(session.TenantId, userId, candidates, "VIEW", ct);
         if (session.DocumentId.HasValue && !documents.Contains(session.DocumentId.Value)) return null;
         return session with { AllowedCatalogCodes = catalog, AllActiveCatalog = false, AuthorizedDocumentIds = documents.ToArray() };
@@ -185,13 +246,21 @@ where l.tenant_id=@tenantId and l.patient_id=@patientId and l.reg_status='A'
 
     public async Task<bool> AuthorizeCommandAsync(string? cookieValue, Guid publicId, string? protectionToken, CancellationToken ct)
     {
-        if (await ReadSessionAsync(cookieValue, publicId, ct) is null) return false;
+        return await ReadCommandSessionAsync(cookieValue, publicId, protectionToken, ct) is not null;
+    }
+
+    public async Task<SectorSessionAccess?> ReadCommandSessionAsync(string? cookieValue, Guid publicId, string? protectionToken, CancellationToken ct, bool includeOtherEncounters = false)
+    {
+        var session = await ReadSessionAsync(cookieValue, publicId, ct, includeOtherEncounters);
+        if (session is null) return null;
         await using var conn = await _db.OpenAsync(ct);
-        return await SectorOpeningExchange.AuthorizeAsync(conn, cookieValue, publicId, protectionToken, ct);
+        return await SectorOpeningExchange.VerifyProtectionAsync(conn, cookieValue, publicId, protectionToken, ct) ? session : null;
     }
 
     public async Task<string?> RegisterIntegrationAsync(SectorIntegrationRegistration registration, CancellationToken ct)
     {
+        if (registration.Name is { Length: > 160 } || registration.Name?.Any(char.IsControl)==true)
+            return "O nome da integração deve ter até 160 caracteres, sem caracteres de controle.";
         if (string.IsNullOrWhiteSpace(registration.ClientId) || string.IsNullOrWhiteSpace(registration.Secret) || registration.Secret.Length < 16)
             return "Informe um identificador e uma chave com pelo menos 16 caracteres. A chave não será mostrada de novo.";
         if (string.IsNullOrWhiteSpace(registration.SourceSystem) || registration.Origins.Length == 0)
@@ -199,27 +268,29 @@ where l.tenant_id=@tenantId and l.patient_id=@patientId and l.reg_status='A'
         var origins = new List<string>();
         foreach (var item in registration.Origins)
         {
-            if (!Uri.TryCreate(item?.Trim(), UriKind.Absolute, out var uri) || uri.Scheme is not "https" and not "http")
+            if (!SectorOrigin.TryNormalize(item?.Trim(), out var registeredOrigin))
                 return "Cada origem precisa ser http ou https, sem caminho.";
-            origins.Add(uri.GetLeftPart(UriPartial.Authority));
+            origins.Add(registeredOrigin);
         }
         await using var conn = await _db.OpenAsync(ct);
         await conn.ExecuteAsync(new CommandDefinition("""
 insert into ged.sector_integration
- (id, tenant_id, client_id, secret_hash, source_system, source_unit, origins, catalog_codes, allow_encounter_list, allow_encounter_switch, max_minutes, active)
+ (id, tenant_id, client_id, secret_hash, source_system, source_unit, origins, catalog_codes, allow_encounter_list, allow_encounter_switch, max_minutes, active,display_name)
 values
- (gen_random_uuid(), @tenantId, @clientId, @hash, @system, @unit, @origins, @catalogs, @allow, @allowSwitch, @minutes, true)
+ (gen_random_uuid(), @tenantId, @clientId, @hash, @system, @unit, @origins, @catalogs, @allow, @allowSwitch, @minutes, true,@name)
 on conflict (tenant_id, client_id) do update
 set secret_hash=excluded.secret_hash, source_system=excluded.source_system, source_unit=excluded.source_unit,
     origins=excluded.origins, catalog_codes=excluded.catalog_codes, allow_encounter_list=excluded.allow_encounter_list,
-    allow_encounter_switch=excluded.allow_encounter_switch, max_minutes=excluded.max_minutes, active=true
+    allow_encounter_switch=excluded.allow_encounter_switch, max_minutes=excluded.max_minutes, active=true,
+    display_name=coalesce(excluded.display_name,ged.sector_integration.display_name)
 """, new
         {
             tenantId = registration.TenantId, clientId = registration.ClientId.Trim(), hash = Hash(registration.Secret),
             system = registration.SourceSystem.Trim(), unit = registration.SourceUnit?.Trim() ?? "",
             origins = origins.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
             catalogs = registration.CatalogCodes.Where(item => !string.IsNullOrWhiteSpace(item)).Select(item => item.Trim()).Distinct(StringComparer.Ordinal).ToArray(),
-            allow = registration.AllowEncounterList, allowSwitch = registration.AllowEncounterSwitch, minutes = Math.Clamp(registration.MaxMinutes, 1, 60)
+            allow = registration.AllowEncounterList, allowSwitch = registration.AllowEncounterSwitch, minutes = Math.Clamp(registration.MaxMinutes, 1, 60),
+            name=string.IsNullOrWhiteSpace(registration.Name)?null:registration.Name.Trim()
         }, cancellationToken: ct));
         await Audit(registration.TenantId, registration.ActorId, "PERMISSION_CHANGE", "Integração cadastrada ou atualizada, sem registrar a chave.", null, ct);
         return null;
@@ -422,7 +493,7 @@ for update
                 || current.MaxMinutes != integration.MaxMinutes
                 || !current.Origins.OrderBy(x => x, StringComparer.Ordinal).SequenceEqual(integration.Origins.OrderBy(x => x, StringComparer.Ordinal))
                 || !current.CatalogCodes.OrderBy(x => x, StringComparer.Ordinal).SequenceEqual(integration.CatalogCodes.OrderBy(x => x, StringComparer.Ordinal))
-                || (!authorizingUserId.HasValue && !OriginAllowed(current.Origins, origin, out _)))
+                || ((!authorizingUserId.HasValue || origin.Length>0) && !OriginAllowed(current.Origins, origin, out _)))
             {
                 await tx.RollbackAsync(ct);
                 return Refuse(SectorOpeningCodes.Denied, "A configuração da integração mudou. Inicie uma nova abertura.", correlation);
@@ -445,14 +516,11 @@ for update
             }
             if (idempotency is not null)
             {
-                var previous = await conn.ExecuteScalarAsync<string?>(new CommandDefinition("""
-select correlation_id from ged.sector_open_request
-where integration_id=@id and idempotency_key=@key
-""", new { id = integration.Id, key = idempotency }, tx, cancellationToken: ct));
+                var previous = await ExistingRequestAsync(conn,integration,idempotency,Fingerprint(request,integration,origin),ct,tx);
                 if (previous is not null)
                 {
                     await tx.RollbackAsync(ct);
-                    return Refuse(SectorOpeningCodes.Repeated, "Esta chave de idempotência já foi usada. A primeira resposta não é reenviada porque os códigos opacos não ficam guardados. Use outra chave para uma nova abertura.", previous);
+                    return previous;
                 }
             }
             var recent = await conn.ExecuteScalarAsync<long>(new CommandDefinition("""
@@ -464,17 +532,17 @@ where integration_id=@id and created_at > now() - interval '60 seconds'
                 await tx.RollbackAsync(ct);
                 return await Fail(conn, integration, SectorOpeningCodes.RateLimited, "O limite de aberturas desta integração foi atingido. Aguarde um minuto e tente de novo.", correlation, ticketId, false, ct);
             }
-            await InsertCodeAsync(conn, tx, integration, pageCode, patientId, encounterId, catalog, documentId, versionId, storedMode, scopeKind, allowSwitch, origin, correlation, expires, grantedCatalog, ct, authorizingUserId);
+            await InsertCodeAsync(conn, tx, integration, pageCode, patientId, encounterId, catalog, documentId, versionId, storedMode, scopeKind, allowSwitch, authorizingUserId.HasValue ? "" : origin, correlation, expires, grantedCatalog, ct, authorizingUserId);
             await InsertCodeAsync(conn, tx, integration, frameCode, patientId, encounterId, catalog, documentId, versionId, storedMode, scopeKind, allowSwitch, origin, correlation, expires, grantedCatalog, ct, authorizingUserId);
             await conn.ExecuteAsync(new CommandDefinition("""
 insert into ged.sector_open_request
- (id, tenant_id, integration_id, idempotency_key, correlation_id, page_code_hash, frame_code_hash)
+ (id, tenant_id, integration_id, idempotency_key, correlation_id, page_code_hash, frame_code_hash, request_fingerprint)
 values
- (@id, @tenantId, @integrationId, @key, @correlation, @pageHash, @frameHash)
+ (@id, @tenantId, @integrationId, @key, @correlation, @pageHash, @frameHash, @fingerprint)
 """, new
             {
                 id = Guid.NewGuid(), tenantId = integration.TenantId, integrationId = integration.Id, key = idempotency, correlation,
-                pageHash = Hash(pageCode), frameHash = Hash(frameCode)
+                pageHash = Hash(pageCode), frameHash = Hash(frameCode), fingerprint=Fingerprint(request,integration,origin)
             }, tx, cancellationToken: ct));
             if (ticketId.HasValue)
             {
@@ -493,10 +561,8 @@ where id=@ticketId and consumed_at is null and expires_at>now()
         catch (PostgresException ex) when (ex.SqlState == "23505")
         {
             await tx.RollbackAsync(ct);
-            var previous = idempotency is null ? null : await conn.ExecuteScalarAsync<string?>(new CommandDefinition("""
-select correlation_id from ged.sector_open_request where integration_id=@id and idempotency_key=@key
-""", new { id = integration.Id, key = idempotency }, cancellationToken: ct));
-            return Refuse(SectorOpeningCodes.Repeated, "Esta chave de idempotência já foi usada. A primeira resposta não é reenviada porque os códigos opacos não ficam guardados. Use outra chave para uma nova abertura.", previous ?? correlation);
+            if (idempotency is not null && await ExistingRequestAsync(conn,integration,idempotency,Fingerprint(request,integration,origin),ct) is { } previous) return previous;
+            throw;
         }
 
         try
@@ -588,14 +654,13 @@ where id=@ticketId and consumed_at is null
     private static Task<bool> UserIsActiveAsync(NpgsqlConnection conn, Guid tenantId, Guid userId, CancellationToken ct, NpgsqlTransaction? tx = null)
         => conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
 select exists(select 1 from ged.app_user where tenant_id=@tenantId and id=@userId
-  and coalesce(is_active,true) and coalesce(reg_status,'A')='A' and not coalesce(is_locked,false))
+  and is_active and coalesce(reg_status,'A')='A' and deleted_at_utc is null and not coalesce(is_locked,false))
 """, new { tenantId, userId }, tx, cancellationToken: ct));
 
     private static bool OriginAllowed(string[] origins, string? presented, out string origin)
     {
         origin = "";
-        if (!Uri.TryCreate(presented, UriKind.Absolute, out var uri) || uri.Scheme is not "https" and not "http") return false;
-        origin = uri.GetLeftPart(UriPartial.Authority);
+        if (!SectorOrigin.TryNormalize(presented, out origin)) return false;
         var granted = origin;
         return origins.Any(item => string.Equals(item, granted, StringComparison.OrdinalIgnoreCase));
     }
@@ -647,6 +712,9 @@ select exists(select 1 from ged.app_user where tenant_id=@tenantId and id=@userI
 
     private sealed class TicketRow
     {
+        public string? IntegrationFingerprint { get; set; }
+        public string Origin { get; set; } = "";
+        public string Destination { get; set; } = "pagina";
         public Guid Id { get; set; }
         public Guid IntegrationId { get; set; }
         public Guid TenantId { get; set; }

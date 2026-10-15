@@ -3187,3 +3187,9 @@ COMMIT;
 \ir migrations/2026_10_27_demais_setores_sessao.sql
 \ir migrations/2026_10_28_demais_setores_entrada.sql
 \ir migrations/2026_10_29_demais_setores_user_session.sql
+\ir migrations/2026_10_30_demais_setores_context_lifecycle.sql
+\ir migrations/2026_10_31_demais_setores_recovery.sql
+\ir migrations/2026_11_01_demais_setores_ticket_binding.sql
+\ir migrations/2026_11_02_demais_setores_recovery_revocation.sql
+\ir migrations/2026_11_03_demais_setores_processing.sql
+\ir migrations/2026_11_04_demais_setores_clinical_extraction.sql
