@@ -236,7 +236,7 @@
                             <span class="text-muted small">
                                 Versão @selected.VersionNumber · @ToSize(selected.SizeBytes)
                             </span>
-                            <span class="badge bg-secondary" id="previewStatusBadge" data-preview-status-badge="1">Preview: verificando…</span>
+                            <span class="badge bg-secondary" id="previewStatusBadge" data-preview-status-badge="1">Verificando visualização</span>
 
                             <a class="btn btn-sm btn-outline-secondary"
                                href="@Url.Action("Download", "Ged", new { id = selected.Id })">
@@ -253,6 +253,7 @@
                     }
                     else
                     {
+                        <p id="previewStatusMessage" class="small text-secondary px-3 pt-3 mb-0" role="status">O documento foi recebido. Estamos preparando a visualização. Você pode continuar trabalhando enquanto o processamento acontece.</p>
                         <iframe data-preview-frame="1" src="@Url.Action("PreviewInline", "Ged", new { versionId = selected.Id })"
                                 style="width:100%; height:75vh; border:0;">
                         </iframe>
@@ -809,7 +810,9 @@
                 if (poller.attempts > poller.maxAttempts) {
                     if (badge) {
                         badge.className = 'badge bg-secondary';
-                        badge.textContent = 'Preview: segundo plano (clique para checar)';
+                        badge.textContent = 'Consulta pausada';
+                        const paused = document.getElementById('previewStatusMessage');
+                        if (paused) paused.textContent = 'A consulta automática foi pausada. Clique no status para verificar de novo. O documento original permanece armazenado.';
                     }
                     stop();
                     return;
@@ -823,7 +826,11 @@
                         if (r.status === 401 || r.status === 403 || r.status === 404 || r.status === 409 || r.status >= 500) {
                             if (badge) {
                                 badge.className = 'badge bg-danger';
-                                badge.textContent = r.status === 401 ? 'Preview: sessão expirada' : 'Preview: consulta indisponível';
+                                badge.textContent = r.status === 401 ? 'Sessão expirada' : 'Consulta indisponível';
+                                const failedMessage = document.getElementById('previewStatusMessage');
+                                if (failedMessage) failedMessage.textContent = r.status === 401
+                                    ? 'Entre novamente para continuar. O documento original permanece armazenado.'
+                                    : 'Não foi possível consultar a visualização agora. O documento original permanece armazenado com segurança.';
                             }
                             stop();
                             return;
@@ -833,21 +840,21 @@
                     const d = await r.json();
                     const status = (d.status || 'PENDING').toUpperCase();
                     
+                    const headline = d.headline || (status === 'READY' ? 'Disponível' : (status === 'FAILED' || status === 'ERROR' ? 'Falha recuperável' : (status === 'CANCELED' || status === 'CANCELLED' ? 'Cancelado' : (status === 'PROCESSING' ? 'Gerando visualização' : 'Aguardando'))));
+                    const detail = d.detail || (status === 'READY'
+                        ? 'A visualização está pronta.'
+                        : (status === 'FAILED' || status === 'ERROR'
+                            ? 'Não foi possível gerar a visualização deste arquivo. O documento original permanece armazenado com segurança.'
+                            : 'O documento foi recebido. Estamos preparando a visualização. Você pode continuar trabalhando enquanto o processamento acontece.'));
+                    const message = document.getElementById('previewStatusMessage');
+                    if (message) message.textContent = detail;
                     if (badge) {
-                        if (status === 'READY') {
-                            badge.className = 'badge bg-success';
-                            badge.textContent = 'Preview: Pronto';
-                        } else if (status === 'FAILED' || status === 'ERROR') {
-                            badge.className = 'badge bg-danger';
-                            badge.textContent = 'Preview: Indisponível';
-                            badge.title = d.errorMessage || 'Falha ao processar visualização.';
-                        } else if (status === 'PROCESSING') {
-                            badge.className = 'badge bg-primary';
-                            badge.textContent = 'Preview: Processando…';
-                        } else {
-                            badge.className = 'badge bg-secondary';
-                            badge.textContent = `Preview: ${status}`;
-                        }
+                        badge.textContent = headline;
+                        badge.title = d.retryable ? 'Clique para consultar de novo' : 'Clique para atualizar a visualização';
+                        if (status === 'READY') badge.className = 'badge bg-success';
+                        else if (status === 'FAILED' || status === 'ERROR') badge.className = 'badge bg-danger';
+                        else if (status === 'PROCESSING') badge.className = 'badge text-bg-warning';
+                        else badge.className = 'badge bg-secondary';
                     }
 
                     if (status === 'READY') {

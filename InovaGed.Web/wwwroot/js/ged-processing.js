@@ -10,9 +10,12 @@
 
     function badge(status) {
         const st = (status || '').toUpperCase();
-        if (st === 'PROCESSING') return '<span class="badge bg-warning text-dark">PROCESSING</span>';
-        if (st === 'PENDING') return '<span class="badge bg-secondary">PENDING</span>';
-        return `<span class="badge bg-light text-dark">${st || 'N/A'}</span>`;
+        if (st === 'PROCESSING') return '<span class="badge text-bg-warning">Gerando visualização</span>';
+        if (st === 'PENDING' || st === 'NOT_READY') return '<span class="badge bg-secondary">Aguardando</span>';
+        if (st === 'READY' || st === 'COMPLETED') return '<span class="badge bg-success">Disponível</span>';
+        if (st === 'FAILED' || st === 'ERROR') return '<span class="badge bg-danger">Falha recuperável</span>';
+        if (st === 'CANCELED' || st === 'CANCELLED') return '<span class="badge bg-secondary">Cancelado</span>';
+        return '<span class="badge bg-light text-dark">Em andamento</span>';
     }
 
     function render(items) {

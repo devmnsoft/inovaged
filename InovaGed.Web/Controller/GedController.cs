@@ -3351,36 +3351,12 @@ SELECT
             if (fileExistsOnStorage || status?.Status == PreviewProcessingStatus.Ready)
             {
                 var previewUrl = Url.Action("PreviewVersion", "Ged", new { versionId }) ?? $"/Ged/PreviewVersion?versionId={versionId}";
-                return Ok(new
-                {
-                    success = true,
-                    versionId,
-                    status = "READY",
-                    previewPath = isDirectMedia ? v.StoragePath : (status?.PreviewPath ?? previewRelPath),
-                    previewUrl,
-                    errorMessage = (string?)null,
-                    attempts = status?.Attempts ?? 1,
-                    lastUpdatedAt = status?.LastUpdatedAt ?? status?.FinishedAt ?? DateTimeOffset.UtcNow,
-                    requestedAt = status?.RequestedAt ?? DateTimeOffset.UtcNow,
-                    finishedAt = status?.FinishedAt ?? DateTimeOffset.UtcNow
-                });
+                return Ok(PreviewStatusPayload("READY", versionId, isDirectMedia ? v.StoragePath : (status?.PreviewPath ?? previewRelPath), previewUrl, null, status?.Attempts ?? 1, status?.LastUpdatedAt ?? status?.FinishedAt ?? DateTimeOffset.UtcNow, status?.RequestedAt ?? DateTimeOffset.UtcNow, status?.FinishedAt ?? DateTimeOffset.UtcNow));
             }
 
             if (status is null)
             {
-                return Ok(new
-                {
-                    success = true,
-                    versionId,
-                    status = "NOT_READY",
-                    previewPath = (string?)null,
-                    previewUrl = (string?)null,
-                    errorMessage = (string?)null,
-                    attempts = 0,
-                    lastUpdatedAt = (DateTimeOffset?)null,
-                    requestedAt = (DateTimeOffset?)null,
-                    finishedAt = (DateTimeOffset?)null
-                });
+                return Ok(PreviewStatusPayload("NOT_READY", versionId, null, null, null, 0, null, null, null));
             }
 
             var statusStr = status.Status switch
@@ -3392,19 +3368,7 @@ SELECT
                 _ => "PENDING"
             };
 
-            return Ok(new
-            {
-                success = true,
-                versionId,
-                status = statusStr,
-                previewPath = status.PreviewPath,
-                previewUrl = (string?)null,
-                errorMessage = status.ErrorMessage,
-                attempts = status.Attempts,
-                lastUpdatedAt = status.LastUpdatedAt ?? status.FinishedAt ?? status.LastAttemptAt ?? status.RequestedAt,
-                requestedAt = status.RequestedAt,
-                finishedAt = status.FinishedAt
-            });
+            return Ok(PreviewStatusPayload(statusStr, versionId, status.PreviewPath, null, status.ErrorMessage, status.Attempts, status.LastUpdatedAt ?? status.FinishedAt ?? status.LastAttemptAt ?? status.RequestedAt, status.RequestedAt, status.FinishedAt));
         }
         catch (OperationCanceledException ex) when (ct.IsCancellationRequested || HttpContext.RequestAborted.IsCancellationRequested)
         {
@@ -3414,15 +3378,42 @@ SELECT
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro inesperado em PreviewStatus. Tenant={TenantId} Version={VersionId}", tenantId, versionId);
+            var failure = PreviewStatusCopy.Describe("ERROR");
             return StatusCode(StatusCodes.Status500InternalServerError, new
             {
                 success = false,
                 versionId,
-                status = "ERROR",
+                status = failure.Code,
+                headline = failure.Headline,
+                detail = failure.Detail,
+                terminal = failure.Terminal,
+                retryable = failure.Retryable,
                 errorMessage = "Não foi possível consultar o status do preview no momento.",
                 correlationId = HttpContext.TraceIdentifier
             });
         }
+    }
+
+    private static object PreviewStatusPayload(string status, Guid versionId, string? previewPath, string? previewUrl, string? errorMessage, int attempts, DateTimeOffset? lastUpdatedAt, DateTimeOffset? requestedAt, DateTimeOffset? finishedAt)
+    {
+        var copy = PreviewStatusCopy.Describe(status);
+        return new
+        {
+            success = true,
+            versionId,
+            status = copy.Code,
+            headline = copy.Headline,
+            detail = copy.Detail,
+            terminal = copy.Terminal,
+            retryable = copy.Retryable,
+            previewPath,
+            previewUrl,
+            errorMessage,
+            attempts,
+            lastUpdatedAt,
+            requestedAt,
+            finishedAt
+        };
     }
 
     [HttpGet("/Ged/Folders/Search")]

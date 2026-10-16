@@ -213,9 +213,10 @@
         const active = panel.querySelector(`[data-ged-tab-panel="${tabName}"]`);
         if (tabName === 'preview') {
             const frame = active?.querySelector('.ged-side-preview-frame[data-src]');
-            if (frame && !frame.src) {
+            if (frame && !frame.getAttribute('src')) {
                 frame.src = frame.dataset.src;
                 frame.removeAttribute('data-src');
+                window.gedWatchPreviewFrame?.(frame);
             }
         }
         if (tabName === 'ocr' && active?.dataset.ocrLoaded !== 'true') {

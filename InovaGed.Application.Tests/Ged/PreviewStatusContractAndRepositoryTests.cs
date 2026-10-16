@@ -75,6 +75,44 @@ public sealed class PreviewStatusContractAndRepositoryTests
         Assert.Equal(expected, result);
     }
 
+    [Theory]
+    [InlineData("PENDING", "Aguardando", false)]
+    [InlineData("NOT_READY", "Aguardando", false)]
+    [InlineData("PROCESSING", "Gerando visualização", false)]
+    [InlineData("READY", "Disponível", true)]
+    [InlineData("FAILED", "Falha recuperável", true)]
+    [InlineData("ERROR", "Falha recuperável", true)]
+    [InlineData("CANCELED", "Cancelado", true)]
+    [InlineData("CANCELLED", "Cancelado", true)]
+    public void PreviewStatusCopy_UsesHumanTextAndKeepsTerminalStates(string status, string headline, bool terminal)
+    {
+        var copy = PreviewStatusCopy.Describe(status);
+        Assert.Equal(headline, copy.Headline);
+        Assert.Equal(terminal, copy.Terminal);
+        Assert.DoesNotContain(status, copy.Headline, StringComparison.OrdinalIgnoreCase);
+        if (status is "FAILED" or "ERROR")
+        {
+            Assert.Contains("documento original permanece armazenado", copy.Detail, StringComparison.OrdinalIgnoreCase);
+            Assert.True(copy.Retryable);
+        }
+    }
+
+    [Fact]
+    public void PreviewStatusCopy_DoesNotExposeEnumNamesToTheReader()
+    {
+        foreach (var status in new[] { "PENDING", "PROCESSING", "READY", "FAILED", "ERROR", "CANCELED" })
+        {
+            var copy = PreviewStatusCopy.Describe(status);
+            Assert.DoesNotContain("PreviewProcessingStatus", copy.Detail, StringComparison.Ordinal);
+            Assert.DoesNotContain(status, copy.Headline, StringComparison.OrdinalIgnoreCase);
+        }
+
+        var details = File.ReadAllText(Path.Combine(RepoRoot(), "InovaGed.Web/Views/Ged/Details.cshtml"));
+        Assert.Contains("previewStatusMessage", details);
+        Assert.DoesNotContain("badge.textContent = `Preview: ${status}`", details);
+        Assert.Contains("arquivo original permanece armazenado", File.ReadAllText(Path.Combine(RepoRoot(), "InovaGed.Web/wwwroot/js/ged-document-preview.js")), StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void PreviewStatusDto_PreservesAllRequiredFields()
     {
