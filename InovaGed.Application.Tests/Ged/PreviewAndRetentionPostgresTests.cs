@@ -1,5 +1,6 @@
 using Dapper;
 using InovaGed.Application.Classification;
+using InovaGed.Application.Ged.Processing;
 using InovaGed.Application.Preview;
 using InovaGed.Infrastructure.Common.Database;
 using InovaGed.Infrastructure.Ged.Documents;
@@ -569,6 +570,83 @@ values (@tenant, @version, 'BOGUS', now());
 select data_type from information_schema.columns
 where table_schema='ged' and table_name='preview_status' and column_name='status';
 """));
+    }
+
+    [LocalPgFact]
+    public async Task Processing_center_keeps_tenant_scope_and_does_not_duplicate_an_active_job()
+    {
+        await using var database = await ScratchDatabase.CreateAsync();
+        var otherTenant = Guid.NewGuid();
+        var versionId = Guid.NewGuid();
+        var documentId = Guid.NewGuid();
+        var failedId = Guid.NewGuid();
+        var activeId = Guid.NewGuid();
+        var foreignId = Guid.NewGuid();
+        await database.ExecuteAsync("""
+create schema if not exists ged;
+create table ged.document (
+    id uuid primary key,
+    tenant_id uuid not null,
+    title text not null,
+    created_by uuid null,
+    document_type_id uuid null
+);
+create table ged.processing_job (
+    id uuid primary key,
+    tenant_id uuid not null,
+    document_id uuid null,
+    document_version_id uuid null,
+    upload_batch_id uuid null,
+    upload_batch_item_id uuid null,
+    job_type text not null,
+    status text not null,
+    priority int not null default 5,
+    attempt_count int not null default 0,
+    max_attempts int not null default 3,
+    error_message text null,
+    started_at timestamptz null,
+    finished_at timestamptz null,
+    next_attempt_at timestamptz null,
+    locked_by text null,
+    locked_at timestamptz null,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz null,
+    reg_status char(1) not null default 'A'
+);
+""");
+        await database.Connection.ExecuteAsync("""
+insert into ged.document (id, tenant_id, title) values (@documentId, @tenantId, 'Contrato de manutenção');
+insert into ged.processing_job (id, tenant_id, document_id, document_version_id, job_type, status, attempt_count, max_attempts, error_message)
+values (@failedId, @tenantId, @documentId, @versionId, 'PREVIEW', 'FAILED', 3, 3, 'conversão');
+insert into ged.processing_job (id, tenant_id, document_id, document_version_id, job_type, status)
+values (@activeId, @tenantId, @documentId, @versionId, 'PREVIEW', 'PENDING');
+insert into ged.processing_job (id, tenant_id, document_id, document_version_id, job_type, status, error_message)
+values (@foreignId, @otherTenant, null, @versionId, 'PREVIEW', 'FAILED', 'outro tenant');
+""", new { documentId, tenantId = database.TenantId, versionId, failedId, activeId, foreignId, otherTenant });
+
+        var args = new
+        {
+            tenantId = database.TenantId,
+            from = DateTimeOffset.UtcNow.AddDays(-1),
+            to = DateTimeOffset.UtcNow.AddDays(1),
+            lane = (string?)null,
+            statuses = new[] { "FAILED", "PENDING", "ERROR" },
+            name = "%Contrato%",
+            userId = (Guid?)null,
+            documentTypeId = (Guid?)null,
+            take = 20
+        };
+        var rows = (await database.Connection.QueryAsync(ProcessingCenterSql.Jobs, args)).AsList();
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(0, await database.Connection.ExecuteAsync(ProcessingCenterSql.RetryJob, new { tenantId = database.TenantId, jobId = failedId }));
+        Assert.Equal("FAILED", await database.Connection.ExecuteScalarAsync<string>("select status from ged.processing_job where id=@failedId", new { failedId }));
+
+        Assert.Equal(1, await database.Connection.ExecuteAsync(ProcessingCenterSql.CancelJob, new { tenantId = database.TenantId, jobId = activeId }));
+        Assert.Equal(1, await database.Connection.ExecuteAsync(ProcessingCenterSql.RetryJob, new { tenantId = database.TenantId, jobId = failedId }));
+        var retried = await database.Connection.QuerySingleAsync("select status, attempt_count as attempts from ged.processing_job where id=@failedId", new { failedId });
+        Assert.Equal("PENDING", (string)retried.status);
+        Assert.Equal(0, (int)retried.attempts);
+        Assert.Equal("FAILED", await database.Connection.ExecuteScalarAsync<string>("select status from ged.processing_job where id=@foreignId", new { foreignId }));
     }
 
     private static PreviewStatusUpsert Write(Guid tenantId, Guid versionId, PreviewProcessingStatus status, DateTimeOffset requestedAt, Guid attemptId, string? error = null, string? path = null, bool confirm = false)
