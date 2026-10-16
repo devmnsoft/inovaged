@@ -1,180 +1,213 @@
+@using InovaGed.Application.Ged.Processing
 @using InovaGed.Web.Security
-@model IReadOnlyList<InovaGed.Web.Controllers.GedController.ProcessingRowVm>
+@model IReadOnlyList<InovaGed.Web.Controllers.GedController.ProcessingCenterRowVm>
 
 @{
-    ViewData["Title"] = "Processamentos em execução";
-
+    ViewData["Title"] = "Central de Processamento Documental";
     var metrics = ViewBag.ProcessingMetrics as InovaGed.Web.Controllers.GedController.ProcessingMetricsVm
         ?? new InovaGed.Web.Controllers.GedController.ProcessingMetricsVm();
-
+    var criteria = ViewBag.ProcessingCriteria as ProcessingCenterCriteria
+        ?? ProcessingCenterCatalog.Normalize(null, null, null, null, null, null, null, DateTimeOffset.UtcNow);
     var isAdmin = RolePolicyHelper.IsFullAdmin(User);
+    var fromDate = criteria.From.UtcDateTime.ToString("yyyy-MM-dd");
+    var toDate = criteria.To.UtcDateTime.AddDays(-1).ToString("yyyy-MM-dd");
 }
 
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0"><app-icon class="me-2" name="ocr" size="16" decorative="true" />Processamentos em execução</h4>
-
-    <div class="d-flex gap-2 align-items-center">
-        <span id="processingCount" class="badge bg-warning text-dark">@Model.Count em execução</span>
-
-        @if (isAdmin)
-        {
-            <form asp-action="StopOcrQueue"
-                  asp-controller="Ged"
-                  method="post"
-                  class="d-inline js-app-confirm-form"
-                  data-confirm-title="Parar fila OCR"
-                  data-confirm-message="Parar toda a fila OCR ativa?">
-                @Html.AntiForgeryToken()
-
-                <button type="submit" class="btn btn-sm btn-outline-danger">
-                    <app-icon name="close" size="16" decorative="true" /> Parar fila OCR
-                </button>
-            </form>
-        }
-
-        <a asp-action="Index" asp-controller="Ged" class="btn btn-sm btn-outline-secondary">
-            <app-icon name="arrow-left" size="16" decorative="true" /> Voltar
-        </a>
-    </div>
-</div>
-
-<div class="alert alert-info py-2">
-    Esta tela atualiza automaticamente os OCRs em andamento (PENDING/PROCESSING).
-</div>
-
-<div class="row g-2 mb-3">
-    <div class="col-6 col-md-3">
-        <div class="card">
-            <div class="card-body py-2">
-                <div class="text-muted small">Pendentes</div>
-                <div class="h5 mb-0" id="metricPending">@metrics.PendingCount</div>
-            </div>
+<style>
+    .processing-center { color: #0f172a; }
+    .processing-center .processing-note, .processing-center .metric-label, .processing-center .processing-empty { color: #334155; }
+    .processing-center .metric-value { color: #0f172a; font-size: 1.25rem; font-weight: 650; }
+    .processing-center .processing-metric { background: #fff; border: 1px solid #dbe3ee; }
+    .processing-center .form-label { color: #1e293b; }
+    .processing-center .processing-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
+</style>
+<div class="processing-center">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <div>
+            <h4 class="mb-1">Central de Processamento Documental</h4>
+            <p class="mb-0 processing-note">A fila continua em execução quando esta página é fechada. O arquivo original permanece armazenado se a visualização, o OCR ou a classificação falharem.</p>
         </div>
-    </div>
-
-    <div class="col-6 col-md-3">
-        <div class="card">
-            <div class="card-body py-2">
-                <div class="text-muted small">Processando</div>
-                <div class="h5 mb-0" id="metricProcessing">@metrics.ProcessingCount</div>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-6 col-md-3">
-        <div class="card">
-            <div class="card-body py-2">
-                <div class="text-muted small">Erros (24h)</div>
-                <div class="h5 mb-0 text-danger" id="metricErrors24h">@metrics.Errors24h</div>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-6 col-md-3">
-        <div class="card">
-            <div class="card-body py-2">
-                <div class="text-muted small">Fila média (s)</div>
-                <div class="h5 mb-0" id="metricAvgQueue">@Math.Round(metrics.AvgQueueSeconds, 1)</div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="table-responsive">
-    <table class="table table-striped align-middle" id="processingTable">
-        <thead class="table-light">
-            <tr>
-                <th>Job</th>
-                <th>Documento</th>
-                <th>Status</th>
-                <th>Solicitado em</th>
-                <th>Iniciado em</th>
-                <th>Ações</th>
-            </tr>
-        </thead>
-
-        <tbody id="processingTbody">
-            @if (!Model.Any())
+        <div class="d-flex gap-2 align-items-center">
+            <span id="processingCount" class="badge bg-secondary">@Model.Count na consulta</span>
+            @if (isAdmin)
             {
+                <form asp-action="StopOcrQueue" asp-controller="Ged" method="post" class="d-inline js-app-confirm-form" data-confirm-title="Parar fila OCR" data-confirm-message="Parar toda a fila OCR ativa?">
+                    @Html.AntiForgeryToken()
+                    <button type="submit" class="btn btn-sm btn-outline-danger">Parar fila OCR</button>
+                </form>
+            }
+            <a id="processingExport" class="btn btn-sm btn-outline-primary" href="@Url.Action("ProcessingExport", "Ged", new { status = criteria.StatusGroup, lane = criteria.Lane, q = criteria.NameLike?.Trim('%'), from = fromDate, to = toDate, userId = criteria.UserId, documentTypeId = criteria.DocumentTypeId })">Exportar</a>
+            <a asp-action="Index" asp-controller="Ged" class="btn btn-sm btn-outline-secondary">Voltar</a>
+        </div>
+    </div>
+
+    <form id="processingFilters" method="get" asp-action="Processing" class="row g-2 mb-3">
+        <div class="col-12 col-md-3">
+            <label class="form-label" for="processingName">Nome</label>
+            <input id="processingName" class="form-control" name="q" value="@(criteria.NameLike?.Trim('%'))" maxlength="80" />
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label" for="processingStatus">Situação</label>
+            <select id="processingStatus" class="form-select" name="status">
+                <option value="attention" selected="@(criteria.StatusGroup == "attention")">Precisam de atenção</option>
+                <option value="running" selected="@(criteria.StatusGroup == "running")">Em execução</option>
+                <option value="pending" selected="@(criteria.StatusGroup == "pending")">Aguardando</option>
+                <option value="processing" selected="@(criteria.StatusGroup == "processing")">Em processamento</option>
+                <option value="error" selected="@(criteria.StatusGroup == "failed")">Falhas</option>
+                <option value="completed" selected="@(criteria.StatusGroup == "completed")">Concluídos</option>
+                <option value="cancelled" selected="@(criteria.StatusGroup == "cancelled")">Cancelados</option>
+                <option value="all" selected="@(criteria.StatusGroup == "all")">Todos no período</option>
+            </select>
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label" for="processingLane">Etapa</label>
+            <select id="processingLane" class="form-select" name="lane">
+                <option value="" selected="@(criteria.Lane is null)">Todas</option>
+                <option value="UPLOAD" selected="@(criteria.Lane == "UPLOAD")">Upload</option>
+                <option value="PREVIEW" selected="@(criteria.Lane == "PREVIEW")">Visualização</option>
+                <option value="OCR" selected="@(criteria.Lane == "OCR")">OCR</option>
+                <option value="SECTOR_EXTRACT" selected="@(criteria.Lane == "SECTOR_EXTRACT")">Extração</option>
+                <option value="CLASSIFICATION" selected="@(criteria.Lane == "CLASSIFICATION")">Classificação</option>
+                <option value="SMART_INDEX" selected="@(criteria.Lane == "SMART_INDEX")">Indexação</option>
+                <option value="QUALITY" selected="@(criteria.Lane == "QUALITY")">Qualidade</option>
+            </select>
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label" for="processingFrom">De</label>
+            <input id="processingFrom" class="form-control" type="date" name="from" value="@fromDate" />
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label" for="processingTo">Até</label>
+            <input id="processingTo" class="form-control" type="date" name="to" value="@toDate" />
+        </div>
+        <div class="col-12 col-md-4">
+            <label class="form-label" for="processingUser">Usuário</label>
+            <input id="processingUser" class="form-control" name="userId" value="@criteria.UserId" placeholder="Identificador, quando conhecido" />
+        </div>
+        <div class="col-12 col-md-4">
+            <label class="form-label" for="processingType">Tipo documental</label>
+            <input id="processingType" class="form-control" name="documentTypeId" value="@criteria.DocumentTypeId" placeholder="Identificador, quando conhecido" />
+        </div>
+        <div class="col-12 col-md-4 d-flex align-items-end">
+            <button type="submit" class="btn btn-primary">Filtrar</button>
+        </div>
+    </form>
+
+    <div class="row g-2 mb-3">
+        <div class="col-6 col-md-3"><div class="card processing-metric"><div class="card-body py-2"><div class="metric-label">Aguardando</div><div class="metric-value" id="metricPending">@metrics.PendingCount</div></div></div></div>
+        <div class="col-6 col-md-3"><div class="card processing-metric"><div class="card-body py-2"><div class="metric-label">Em processamento</div><div class="metric-value" id="metricProcessing">@metrics.ProcessingCount</div></div></div></div>
+        <div class="col-6 col-md-3"><div class="card processing-metric"><div class="card-body py-2"><div class="metric-label">Falhas em 24 h</div><div class="metric-value" id="metricErrors24h">@metrics.Errors24h</div></div></div></div>
+        <div class="col-6 col-md-3"><div class="card processing-metric"><div class="card-body py-2"><div class="metric-label">Uploads ativos</div><div class="metric-value" id="metricUploads">@metrics.UploadActive</div></div></div></div>
+        <div class="col-6 col-md-3"><div class="card processing-metric"><div class="card-body py-2"><div class="metric-label">Visualizações ativas</div><div class="metric-value" id="metricPreview">@metrics.PreviewActive</div></div></div></div>
+        <div class="col-6 col-md-3"><div class="card processing-metric"><div class="card-body py-2"><div class="metric-label">Concluídos em 24 h</div><div class="metric-value" id="metricCompleted">@metrics.Completed24h</div></div></div></div>
+        <div class="col-6 col-md-3"><div class="card processing-metric"><div class="card-body py-2"><div class="metric-label">Cancelados em 24 h</div><div class="metric-value" id="metricCancelled">@metrics.Cancelled24h</div></div></div></div>
+        <div class="col-6 col-md-3"><div class="card processing-metric"><div class="card-body py-2"><div class="metric-label">Volume recebido em 24 h</div><div class="metric-value" id="metricVolume">@((metrics.ReceivedBytes24h / 1048576d).ToString("0.0")) MB</div></div></div></div>
+    </div>
+
+    <div id="processingToken" hidden>@Html.AntiForgeryToken()</div>
+
+    <div class="table-responsive">
+        <table class="table table-striped align-middle" id="processingTable">
+            <thead>
                 <tr>
-                    <td colspan="6" class="text-muted">Nenhum processamento em execução.</td>
+                    <th>Etapa</th>
+                    <th>Documento</th>
+                    <th>Situação</th>
+                    <th>Tentativas</th>
+                    <th>Solicitado em</th>
+                    <th>Motivo</th>
+                    <th>Ações</th>
                 </tr>
-            }
-            else
-            {
-                foreach (var item in Model)
+            </thead>
+            <tbody id="processingTbody">
+                @if (!Model.Any())
                 {
-                    <tr>
-                        <td>#@item.JobId</td>
-                        <td>@item.DocumentTitle</td>
-                        <td>
-                            <span class="badge @(item.Status == "PROCESSING" ? "bg-warning text-dark" : "bg-secondary")">
-                                @item.Status
-                            </span>
-                        </td>
-                        <td>@item.RequestedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</td>
-                        <td>@(item.StartedAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss") ?? "-")</td>
-                        <td>
-                            <a class="btn btn-sm btn-outline-primary"
-                               asp-action="Details"
-                               asp-controller="Ged"
-                               asp-route-id="@item.DocumentId"
-                               asp-route-versionId="@item.VersionId">
-                                Abrir
-                            </a>
-
-                            @if (isAdmin)
-                            {
-                                <form asp-action="CancelOcrJob"
-                                      asp-controller="Ged"
-                                      method="post"
-                                      class="d-inline js-app-confirm-form"
-                                      data-confirm-title="Cancelar job OCR"
-                                      data-confirm-message="Cancelar este job OCR?">
-                                    @Html.AntiForgeryToken()
-
-                                    <input type="hidden" name="jobId" value="@item.JobId" />
-                                    <input type="hidden" name="versionId" value="@item.VersionId" />
-
-                                    <button type="submit" class="btn btn-sm btn-outline-danger">
-                                        Cancelar
-                                    </button>
-                                </form>
-                            }
-                        </td>
-                    </tr>
+                    <tr><td colspan="7" class="processing-empty">Nenhum processamento encontrado para este filtro.</td></tr>
                 }
-            }
-        </tbody>
-    </table>
-</div>
-
-<div class="card mt-3">
-    <div class="card-header">
-        <strong>Erros recentes de OCR</strong>
+                else
+                {
+                    foreach (var item in Model)
+                    {
+                        <tr>
+                            <td>@item.LaneLabel</td>
+                            <td>@item.DocumentTitle</td>
+                            <td><span class="badge @BadgeClass(item.Headline)">@item.Headline</span></td>
+                            <td>@item.Attempts / @item.MaxAttempts</td>
+                            <td>@item.RequestedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</td>
+                            <td>@(string.IsNullOrWhiteSpace(item.ErrorMessage) ? "—" : item.ErrorMessage)</td>
+                            <td class="processing-actions">
+                                @if (item.DocumentId is Guid documentId)
+                                {
+                                    <a class="btn btn-sm btn-outline-primary" asp-action="Details" asp-controller="Ged" asp-route-id="@documentId" asp-route-versionId="@item.VersionId">Abrir</a>
+                                }
+                                @if (isAdmin && item.CanCancel && item.Source == "OCR" && long.TryParse(item.JobKey, out var ocrJobId) && item.VersionId is Guid ocrVersion)
+                                {
+                                    <form asp-action="CancelOcrJob" method="post" class="d-inline js-app-confirm-form" data-confirm-title="Cancelar OCR" data-confirm-message="Cancelar este OCR? O arquivo original permanece armazenado.">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="jobId" value="@ocrJobId" />
+                                        <input type="hidden" name="versionId" value="@ocrVersion" />
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">Cancelar</button>
+                                    </form>
+                                }
+                                @if (isAdmin && item.CanCancel && item.Source == "JOB" && Guid.TryParse(item.JobKey, out _))
+                                {
+                                    <form asp-action="CancelProcessingJob" method="post" class="d-inline js-app-confirm-form" data-confirm-title="Cancelar processamento" data-confirm-message="Cancelar esta tarefa? O arquivo original permanece armazenado.">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="jobId" value="@item.JobKey" />
+                                        @await Html.PartialAsync("_ProcessingFilterFields", criteria)
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">Cancelar</button>
+                                    </form>
+                                }
+                                @if (isAdmin && item.CanReprocess && item.Source == "JOB" && Guid.TryParse(item.JobKey, out _))
+                                {
+                                    <form asp-action="RetryProcessingJob" method="post" class="d-inline js-app-confirm-form" data-confirm-title="Reprocessar" data-confirm-message="Recolocar esta tarefa na fila?">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="jobId" value="@item.JobKey" />
+                                        @await Html.PartialAsync("_ProcessingFilterFields", criteria)
+                                        <button type="submit" class="btn btn-sm btn-outline-secondary">Reprocessar</button>
+                                    </form>
+                                }
+                                @if (isAdmin && item.CanReprocess && item.Source == "OCR" && item.VersionId is Guid retryVersion)
+                                {
+                                    <form asp-action="ReprocessOcr" method="post" class="d-inline js-app-confirm-form" data-confirm-title="Reprocessar OCR" data-confirm-message="Solicitar novo OCR desta versão?">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="versionId" value="@retryVersion" />
+                                        <input type="hidden" name="force" value="true" />
+                                        <button type="submit" class="btn btn-sm btn-outline-secondary">Reprocessar</button>
+                                    </form>
+                                }
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
     </div>
 
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-sm mb-0" id="errorsTable">
-                <thead class="table-light">
-                    <tr>
-                        <th>Job</th>
-                        <th>Documento</th>
-                        <th>Erro</th>
-                        <th>Finalizado em</th>
-                    </tr>
-                </thead>
-
-                <tbody id="errorsTbody">
-                    <tr>
-                        <td colspan="4" class="text-muted">Carregando erros recentes...</td>
-                    </tr>
-                </tbody>
-            </table>
+    <div class="card mt-3">
+        <div class="card-header"><strong>Falhas recentes de OCR</strong></div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm mb-0" id="errorsTable">
+                    <thead>
+                        <tr><th>Documento</th><th>Motivo</th><th>Finalizado em</th></tr>
+                    </thead>
+                    <tbody id="errorsTbody"><tr><td colspan="3" class="processing-empty">Carregando falhas recentes...</td></tr></tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
+
+@functions {
+    private static string BadgeClass(string headline) => headline switch
+    {
+        "Concluído" => "bg-success",
+        "Falha definitiva" or "Falha recuperável" => "bg-danger",
+        "Em processamento" => "text-bg-warning",
+        _ => "bg-secondary"
+    };
+}
 
 @section Scripts {
     <script src="~/js/ged-processing.js" asp-append-version="true"></script>

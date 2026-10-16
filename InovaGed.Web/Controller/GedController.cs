@@ -13,6 +13,7 @@ using InovaGed.Application.Ged;
 using InovaGed.Application.Ged.Folders;
 using InovaGed.Application.Identity;
 using InovaGed.Application.Ocr;
+using InovaGed.Application.Ged.Processing;
 using InovaGed.Application.Preview;
 using InovaGed.Application.Search;
 using InovaGed.Application.Security;
@@ -1357,15 +1358,27 @@ limit 100;
 
     [Authorize(Policy = AppPolicies.FullAdminOnly)]
     [HttpGet]
-    public async Task<IActionResult> Processing(CancellationToken ct)
+    public async Task<IActionResult> Processing(string? status, string? lane, string? q, DateTime? from, DateTime? to, string? userId, string? documentTypeId, CancellationToken ct)
     {
         if (!_currentUser.IsAuthenticated)
             return RedirectToAction("Login", "Account");
 
-        var tenantId = _currentUser.TenantId;
-        var rows = await ListRunningOcrJobsAsync(tenantId, ct);
-        ViewBag.ProcessingMetrics = await GetProcessingMetricsAsync(tenantId, ct);
-        return View(rows);
+        var criteria = ProcessingCenterCatalog.Normalize(status, lane, q, from, to, userId, documentTypeId, DateTimeOffset.UtcNow);
+        ViewBag.ProcessingCriteria = criteria;
+        try
+        {
+            var tenantId = _currentUser.TenantId;
+            ViewBag.ProcessingMetrics = await GetProcessingMetricsAsync(tenantId, ct);
+            var rows = await ListProcessingCenterAsync(tenantId, criteria, ProcessingCenterCatalog.MaxRows, ct);
+            return View(rows);
+        }
+        catch (PostgresException ex)
+        {
+            _logger.LogError(ex, "Falha ao abrir a central de processamento. SqlState={SqlState}", ex.SqlState);
+            TempData["erro"] = "Não foi possível consultar a fila. Nenhum documento armazenado foi alterado.";
+            ViewBag.ProcessingMetrics = new ProcessingMetricsVm();
+            return View(Array.Empty<ProcessingCenterRowVm>());
+        }
     }
 
     [HttpGet]
@@ -1412,7 +1425,8 @@ SELECT
             return Unauthorized();
 
         var tenantId = _currentUser.TenantId;
-        var rows = await ListRunningOcrJobsAsync(tenantId, ct);
+        var criteria = ProcessingCenterCatalog.Normalize(Request.Query["status"], Request.Query["lane"], Request.Query["q"], ParseDate(Request.Query["from"]), ParseDate(Request.Query["to"]), Request.Query["userId"], Request.Query["documentTypeId"], DateTimeOffset.UtcNow);
+        var rows = await ListProcessingCenterAsync(tenantId, criteria, ProcessingCenterCatalog.MaxRows, ct);
         return Json(new { success = true, count = rows.Count, items = rows });
     }
 
@@ -1510,34 +1524,63 @@ WHERE j.tenant_id = @tenantId
             new CommandDefinition(sql, new { tenantId }, cancellationToken: ct));
     }
 
-    private async Task<List<ProcessingRowVm>> ListRunningOcrJobsAsync(Guid tenantId, CancellationToken ct)
+    private async Task<List<ProcessingCenterRowVm>> ListProcessingCenterAsync(Guid tenantId, ProcessingCenterCriteria criteria, int take, CancellationToken ct)
     {
-        const string sql = @"
-SELECT
-  j.id AS JobId,
-  j.document_version_id AS VersionId,
-  d.id AS DocumentId,
-  d.title AS DocumentTitle,
-  j.status::text AS Status,
-  j.requested_at AS RequestedAt,
-  j.started_at AS StartedAt
-FROM ged.ocr_job j
-JOIN ged.document_version dv
-  ON dv.tenant_id = j.tenant_id
- AND dv.id = j.document_version_id
-JOIN ged.document d
-  ON d.tenant_id = dv.tenant_id
- AND d.id = dv.document_id
-WHERE j.tenant_id = @tenantId
-  AND j.status IN ('PENDING'::ged.ocr_status_enum, 'PROCESSING'::ged.ocr_status_enum)
-ORDER BY j.requested_at DESC
-LIMIT 200;";
-
+        var rows = new List<ProcessingCenterRowVm>();
         using var conn = await _db.OpenAsync(ct);
-        var rows = await conn.QueryAsync<ProcessingRowVm>(
-            new CommandDefinition(sql, new { tenantId }, cancellationToken: ct));
-        return rows.ToList();
+        if (ProcessingCenterCatalog.IncludesJobs(criteria.Lane))
+            await AppendProcessingRowsAsync(conn, ProcessingCenterSql.Jobs, ProcessingCenterSql.JobsWithoutDocumentFilters, CenterArgs(tenantId, criteria, criteria.Lane == "UPLOAD" ? null : criteria.Lane, take), rows, ct);
+        if (ProcessingCenterCatalog.IncludesOcrTable(criteria.Lane))
+            await AppendProcessingRowsAsync(conn, ProcessingCenterSql.Ocr, ProcessingCenterSql.OcrWithoutOptionalColumns, CenterArgs(tenantId, criteria, null, take), rows, ct);
+        if (ProcessingCenterCatalog.IncludesUploads(criteria.Lane) && criteria.DocumentTypeId is null)
+            await AppendProcessingRowsAsync(conn, ProcessingCenterSql.Uploads, null, CenterArgs(tenantId, criteria, null, take), rows, ct);
+
+        foreach (var row in rows)
+        {
+            row.Headline = ProcessingCenterCatalog.Headline(row.Status, row.Attempts, row.MaxAttempts);
+            row.LaneLabel = ProcessingCenterCatalog.LaneLabel(row.Lane);
+            row.CanReprocess = ProcessingCenterCatalog.CanReprocess(row.Source, row.Status);
+            row.CanCancel = ProcessingCenterCatalog.CanCancel(row.Source, row.Status);
+        }
+
+        return rows
+            .OrderByDescending(row => row.RequestedAt)
+            .Take(take)
+            .ToList();
     }
+
+    private async Task AppendProcessingRowsAsync(System.Data.IDbConnection conn, string sql, string? fallbackSql, object args, List<ProcessingCenterRowVm> rows, CancellationToken ct)
+    {
+        try
+        {
+            rows.AddRange(await conn.QueryAsync<ProcessingCenterRowVm>(new CommandDefinition(sql, args, cancellationToken: ct)));
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            _logger.LogWarning(ex, "Fonte ausente na central de processamento.");
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedColumn && fallbackSql is not null)
+        {
+            _logger.LogWarning(ex, "Coluna opcional ausente na central de processamento. A consulta foi reduzida.");
+            rows.AddRange(await conn.QueryAsync<ProcessingCenterRowVm>(new CommandDefinition(fallbackSql, args, cancellationToken: ct)));
+        }
+    }
+
+    private static object CenterArgs(Guid tenantId, ProcessingCenterCriteria criteria, string? lane, int take) => new
+    {
+        tenantId,
+        from = criteria.From,
+        to = criteria.To,
+        lane,
+        statuses = criteria.Statuses.ToArray(),
+        name = criteria.NameLike,
+        userId = criteria.UserId,
+        documentTypeId = criteria.DocumentTypeId,
+        take
+    };
+
+    private static DateTime? ParseDate(string? value)
+        => DateTime.TryParse(value, out var parsed) ? parsed : null;
 
     private async Task<ProcessingMetricsVm> GetProcessingMetricsAsync(Guid tenantId, CancellationToken ct)
     {
@@ -1557,13 +1600,41 @@ WHERE j.tenant_id = @tenantId;";
         var row = await conn.QuerySingleAsync(
             new CommandDefinition(sql, new { tenantId }, cancellationToken: ct));
 
-        return new ProcessingMetricsVm
+        var metrics = new ProcessingMetricsVm
         {
             PendingCount = (int)row.pendingcount,
             ProcessingCount = (int)row.processingcount,
             Errors24h = (int)row.errors24h,
             AvgQueueSeconds = Convert.ToDecimal(row.avgqueueseconds)
         };
+
+        try
+        {
+            var jobs = await conn.QuerySingleAsync(new CommandDefinition(ProcessingCenterSql.JobCounts, new { tenantId }, cancellationToken: ct));
+            metrics.PendingCount += (int)jobs.pendingcount;
+            metrics.ProcessingCount += (int)jobs.processingcount;
+            metrics.Errors24h += (int)jobs.failed24h;
+            metrics.Completed24h = (int)jobs.completed24h;
+            metrics.Cancelled24h = (int)jobs.cancelled24h;
+            metrics.PreviewActive = (int)jobs.previewactive;
+        }
+        catch (PostgresException ex) when (ex.SqlState is PostgresErrorCodes.UndefinedTable or PostgresErrorCodes.UndefinedColumn)
+        {
+            _logger.LogWarning(ex, "Métricas da fila interna indisponíveis.");
+        }
+
+        try
+        {
+            var uploads = await conn.QuerySingleAsync(new CommandDefinition(ProcessingCenterSql.UploadCounts, new { tenantId }, cancellationToken: ct));
+            metrics.UploadActive = (int)uploads.activecount;
+            metrics.ReceivedBytes24h = (long)uploads.receivedbytes24h;
+        }
+        catch (PostgresException ex) when (ex.SqlState is PostgresErrorCodes.UndefinedTable or PostgresErrorCodes.UndefinedColumn)
+        {
+            _logger.LogWarning(ex, "Métricas de upload indisponíveis.");
+        }
+
+        return metrics;
     }
 
     private async Task<List<ProcessingErrorVm>> ListRecentOcrErrorsAsync(Guid tenantId, CancellationToken ct)
@@ -1593,15 +1664,25 @@ LIMIT 20;";
         return rows.ToList();
     }
 
-    public sealed class ProcessingRowVm
+    public sealed class ProcessingCenterRowVm
     {
-        public long JobId { get; set; }
-        public Guid VersionId { get; set; }
-        public Guid DocumentId { get; set; }
+        public string Source { get; set; } = "";
+        public string JobKey { get; set; } = "";
+        public Guid? VersionId { get; set; }
+        public Guid? DocumentId { get; set; }
         public string DocumentTitle { get; set; } = "";
+        public string Lane { get; set; } = "";
+        public string LaneLabel { get; set; } = "";
         public string Status { get; set; } = "";
+        public string Headline { get; set; } = "";
+        public int Attempts { get; set; }
+        public int MaxAttempts { get; set; }
+        public string? ErrorMessage { get; set; }
         public DateTime RequestedAt { get; set; }
         public DateTime? StartedAt { get; set; }
+        public DateTime? FinishedAt { get; set; }
+        public bool CanReprocess { get; set; }
+        public bool CanCancel { get; set; }
     }
 
     public sealed class ProcessingMetricsVm
@@ -1610,6 +1691,11 @@ LIMIT 20;";
         public int ProcessingCount { get; set; }
         public int Errors24h { get; set; }
         public decimal AvgQueueSeconds { get; set; }
+        public int Completed24h { get; set; }
+        public int Cancelled24h { get; set; }
+        public int PreviewActive { get; set; }
+        public int UploadActive { get; set; }
+        public long ReceivedBytes24h { get; set; }
     }
 
     public sealed class ProcessingErrorVm
@@ -3948,6 +4034,107 @@ VALUES
             _logger.LogError(ex, "Erro em DeleteDocument. Tenant={TenantId} User={UserId} DocId={DocId} FolderId={FolderId}", _currentUser.TenantId, _currentUser.UserId, id, folderId);
             return StatusCode(500, new { success = false, message = "Não foi possível excluir o documento." });
         }
+    }
+
+    [Authorize(Policy = AppPolicies.FullAdminOnly)]
+    [HttpGet]
+    public async Task<IActionResult> ProcessingExport(string? status, string? lane, string? q, DateTime? from, DateTime? to, string? userId, string? documentTypeId, CancellationToken ct)
+    {
+        if (!_currentUser.IsAuthenticated)
+            return Unauthorized();
+
+        var criteria = ProcessingCenterCatalog.Normalize(status, lane, q, from, to, userId, documentTypeId, DateTimeOffset.UtcNow);
+        var rows = await ListProcessingCenterAsync(_currentUser.TenantId, criteria, 1000, ct);
+        var builder = new StringBuilder();
+        builder.AppendLine("etapa,documento,situacao,tentativas,solicitado_em,erro");
+        foreach (var row in rows)
+        {
+            builder.Append(Csv(row.LaneLabel)).Append(',')
+                .Append(Csv(row.DocumentTitle)).Append(',')
+                .Append(Csv(row.Headline)).Append(',')
+                .Append(row.Attempts).Append('/')
+                .Append(row.MaxAttempts).Append(',')
+                .Append(Csv(row.RequestedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture))).Append(',')
+                .Append(Csv(row.ErrorMessage))
+                .AppendLine();
+        }
+
+        var bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(builder.ToString())).ToArray();
+        return File(bytes, "text/csv; charset=utf-8", "central-processamento.csv");
+    }
+
+    [Authorize(Policy = AppPolicies.FullAdminOnly)]
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RetryProcessingJob(Guid jobId, string? status, string? lane, string? q, DateTime? from, DateTime? to, string? userId, string? documentTypeId, CancellationToken ct)
+    {
+        if (jobId == Guid.Empty)
+            return BadRequest();
+
+        try
+        {
+            using var conn = await _db.OpenAsync(ct);
+            var affected = await conn.ExecuteAsync(new CommandDefinition(ProcessingCenterSql.RetryJob, new { tenantId = _currentUser.TenantId, jobId }, cancellationToken: ct));
+            TempData[affected > 0 ? "ok" : "erro"] = affected > 0
+                ? "Processamento recolocado na fila. O arquivo original permanece armazenado."
+                : "Não havia falha recuperável para reprocessar, ou já existe uma tarefa ativa para este documento.";
+            if (affected > 0)
+                await TryAuditProcessingAsync("UPDATE", jobId, "Reprocessamento solicitado na central.", ct);
+        }
+        catch (PostgresException ex)
+        {
+            _logger.LogError(ex, "Falha ao reprocessar job {JobId}. SqlState={SqlState}", jobId, ex.SqlState);
+            TempData["erro"] = "Não foi possível reprocessar. O documento armazenado não foi alterado.";
+        }
+
+        return RedirectToAction(nameof(Processing), new { status, lane, q, from = from?.ToString("yyyy-MM-dd"), to = to?.ToString("yyyy-MM-dd"), userId, documentTypeId });
+    }
+
+    [Authorize(Policy = AppPolicies.FullAdminOnly)]
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CancelProcessingJob(Guid jobId, string? status, string? lane, string? q, DateTime? from, DateTime? to, string? userId, string? documentTypeId, CancellationToken ct)
+    {
+        if (jobId == Guid.Empty)
+            return BadRequest();
+
+        try
+        {
+            using var conn = await _db.OpenAsync(ct);
+            var affected = await conn.ExecuteAsync(new CommandDefinition(ProcessingCenterSql.CancelJob, new { tenantId = _currentUser.TenantId, jobId }, cancellationToken: ct));
+            TempData[affected > 0 ? "ok" : "erro"] = affected > 0
+                ? "Processamento cancelado. O arquivo original permanece armazenado."
+                : "Esta tarefa não pode mais ser cancelada.";
+            if (affected > 0)
+                await TryAuditProcessingAsync("UPDATE", jobId, "Cancelamento solicitado na central.", ct);
+        }
+        catch (PostgresException ex)
+        {
+            _logger.LogError(ex, "Falha ao cancelar job {JobId}. SqlState={SqlState}", jobId, ex.SqlState);
+            TempData["erro"] = "Não foi possível cancelar. O documento armazenado não foi alterado.";
+        }
+
+        return RedirectToAction(nameof(Processing), new { status, lane, q, from = from?.ToString("yyyy-MM-dd"), to = to?.ToString("yyyy-MM-dd"), userId, documentTypeId });
+    }
+
+    private async Task TryAuditProcessingAsync(string action, Guid jobId, string summary, CancellationToken ct)
+    {
+        try
+        {
+            await _auditWriter.WriteAsync(_currentUser.TenantId, _currentUser.UserId, action, "PROCESSING_JOB", jobId, summary, HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { jobId }, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Auditoria da central de processamento não foi gravada. JobId={JobId}", jobId);
+        }
+    }
+
+    private static string Csv(string? value)
+    {
+        var text = value ?? string.Empty;
+        if (text.Length > 0 && text[0] is '=' or '+' or '-' or '@')
+            text = "'" + text;
+        return "\"" + text.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
     }
 
     [Authorize(Policy = AppPolicies.FullAdminOnly)]

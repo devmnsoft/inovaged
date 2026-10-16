@@ -70,7 +70,6 @@ public sealed class OcrController : Controller
         return View("~/Views/Ocr/Index.cshtml", vm);
     }
 
-    [HttpGet("/Ged/Processing")]
     [HttpGet("/Ged/Ocr")]
     [HttpGet("/OcrQueue")]
     [HttpGet("/Processing/Ocr")]
