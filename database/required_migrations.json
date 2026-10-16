@@ -1076,5 +1076,12 @@
     "area": "DemaisSetores",
     "required": true,
     "description": "Persistência durável por segmento clínico, alinhamento de status (BLOQUEADO_POLITICA) e snapshot histórico de entrega."
+  },
+  {
+    "name": "2026_11_07_preview_status_enum_operator_contract",
+    "path": "database/migrations/2026_11_07_preview_status_enum_operator_contract.sql",
+    "area": "Preview",
+    "required": true,
+    "description": "Garante o enum de preview na coluna de status e a chave única do upsert, sem apagar tentativas nem comparar varchar com o enum."
   }
 ]

@@ -31,6 +31,10 @@ public sealed class PreviewStatusContractAndRepositoryTests
             Assert.Contains("effectiveRequestedAt", content);
             Assert.Contains("requested_at = COALESCE(ged.preview_status.requested_at, EXCLUDED.requested_at, now())", content);
             Assert.Contains("ged.preview_status.current_attempt_id IS DISTINCT FROM EXCLUDED.current_attempt_id", content);
+            Assert.Contains("CAST(@statusText AS ged.preview_processing_status)", content);
+            Assert.Contains("CAST(@statusText AS text) = 'PROCESSING'", content);
+            Assert.DoesNotContain("@status::ged.preview_processing_status", content);
+            Assert.DoesNotContain("@status = 'PROCESSING'", content);
             Assert.DoesNotContain("WHEN EXCLUDED.status IN ('PROCESSING'::ged.preview_processing_status, 'FAILED'::ged.preview_processing_status) THEN 1", content);
         }
     }
@@ -152,6 +156,23 @@ public sealed class PreviewStatusContractAndRepositoryTests
 
         var requiredPath = Path.Combine(RepoRoot(), "database/required_migrations.json");
         Assert.Contains("2026_10_24_preview_attempt_and_recovery", File.ReadAllText(requiredPath), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void PreviewEnumOperatorMigration_SeparatesTextFromEnumAndKeepsRows()
+    {
+        var migrationPath = Path.Combine(RepoRoot(), "database/migrations/2026_11_07_preview_status_enum_operator_contract.sql");
+        Assert.True(File.Exists(migrationPath));
+        var sql = File.ReadAllText(migrationPath);
+        Assert.Contains("preview_processing_status", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ALTER COLUMN status TYPE ged.preview_processing_status", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ux_preview_status_tenant_version", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Nenhum dado foi alterado", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("delete from ged.preview_status", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("USING status::text", sql, StringComparison.OrdinalIgnoreCase);
+
+        var required = File.ReadAllText(Path.Combine(RepoRoot(), "database/required_migrations.json"));
+        Assert.Contains("2026_11_07_preview_status_enum_operator_contract", required, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

@@ -459,6 +459,118 @@ insert into ged.document (id, tenant_id, title) values (@documentId, @tenant, 'o
         Assert.Equal("confirmado", await database.Connection.ExecuteScalarAsync<string>("select title from ged.document where id=@id", new { id = documentId }));
     }
 
+    [LocalPgFact]
+    public async Task Preview_varchar_status_becomes_enum_and_upsert_covers_each_state()
+    {
+        await using var database = await ScratchDatabase.CreateAsync();
+        var tenant = database.TenantId;
+        var preservedError = Guid.NewGuid();
+        var preservedCancel = Guid.NewGuid();
+        await database.Connection.ExecuteAsync("""
+create schema if not exists ged;
+create table ged.preview_status (
+    tenant_id uuid not null,
+    document_version_id uuid not null,
+    status varchar(32) not null,
+    preview_path text null,
+    error_message text null,
+    requested_at timestamptz null,
+    finished_at timestamptz null,
+    attempts integer not null default 0,
+    last_attempt_at timestamptz null
+);
+insert into ged.preview_status (tenant_id, document_version_id, status, error_message, requested_at, attempts)
+values
+ (@tenant, @preservedError, 'ERROR', 'falha antiga', '2024-01-02T00:00:00Z', 4),
+ (@tenant, @preservedCancel, 'CANCELLED', null, '2024-01-03T00:00:00Z', 1);
+""", new { tenant, preservedError, preservedCancel });
+
+        await database.ExecuteFileAsync("database/migrations/2026_10_14_preview_status_upsert_contract.sql");
+        await database.ExecuteFileAsync("database/migrations/2026_10_23_preview_status_requested_at_contract.sql");
+        await database.ExecuteFileAsync("database/migrations/2026_10_24_preview_attempt_and_recovery.sql");
+        await database.ExecuteFileAsync("database/migrations/2026_11_07_preview_status_enum_operator_contract.sql");
+        await database.ExecuteFileAsync("database/migrations/2026_11_07_preview_status_enum_operator_contract.sql");
+
+        Assert.Equal("preview_processing_status", await database.Connection.ExecuteScalarAsync<string>("""
+select udt_name from information_schema.columns
+where table_schema='ged' and table_name='preview_status' and column_name='status';
+"""));
+        Assert.Equal("ERROR", await database.Connection.ExecuteScalarAsync<string>("select status::text from ged.preview_status where document_version_id=@id", new { id = preservedError }));
+        Assert.Equal(4, await database.Connection.ExecuteScalarAsync<int>("select attempts from ged.preview_status where document_version_id=@id", new { id = preservedError }));
+        Assert.Equal("falha antiga", await database.Connection.ExecuteScalarAsync<string>("select error_message from ged.preview_status where document_version_id=@id", new { id = preservedError }));
+        Assert.Equal("CANCELED", await database.Connection.ExecuteScalarAsync<string>("select status::text from ged.preview_status where document_version_id=@id", new { id = preservedCancel }));
+
+        var repo = new PreviewStatusRepository(database.Factory, NullLogger<PreviewStatusRepository>.Instance);
+        var requestedAt = DateTimeOffset.Parse("2026-10-16T12:00:00Z");
+        var readyVersion = Guid.NewGuid();
+        var readyAttempt = Guid.NewGuid();
+        await repo.UpsertAsync(tenant, readyVersion, PreviewProcessingStatus.Pending, null, null, requestedAt, null, CancellationToken.None);
+        await repo.UpsertAsync(Write(tenant, readyVersion, PreviewProcessingStatus.Processing, requestedAt, readyAttempt), CancellationToken.None);
+        await repo.UpsertAsync(Write(tenant, readyVersion, PreviewProcessingStatus.Ready, requestedAt, readyAttempt, path: "previews/pronto.pdf", confirm: true), CancellationToken.None);
+        var ready = await repo.GetAsync(tenant, readyVersion, CancellationToken.None);
+        Assert.Equal(PreviewProcessingStatus.Ready, ready!.Status);
+        Assert.Equal("previews/pronto.pdf", ready.PreviewPath);
+        Assert.Equal(1, ready.Attempts);
+
+        var failedVersion = Guid.NewGuid();
+        var failedAttempt = Guid.NewGuid();
+        await repo.UpsertAsync(tenant, failedVersion, PreviewProcessingStatus.Pending, null, null, requestedAt, null, CancellationToken.None);
+        await repo.UpsertAsync(Write(tenant, failedVersion, PreviewProcessingStatus.Processing, requestedAt, failedAttempt), CancellationToken.None);
+        await repo.UpsertAsync(Write(tenant, failedVersion, PreviewProcessingStatus.Error, requestedAt, failedAttempt, error: "conversão"), CancellationToken.None);
+        var recoveredAttempt = Guid.NewGuid();
+        await repo.UpsertAsync(Write(tenant, failedVersion, PreviewProcessingStatus.Processing, requestedAt, recoveredAttempt), CancellationToken.None);
+        await repo.UpsertAsync(Write(tenant, failedVersion, PreviewProcessingStatus.Ready, requestedAt, recoveredAttempt, path: "previews/recuperado.pdf", confirm: true), CancellationToken.None);
+        var recovered = await repo.GetAsync(tenant, failedVersion, CancellationToken.None);
+        Assert.Equal(PreviewProcessingStatus.Ready, recovered!.Status);
+        Assert.Equal(2, recovered.Attempts);
+        Assert.Null(recovered.ErrorMessage);
+
+        var canceledVersion = Guid.NewGuid();
+        await repo.UpsertAsync(tenant, canceledVersion, PreviewProcessingStatus.Pending, null, null, requestedAt, null, CancellationToken.None);
+        await repo.UpsertAsync(tenant, canceledVersion, PreviewProcessingStatus.Canceled, null, "cancelado pelo operador", requestedAt, DateTimeOffset.UtcNow, CancellationToken.None);
+        var canceled = await repo.GetAsync(tenant, canceledVersion, CancellationToken.None);
+        Assert.Equal(PreviewProcessingStatus.Canceled, canceled!.Status);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => repo.UpsertAsync(tenant, canceledVersion, PreviewProcessingStatus.Ready, "previews/nao.pdf", null, requestedAt, DateTimeOffset.UtcNow, CancellationToken.None));
+        Assert.Equal(PreviewProcessingStatus.Canceled, (await repo.GetAsync(tenant, canceledVersion, CancellationToken.None))!.Status);
+
+        Assert.Null(await repo.GetAsync(Guid.NewGuid(), readyVersion, CancellationToken.None));
+        Assert.Equal(1, await database.Connection.ExecuteScalarAsync<int>("select count(*) from ged.preview_status where tenant_id=@tenant and document_version_id=@version", new { tenant, version = readyVersion }));
+
+        var concurrentVersion = Guid.NewGuid();
+        await Task.WhenAll(
+            repo.UpsertAsync(tenant, concurrentVersion, PreviewProcessingStatus.Pending, null, null, requestedAt, null, CancellationToken.None),
+            repo.UpsertAsync(tenant, concurrentVersion, PreviewProcessingStatus.Pending, null, null, requestedAt, null, CancellationToken.None));
+        Assert.Equal(1, await database.Connection.ExecuteScalarAsync<int>("select count(*) from ged.preview_status where tenant_id=@tenant and document_version_id=@version", new { tenant, version = concurrentVersion }));
+        Assert.Equal("PENDING", await database.Connection.ExecuteScalarAsync<string>("select status::text from ged.preview_status where document_version_id=@version", new { version = concurrentVersion }));
+    }
+
+    [LocalPgFact]
+    public async Task Preview_status_migration_keeps_unknown_label_and_does_not_delete_rows()
+    {
+        await using var database = await ScratchDatabase.CreateAsync();
+        var versionId = Guid.NewGuid();
+        await database.Connection.ExecuteAsync("""
+create schema if not exists ged;
+create table ged.preview_status (
+    tenant_id uuid not null,
+    document_version_id uuid not null,
+    status varchar(32) not null,
+    requested_at timestamptz not null
+);
+insert into ged.preview_status (tenant_id, document_version_id, status, requested_at)
+values (@tenant, @version, 'BOGUS', now());
+""", new { tenant = database.TenantId, version = versionId });
+
+        var blocked = await Assert.ThrowsAsync<PostgresException>(() => database.ExecuteFileAsync("database/migrations/2026_11_07_preview_status_enum_operator_contract.sql"));
+        Assert.Equal("P0001", blocked.SqlState);
+        Assert.Equal(1, await database.Connection.ExecuteScalarAsync<int>("select count(*) from ged.preview_status"));
+        Assert.Equal("BOGUS", await database.Connection.ExecuteScalarAsync<string>("select status from ged.preview_status where document_version_id=@version", new { version = versionId }));
+        Assert.Equal("character varying", await database.Connection.ExecuteScalarAsync<string>("""
+select data_type from information_schema.columns
+where table_schema='ged' and table_name='preview_status' and column_name='status';
+"""));
+    }
+
     private static PreviewStatusUpsert Write(Guid tenantId, Guid versionId, PreviewProcessingStatus status, DateTimeOffset requestedAt, Guid attemptId, string? error = null, string? path = null, bool confirm = false)
         => new()
         {

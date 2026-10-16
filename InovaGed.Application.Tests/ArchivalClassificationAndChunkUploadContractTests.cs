@@ -107,6 +107,17 @@ public sealed class ArchivalClassificationAndChunkUploadContractTests
         Assert.Equal(2_147_483_649, bytes.MaxBytes);
         Assert.False(InovaGed.Application.Ged.Documents.DocumentUploadSizePolicy.Exceeds(new InovaGed.Application.Ged.Documents.DocumentUploadOptions { MaxFileSizeBytes = 2_147_483_649 }, 2_147_483_649, out _));
         Assert.True(InovaGed.Application.Ged.Documents.DocumentUploadSizePolicy.Exceeds(new InovaGed.Application.Ged.Documents.DocumentUploadOptions { MaxFileSizeBytes = 2_147_483_649 }, 2_147_483_650, out _));
+
+        const long tenGiB = 10_737_418_240;
+        var configured = InovaGed.Application.Ged.Documents.DocumentUploadSizePolicy.Resolve(new InovaGed.Application.Ged.Documents.DocumentUploadOptions { MaxFileSizeBytes = tenGiB, MaxFileSizeMb = 1 });
+        Assert.Equal(tenGiB, configured.MaxBytes);
+        Assert.False(InovaGed.Application.Ged.Documents.DocumentUploadSizePolicy.Exceeds(new InovaGed.Application.Ged.Documents.DocumentUploadOptions { MaxFileSizeBytes = tenGiB }, tenGiB, out _));
+        Assert.True(InovaGed.Application.Ged.Documents.DocumentUploadSizePolicy.Exceeds(new InovaGed.Application.Ged.Documents.DocumentUploadOptions { MaxFileSizeBytes = tenGiB }, tenGiB + 1, out _));
+        Assert.Equal(tenGiB, InovaGed.Application.Ged.Documents.DocumentUploadSizePolicy.Resolve(new InovaGed.Application.Ged.Documents.DocumentUploadOptions { MaxFileSizeMb = 10240 }).MaxBytes);
+
+        var settings = File.ReadAllText(Root("InovaGed.Web/appsettings.json"));
+        Assert.Contains("\"MaxFileSizeBytes\": 10737418240", settings, StringComparison.Ordinal);
+        Assert.Contains("\"MaxFileSizeMb\": 10240", settings, StringComparison.Ordinal);
     }
 
     private static string Root(string path) => GlobalJsonContractTests.Root(path);

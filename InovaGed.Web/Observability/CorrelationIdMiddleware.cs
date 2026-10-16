@@ -43,7 +43,14 @@ public sealed class RequestTelemetryMiddleware(RequestDelegate next, ILogger<Req
             Active.Add(-1); var route = context.GetEndpoint()?.Metadata.GetMetadata<Microsoft.AspNetCore.Routing.RouteNameMetadata>()?.RouteName ?? context.GetEndpoint()?.DisplayName ?? "unmatched";
             var statusClass = $"{context.Response.StatusCode / 100}xx"; var tags = new TagList { { "route", route }, { "method", context.Request.Method }, { "status_class", statusClass } };
             Requests.Add(1, tags); if (context.Response.StatusCode >= 500) Errors.Add(1, tags); var elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds; Duration.Record(elapsed, tags);
-            logger.LogInformation("HTTP request completed {Method} {Route} with {StatusCode} in {DurationMs} ms and {ResponseSize} bytes", context.Request.Method, route, context.Response.StatusCode, elapsed, context.Response.ContentLength);
+            var announcedSize = context.Response.ContentLength;
+            logger.LogInformation(
+                "HTTP request completed {Method} {Route} with {StatusCode} in {DurationMs} ms and {ResponseSize}",
+                context.Request.Method,
+                route,
+                context.Response.StatusCode,
+                elapsed,
+                announcedSize is long responseBytes ? $"{responseBytes} bytes" : "tamanho não informado");
         }
     }
 }

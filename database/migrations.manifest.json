@@ -1434,6 +1434,14 @@
       "transactional": true,
       "deploymentSafety": "Additive",
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_11_07_preview_status_enum_operator_contract",
+      "path": "database/migrations/2026_11_07_preview_status_enum_operator_contract.sql",
+      "module": "Preview",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
     }
   ]
 }

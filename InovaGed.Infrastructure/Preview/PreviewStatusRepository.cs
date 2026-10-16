@@ -145,12 +145,12 @@ LIMIT 1;";
                     requested_at, requested_at_kind, finished_at, attempts, last_attempt_at,
                     attempt_started_at, current_attempt_id, persistence_error, pending_preview_path, outcome_confirmed_at)
                 VALUES (
-                    @tenantId, @versionId, @status::ged.preview_processing_status, @previewPath, @errorMessage,
+                    @tenantId, @versionId, CAST(@statusText AS ged.preview_processing_status), @previewPath, @errorMessage,
                     @requestedAt, @requestedAtKind, @finishedAt,
-                    CASE WHEN @status = 'PROCESSING' AND @attemptId IS NOT NULL THEN 1 ELSE 0 END,
-                    CASE WHEN @status = 'PROCESSING' AND @attemptId IS NOT NULL THEN now() ELSE NULL END,
-                    CASE WHEN @status = 'PROCESSING' AND @attemptId IS NOT NULL THEN now() ELSE NULL END,
-                    CASE WHEN @status = 'PROCESSING' THEN @attemptId ELSE NULL END,
+                    CASE WHEN CAST(@statusText AS text) = 'PROCESSING' AND @attemptId IS NOT NULL THEN 1 ELSE 0 END,
+                    CASE WHEN CAST(@statusText AS text) = 'PROCESSING' AND @attemptId IS NOT NULL THEN now() ELSE NULL END,
+                    CASE WHEN CAST(@statusText AS text) = 'PROCESSING' AND @attemptId IS NOT NULL THEN now() ELSE NULL END,
+                    CASE WHEN CAST(@statusText AS text) = 'PROCESSING' THEN @attemptId ELSE NULL END,
                     @persistenceError, @pendingPreviewPath,
                     CASE WHEN @confirmOutcome THEN now() ELSE NULL END)
                 ON CONFLICT (tenant_id, document_version_id)
@@ -206,7 +206,7 @@ LIMIT 1;";
             {
                 tenantId = request.TenantId,
                 versionId = request.VersionId,
-                status = ToDatabaseStatus(status),
+                statusText = ToDatabaseStatus(status),
                 previewPath = effectivePreviewPath,
                 errorMessage = effectiveErrorMessage,
                 requestedAt = effectiveRequestedAt,
