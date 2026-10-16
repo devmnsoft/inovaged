@@ -16,6 +16,29 @@ public sealed class PreviewStatusRepository : IPreviewStatusRepository
         _logger = logger;
     }
 
+    public async Task<bool> HasCanonicalStatusTypeAsync(CancellationToken ct)
+    {
+        const string sql = """
+SELECT c.udt_schema = 'ged'
+   AND c.udt_name = 'preview_processing_status'
+   AND (
+        SELECT count(DISTINCT e.enumlabel)
+        FROM pg_enum e
+        JOIN pg_type t ON t.oid = e.enumtypid
+        JOIN pg_namespace n ON n.oid = t.typnamespace
+        WHERE n.nspname = 'ged'
+          AND t.typname = 'preview_processing_status'
+          AND e.enumlabel IN ('PENDING', 'PROCESSING', 'READY', 'FAILED', 'CANCELED', 'ERROR')
+   ) = 6
+FROM information_schema.columns c
+WHERE c.table_schema = 'ged'
+  AND c.table_name = 'preview_status'
+  AND c.column_name = 'status';
+""";
+        await using var conn = await _db.OpenAsync(ct);
+        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition(sql, cancellationToken: ct));
+    }
+
     public async Task<PreviewStatusDto?> GetAsync(Guid tenantId, Guid versionId, CancellationToken ct)
     {
         try

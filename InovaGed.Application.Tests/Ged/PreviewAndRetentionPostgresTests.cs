@@ -573,6 +573,37 @@ where table_schema='ged' and table_name='preview_status' and column_name='status
     }
 
     [LocalPgFact]
+    public async Task Preview_enum_migration_preserves_update_of_status_trigger()
+    {
+        await using var database = await ScratchDatabase.CreateAsync();
+        var versionId = Guid.NewGuid();
+        await database.ExecuteAsync("create schema if not exists ged;");
+        await database.Connection.ExecuteAsync("""
+create table ged.preview_status (
+    id uuid primary key default gen_random_uuid(),
+    tenant_id uuid not null,
+    document_version_id uuid not null,
+    status varchar not null default 'PENDING',
+    requested_at timestamptz not null default now(),
+    requested_at_kind text not null default 'ORIGINAL'
+);
+create unique index ux_preview_status_tenant_version on ged.preview_status (tenant_id, document_version_id);
+create function ged.sector_processing_notification() returns trigger language plpgsql as $$ begin return new; end $$;
+create trigger sector_processing_preview after insert or update of status on ged.preview_status for each row execute function ged.sector_processing_notification();
+insert into ged.preview_status (tenant_id, document_version_id, status) values (@tenant, @version, 'PENDING');
+""", new { tenant = database.TenantId, version = versionId });
+
+        await database.ExecuteFileAsync("database/migrations/2026_11_07_preview_status_enum_operator_contract.sql");
+
+        Assert.Equal("preview_processing_status", await database.Connection.ExecuteScalarAsync<string>("""
+select udt_name from information_schema.columns
+where table_schema='ged' and table_name='preview_status' and column_name='status';
+"""));
+        Assert.Equal(1, await database.Connection.ExecuteScalarAsync<int>("select count(*) from pg_trigger where tgname='sector_processing_preview' and not tgisinternal"));
+        Assert.Equal("PENDING", await database.Connection.ExecuteScalarAsync<string>("select status::text from ged.preview_status where document_version_id=@version", new { version = versionId }));
+    }
+
+    [LocalPgFact]
     public async Task Processing_center_keeps_tenant_scope_and_does_not_duplicate_an_active_job()
     {
         await using var database = await ScratchDatabase.CreateAsync();

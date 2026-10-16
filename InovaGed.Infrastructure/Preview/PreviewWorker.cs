@@ -41,6 +41,15 @@ public sealed class PreviewWorker : BackgroundService
                 using var scope = _scopeFactory.CreateScope();
                 var jobs = scope.ServiceProvider.GetRequiredService<IGedProcessingJobRepository>();
                 var statusRepo = scope.ServiceProvider.GetRequiredService<IPreviewStatusRepository>();
+                if (!await statusRepo.HasCanonicalStatusTypeAsync(stoppingToken))
+                {
+                    _consecutiveCycleFailures++;
+                    var delay = CycleBackoff(_consecutiveCycleFailures);
+                    _logger.LogError("Preview suspenso: ged.preview_status.status não é o enum ged.preview_processing_status com os rótulos PENDING, PROCESSING, READY, FAILED, CANCELED e ERROR. Aplique 2026_11_07_preview_status_enum_operator_contract. Nenhum documento foi alterado. DelaySeconds={DelaySeconds}", delay.TotalSeconds);
+                    await Task.Delay(delay, stoppingToken);
+                    continue;
+                }
+
                 var recovered = await jobs.RecoverAbandonedAsync("PREVIEW", PreviewQueue.AbandonedLease, stoppingToken);
                 if (recovered > 0)
                     _logger.LogWarning("Previews em PROCESSING abandonado recuperados. Total={Total}", recovered);

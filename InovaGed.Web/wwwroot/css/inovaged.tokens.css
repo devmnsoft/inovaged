@@ -8,9 +8,9 @@
     --ig-brand-gradient:linear-gradient(135deg,#2563eb,#22c55e);
     --ig-motion-slow:260ms;
     --ig-surface:#ffffff;
-    --ig-surface-subtle:#f8fafc;
-    --ig-border:#e2e8f0;
-    --ig-text:#0f172a;
-    --ig-text-muted:#64748b;
+    --ig-surface-subtle:#f5f7fa;
+    --ig-border:#cbd5e1;
+    --ig-text:#17212f;
+    --ig-text-muted:#475569;
     --ig-radius:12px;
 }

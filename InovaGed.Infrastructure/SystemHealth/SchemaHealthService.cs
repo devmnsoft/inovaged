@@ -482,8 +482,20 @@ from pg_indexes
 where schemaname = 'ged';", cancellationToken: ct))).ToList();
             var existingIndexes = existingIndexRows.Select(i => i.IndexName).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+            var previewEnumValues = (await conn.QueryAsync<string>(new CommandDefinition(@"
+select e.enumlabel
+from pg_enum e
+join pg_type t on t.oid = e.enumtypid
+join pg_namespace n on n.oid = t.typnamespace
+where n.nspname = 'ged' and t.typname = 'preview_processing_status';", cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var requiredPreviewStatuses = new[] { "PENDING", "PROCESSING", "READY", "FAILED", "CANCELED", "ERROR" };
+            var previewEnumOk = requiredPreviewStatuses.All(previewEnumValues.Contains);
+            AddCheck(report, "GED_ENUM_PREVIEW_PROCESSING_STATUS", "Preview", "ged.preview_processing_status", "Enum", "Critical", previewEnumOk,
+                previewEnumOk ? "Enum do preview contém PENDING, PROCESSING, READY, FAILED, CANCELED e ERROR." : "Enum do preview ausente ou sem os rótulos exigidos. O preview não está saudável.",
+                "Aplique database/migrations/2026_11_07_preview_status_enum_operator_contract.sql. Ela não apaga linhas. Se faltar um rótulo, aplique antes 2026_10_23_preview_status_requested_at_contract.");
+
             AddDocumentSearchTenantVersionIndexCheck(report, existingColumns, existingIndexRows);
-            AddPreviewStatusUpsertContractCheck(report, existingTables, existingColumns, columnContracts, existingIndexRows);
+            AddPreviewStatusUpsertContractCheck(report, existingTables, existingColumns, columnContracts, existingIndexRows, previewEnumOk);
             AddCheck(report, "SMART_SEARCH_CONTEXT_TERM", "SmartSearch", "ged.search_context_term", "Tabela", "Warning", existingTables.Contains("ged.search_context_term"), "Dicionário de contexto da busca inteligente disponível.", "Execute database/migrations/2026_06_finalize_loans_secure_document_sharing.sql.");
             AddCheck(report, "LOANS_SECURE_DOCUMENT_LINK", "Loans", "ged.secure_document_link", "Tabela", "Warning", existingTables.Contains("ged.secure_document_link"), "Links seguros de entrega digital disponíveis.", "Execute database/migrations/2026_06_fix_secure_document_link_sharing.sql.");
             AddCheck(report, "LOANS_SECURE_DOCUMENT_LINK_ACCESS", "Loans", "ged.secure_document_link_access", "Tabela", "Warning", existingTables.Contains("ged.secure_document_link_access"), "Auditoria de acessos a links seguros disponível.", "Execute database/migrations/2026_06_fix_secure_document_link_sharing.sql.");
@@ -788,7 +800,7 @@ limit 1;", cancellationToken: ct));
             && index.IndexDef.Contains(expectedColumns, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static void AddPreviewStatusUpsertContractCheck(SchemaHealthReportDto report, HashSet<string> existingTables, HashSet<string> existingColumns, IReadOnlyDictionary<string, PgColumnContractInfo> columnContracts, IReadOnlyList<PgIndexInfo> existingIndexes)
+    private static void AddPreviewStatusUpsertContractCheck(SchemaHealthReportDto report, HashSet<string> existingTables, HashSet<string> existingColumns, IReadOnlyDictionary<string, PgColumnContractInfo> columnContracts, IReadOnlyList<PgIndexInfo> existingIndexes, bool previewEnumOk)
     {
         const string checkId = "GED_PREVIEW_STATUS_UPSERT_CONTRACT";
         const string objectName = "ged.preview_status(tenant_id, document_version_id)";
@@ -810,7 +822,7 @@ limit 1;", cancellationToken: ct));
         var statusOk = columnContracts.TryGetValue("preview_status.status", out var status)
             && string.Equals(status.UdtName, "preview_processing_status", StringComparison.OrdinalIgnoreCase)
             && !string.IsNullOrWhiteSpace(status.ColumnDefault);
-        var hasUniqueContract = hasTable && hasRequiredColumns && requestedAtOk && statusOk && existingIndexes.Any(index =>
+        var hasUniqueContract = previewEnumOk && hasTable && hasRequiredColumns && requestedAtOk && statusOk && existingIndexes.Any(index =>
             index.IndexDef.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase)
             && index.IndexDef.Contains("ON ged.preview_status", StringComparison.OrdinalIgnoreCase)
             && index.IndexDef.Contains("(tenant_id, document_version_id)", StringComparison.OrdinalIgnoreCase)
@@ -820,7 +832,7 @@ limit 1;", cancellationToken: ct));
             hasUniqueContract
                 ? "Contrato do preview por tenant/versão OK: chave única, enum, requested_at obrigatório com default e colunas de tentativa disponíveis."
                 : "Contrato do preview incompatível; PreviewVersion pode falhar por conflito sem índice, requested_at nulo/sem default ou enum/colunas de estado incompletos.",
-            "Execute database/migrations/2026_10_14_preview_status_upsert_contract.sql, database/migrations/2026_10_23_preview_status_requested_at_contract.sql e database/migrations/2026_10_24_preview_attempt_and_recovery.sql pelo migrador oficial. Duplicidade não é apagada: a migration 2026_10_14 interrompe e preserva as duas linhas. A reconciliação exige decisão explícita; não use exclusão automática.");
+            "Se status não for ged.preview_processing_status, aplique database/migrations/2026_11_07_preview_status_enum_operator_contract.sql. Ela preserva as linhas e recria gatilhos UPDATE OF status. Também exigem 2026_10_14, 2026_10_23 e 2026_10_24. Duplicidade não é apagada. O preview não está saudável enquanto esta verificação falhar.");
     }
 
     private sealed class PgIndexInfo

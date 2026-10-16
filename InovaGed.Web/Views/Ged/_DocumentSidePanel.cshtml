@@ -131,6 +131,20 @@
     </section>
 
     <section class="d-none" data-ged-tab-panel="preview">
+        <ul class="ged-process-states" aria-label="Etapas do documento">
+            <li>
+                <span>Visualização</span>
+                <strong>@(string.IsNullOrWhiteSpace(Model.PreviewUrl) ? "Não disponível neste formato" : "Disponível")</strong>
+            </li>
+            <li>
+                <span>Reconhecimento de texto</span>
+                <strong>@(Model.IsOcrAvailable ? "Disponível" : ocrUnavailableText)</strong>
+            </li>
+            <li>
+                <span>Classificação</span>
+                <strong>@(Model.HasClassificationError ? "Falha na consulta" : hasClassification ? Model.ClassificationName : "Aguardando classificação")</strong>
+            </li>
+        </ul>
         <div class="ged-preview-toolbar">
           <div class="ged-preview-context" data-part-preview-title title="@Model.FileName"><span>Visualização segura</span><strong>@Model.FileName</strong></div>
           <div class="ged-side-actions-bar">

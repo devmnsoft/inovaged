@@ -3245,6 +3245,9 @@ SELECT
                 return File(preview, "application/pdf", enableRangeProcessing: true);
             }
 
+            if (!await _previewStatus.HasCanonicalStatusTypeAsync(ct))
+                return PreviewSchemaErrorHtml(versionId, HttpContext.TraceIdentifier);
+
             await _previewStatus.UpsertAsync(tenantId, versionId, PreviewProcessingStatus.Pending, null, null, DateTimeOffset.UtcNow, null, ct);
             await _previewQueue.EnqueueAsync(tenantId, v.DocumentId, versionId, v.StoragePath, v.FileName, ct);
             return PreviewProcessingHtml(versionId);
@@ -3254,7 +3257,7 @@ SELECT
             _logger.LogInformation(ex, "GED preview abortado pelo cliente. Tenant={TenantId} User={UserId} VersionId={VersionId} Range={Range} ElapsedMs={ElapsedMs} Aborted={Aborted}", tenantId, userId, versionId, range, sw.ElapsedMilliseconds, true);
             return new EmptyResult();
         }
-        catch (PostgresException ex) when (ex.SqlState is "42P10" or "42P01" or "42703")
+        catch (PostgresException ex) when (ex.SqlState is "42P10" or "42P01" or "42703" or "42883")
         {
             var correlationId = HttpContext.TraceIdentifier;
             _logger.LogError(ex, "Schema de preview incompatível. SqlState={SqlState} Tenant={TenantId} User={UserId} VersionId={VersionId} CorrelationId={CorrelationId}", ex.SqlState, tenantId, userId, versionId, correlationId);
@@ -3293,7 +3296,7 @@ SELECT
 <body>
   <div class=""box"">
     <div><span class=""spinner""></span><strong>Gerando / atualizando visualização…</strong></div>
-    <p class=""muted"">Isso pode levar alguns segundos. A página vai tentar novamente automaticamente.</p>
+    <p class=""muted"">A visualização é preparada em segundo plano. O reconhecimento de texto e a classificação seguem em etapas separadas e não impedem a consulta do arquivo original.</p>
     <div id=""statusInfo"" class=""status-msg"">Aguardando processamento do documento...</div>
     <p class=""muted"" style=""margin-top:16px;"">Se demorar muito, clique em <a href=""{retryUrl}"">tentar novamente</a>.</p>
   </div>
@@ -3956,6 +3959,12 @@ VALUES
 
             if (IsImage(v.ContentType, v.FileName) || IsPdf(v.ContentType, v.FileName))
                 return RedirectToAction(nameof(Details), new { id = v.DocumentId });
+
+            if (!await _previewStatus.HasCanonicalStatusTypeAsync(ct))
+            {
+                TempData["erro"] = "A visualização está indisponível até a atualização do banco. O documento original permanece armazenado.";
+                return RedirectToAction(nameof(Details), new { id = v.DocumentId });
+            }
 
             var previewRelPath = BuildPreviewPath(tenantId, v.DocumentId, versionId, v.FileName);
 

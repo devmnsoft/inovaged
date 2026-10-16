@@ -1,31 +1,31 @@
 :root {
-    --ig-primary-900: #172554;
-    --ig-primary-800: #1e3a8a;
+    --ig-primary-900: #17324d;
+    --ig-primary-800: #17324d;
     --ig-primary-700: #1d4ed8;
     --ig-primary-600: #2563eb;
     --ig-primary-500: #3b82f6;
     --ig-primary-100: #dbeafe;
     --ig-primary-50: #eff6ff;
-    --ig-accent-700: #15803d;
+    --ig-accent-700: #0f766e;
     --ig-accent-600: #16a34a;
     --ig-accent-500: #22c55e;
     --ig-accent-100: #dcfce7;
     --ig-accent-50: #f0fdf4;
-    --ig-page: #f5f7fb;
+    --ig-page: #f5f7fa;
     --ig-surface: #fff;
     --ig-surface-soft: #f8fafc;
     --ig-surface-muted: #f1f5f9;
     --ig-surface-selected: #eef4ff;
-    --ig-text: #0f172a;
+    --ig-text: #17212f;
     --ig-text-secondary: #475569;
-    --ig-text-muted: #64748b;
+    --ig-text-muted: #475569;
     --ig-text-disabled: #94a3b8;
-    --ig-border: #e2e8f0;
+    --ig-border: #cbd5e1;
     --ig-border-strong: #8494a7;
-    --ig-success: #16a34a;
+    --ig-success: #166534;
     --ig-info: #0284c7;
     --ig-warning: #d97706;
-    --ig-danger: #dc2626;
+    --ig-danger: #b91c1c;
     --ig-sidebar-width: 272px;
     --ig-sidebar-collapsed-width: 76px;
     --ig-topbar-height: 64px;
@@ -54,4 +54,70 @@
     --ig-motion-slow: 220ms;
     --ig-ease-standard: cubic-bezier(.2, .8, .2, 1);
     --ig-font-sans: Inter, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+    --bs-body-color: #17212f;
+    --bs-body-bg: #f5f7fa;
+    --bs-primary: #2563eb;
+    --bs-link-color: #1d4ed8;
+    --bs-link-hover-color: #17324d;
+    --bs-border-color: #cbd5e1;
+    --bs-secondary-color: #475569;
+    --bs-emphasis-color: #17212f;
+    --bs-heading-color: #17212f;
+}
+
+body {
+    color: var(--ig-text);
+    background: var(--ig-page);
+}
+
+.form-control,
+.form-select {
+    color: var(--ig-text);
+    background: var(--ig-surface);
+    border-color: var(--ig-border);
+}
+
+.form-control::placeholder {
+    color: #475569;
+}
+
+.table {
+    color: var(--ig-text);
+}
+
+.table thead th {
+    color: #17212f;
+}
+
+.btn-primary {
+    background: #2563eb;
+    border-color: #2563eb;
+    color: #fff;
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
+    color: #fff;
+}
+
+.bg-dark,
+.text-bg-dark {
+    color: #f8fafc;
+}
+
+.bg-dark .text-primary,
+.text-bg-dark .text-primary,
+.bg-dark a,
+.text-bg-dark a {
+    color: #dbeafe;
+}
+
+a:focus-visible,
+button:focus-visible,
+.form-control:focus,
+.form-select:focus {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
 }

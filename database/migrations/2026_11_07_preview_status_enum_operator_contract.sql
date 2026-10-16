@@ -30,6 +30,8 @@ DECLARE
     unknown_count integer;
     null_count integer;
     duplicate_count integer;
+    trigger_sql text;
+    trigger_defs text[] := ARRAY[]::text[];
 BEGIN
     IF to_regclass('ged.preview_status') IS NULL THEN
         RAISE EXCEPTION 'ged.preview_status não existe. Aplique 2026_10_14_preview_status_upsert_contract antes. Nenhum dado foi alterado.'
@@ -103,6 +105,27 @@ BEGIN
                 USING ERRCODE = 'P0001';
         END IF;
 
+        -- UPDATE OF status impede ALTER TYPE. O gatilho é recriado com a mesma definição.
+        FOR trigger_sql IN
+            SELECT t.tgname || E'\n' || pg_get_triggerdef(t.oid)
+            FROM pg_trigger t
+            JOIN pg_class c ON c.oid = t.tgrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'ged'
+              AND c.relname = 'preview_status'
+              AND NOT t.tgisinternal
+              AND EXISTS (
+                  SELECT 1
+                  FROM pg_attribute a
+                  WHERE a.attrelid = t.tgrelid
+                    AND a.attname = 'status'
+                    AND a.attnum = ANY (t.tgattr)
+              )
+        LOOP
+            EXECUTE format('DROP TRIGGER IF EXISTS %I ON ged.preview_status', split_part(trigger_sql, E'\n', 1));
+            trigger_defs := array_append(trigger_defs, substr(trigger_sql, position(E'\n' in trigger_sql) + 1));
+        END LOOP;
+
         ALTER TABLE ged.preview_status ALTER COLUMN status DROP DEFAULT;
         ALTER TABLE ged.preview_status
             ALTER COLUMN status TYPE ged.preview_processing_status
@@ -117,6 +140,12 @@ BEGIN
                     ELSE 'PENDING'
                 END::ged.preview_processing_status
             );
+
+        IF trigger_defs IS NOT NULL THEN
+            FOREACH trigger_sql IN ARRAY trigger_defs LOOP
+                EXECUTE trigger_sql;
+            END LOOP;
+        END IF;
     END IF;
 END $$;
 

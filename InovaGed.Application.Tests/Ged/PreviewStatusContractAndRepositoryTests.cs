@@ -208,6 +208,15 @@ public sealed class PreviewStatusContractAndRepositoryTests
         Assert.Contains("Nenhum dado foi alterado", sql, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("delete from ged.preview_status", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("USING status::text", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("DROP TRIGGER IF EXISTS", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("42883", File.ReadAllText(Path.Combine(RepoRoot(), "InovaGed.Web/Controller/GedController.cs")), StringComparison.Ordinal);
+        var repository = File.ReadAllText(Path.Combine(RepoRoot(), "InovaGed.Infrastructure/Preview/PreviewStatusRepository.cs"));
+        Assert.Contains("HasCanonicalStatusTypeAsync", repository, StringComparison.Ordinal);
+        Assert.Contains("'CANCELED', 'ERROR'", repository, StringComparison.Ordinal);
+        Assert.Contains("HasCanonicalStatusTypeAsync", File.ReadAllText(Path.Combine(RepoRoot(), "InovaGed.Infrastructure/Preview/PreviewWorker.cs")), StringComparison.Ordinal);
+        Assert.Contains("GED_ENUM_PREVIEW_PROCESSING_STATUS", File.ReadAllText(Path.Combine(RepoRoot(), "InovaGed.Infrastructure/SystemHealth/SchemaHealthService.cs")), StringComparison.Ordinal);
+        Assert.Contains("ged-process-states", File.ReadAllText(Path.Combine(RepoRoot(), "InovaGed.Web/Views/Ged/_DocumentSidePanel.cshtml")), StringComparison.Ordinal);
+        Assert.Contains("Reconhecimento de texto", File.ReadAllText(Path.Combine(RepoRoot(), "InovaGed.Web/Views/Ged/_DocumentSidePanel.cshtml")), StringComparison.Ordinal);
 
         var required = File.ReadAllText(Path.Combine(RepoRoot(), "database/required_migrations.json"));
         Assert.Contains("2026_11_07_preview_status_enum_operator_contract", required, StringComparison.OrdinalIgnoreCase);
