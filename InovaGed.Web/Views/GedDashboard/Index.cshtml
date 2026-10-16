@@ -39,8 +39,37 @@
 <div class="atlas-page mb-4">
     <partial name="Atlas/_AtlasPageHero" />
 </div>
-<div class="container-fluid py-3">
+<div class="container-fluid py-3 operational-dashboard">
   <partial name="Atlas/_GlobalQuickActions" />
+  <section class="executive-metrics" aria-labelledby="executive-metrics-title">
+    <div class="executive-metrics__head">
+      <div>
+        <h2 id="executive-metrics-title">Indicadores do acervo</h2>
+        <p>Os números são do tenant atual. A lista de documentos ainda não separa classificação nem data de entrada.</p>
+      </div>
+      <form method="get" asp-controller="GedDashboard" asp-action="Index" class="executive-metrics__period">
+        <label for="dashboardPeriod">Período</label>
+        <select id="dashboardPeriod" name="period">
+          <option value="7" selected="@(vm.PeriodDays == 7)">Últimos 7 dias</option>
+          <option value="30" selected="@(vm.PeriodDays == 30)">Últimos 30 dias</option>
+          <option value="90" selected="@(vm.PeriodDays == 90)">Últimos 90 dias</option>
+        </select>
+        <button type="submit" class="btn btn-primary">Aplicar</button>
+      </form>
+    </div>
+    <div class="executive-metrics__grid">
+      <a href="/Ged"><span>Documentos armazenados</span><strong>@vm.ActiveDocuments</strong></a>
+      <a href="/Ged"><span>Recebidos no período</span><strong>@(vm.ReceivedInPeriod?.ToString() ?? "Indisponível")</strong></a>
+      <a href="/Ocr"><span>Documentos com OCR</span><strong>@(vm.OcrCompletedDocuments?.ToString() ?? vm.OcrCompleted.ToString())</strong></a>
+      <a href="/Ocr"><span>OCR pendente</span><strong>@vm.OcrPending</strong></a>
+      <a href="/Ged/Processing?status=error&amp;lane=PREVIEW"><span>Previews com erro</span><strong>@(vm.PreviewFailed?.ToString() ?? "Indisponível")</strong></a>
+      <a href="/Ged"><span>Aguardando classificação</span><strong>@vm.UnclassifiedDocuments</strong></a>
+      <a href="/Ged"><span>Documentos classificados</span><strong>@vm.ClassifiedDocuments</strong></a>
+      <a href="/Retention"><span>Prazo arquivístico próximo</span><strong>@vm.RetentionDue30Days</strong></a>
+      <a href="/Ged/Processing?status=completed&amp;lane=UPLOAD"><span>Uploads concluídos</span><strong>@(vm.UploadsCompletedInPeriod?.ToString() ?? "Indisponível")</strong></a>
+      <a href="/Ged/Processing?status=error"><span>Processamentos com falha</span><strong>@(vm.ProcessingFailed?.ToString() ?? "Indisponível")</strong></a>
+    </div>
+  </section>
   <section class="operational-pending" aria-labelledby="operational-pending-title">
     <h2 id="operational-pending-title">Pendências Operacionais</h2>
     <div class="operational-pending__grid">
@@ -55,12 +84,23 @@
       <h2 class="mb-1">Painel Operacional do GED</h2>
       <p class="text-muted mb-0">Visão consolidada de documentos, OCR, solicitações e auditoria</p>
     </div>
-    <a class="btn btn-outline-primary" asp-controller="GedDashboard" asp-action="Index"><i class="bi bi-arrow-clockwise"></i> Atualizar agora</a>
+    <a class="btn btn-outline-primary" asp-controller="GedDashboard" asp-action="Index" asp-route-period="@vm.PeriodDays"><i class="bi bi-arrow-clockwise"></i> Atualizar agora</a>
   </div>
 
   @if (vm.PartialFailure)
   {
-    <div class="alert alert-warning py-2">Alguns indicadores não puderam ser carregados. Verifique os logs técnicos.</div>
+    <div class="alert alert-warning" role="alert">
+      <strong>Alguns indicadores não puderam ser carregados.</strong>
+      @if (vm.WarningMessages.Count > 0)
+      {
+        <ul class="mb-0 mt-2">
+          @foreach (var message in vm.WarningMessages)
+          {
+            <li>@message</li>
+          }
+        </ul>
+      }
+    </div>
   }
 
   <div class="row g-3 mb-4">

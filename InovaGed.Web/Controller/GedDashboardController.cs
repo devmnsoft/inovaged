@@ -21,7 +21,7 @@ public sealed class GedDashboardController : Controller
 
     [HttpGet("")]
     [HttpGet("/Dashboard")]
-    public async Task<IActionResult> Index(CancellationToken ct = default)
+    public async Task<IActionResult> Index(int? period, CancellationToken ct = default)
     {
         if (!RolePolicyHelper.IsFullAdmin(User))
         {
@@ -32,7 +32,8 @@ public sealed class GedDashboardController : Controller
         try
         {
             await _auditWriter.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "VIEW_GED_DASHBOARD", "GED_DASHBOARD", null, "Visualização do Painel Operacional do GED", HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString(), new { action = "VIEW_GED_DASHBOARD" }, ct);
-            var vm = await _service.GetAsync(_currentUser.TenantId, _currentUser.UserId, ct);
+            var periodDays = period is 30 or 90 ? period.Value : 7;
+            var vm = await _service.GetAsync(_currentUser.TenantId, _currentUser.UserId, periodDays, ct);
             return View(vm ?? new GedDashboardVm { PartialFailure = true, WarningMessages = ["Falha ao montar o dashboard."] });
         }
         catch (Exception ex)

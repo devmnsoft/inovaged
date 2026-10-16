@@ -19,12 +19,16 @@ public sealed class GedDashboardService : IGedDashboardService
     public GedDashboardService(IDbConnectionFactory db, IMemoryCache cache, ILogger<GedDashboardService> logger)
     { _db = db; _cache = cache; _logger = logger; }
 
-    public async Task<GedDashboardVm> GetAsync(Guid tenantId, Guid userId, CancellationToken ct)
+    public Task<GedDashboardVm> GetAsync(Guid tenantId, Guid userId, CancellationToken ct)
+        => GetAsync(tenantId, userId, 7, ct);
+
+    public async Task<GedDashboardVm> GetAsync(Guid tenantId, Guid userId, int periodDays, CancellationToken ct)
     {
-        var key = $"ged-dash-v2:{tenantId}";
+        periodDays = periodDays is 30 or 90 ? periodDays : 7;
+        var key = $"ged-dash-v3:{tenantId}:{periodDays}";
         if (_cache.TryGetValue<GedDashboardVm>(key, out var cached)) return cached!;
 
-        var vm = new GedDashboardVm();
+        var vm = new GedDashboardVm { PeriodDays = periodDays };
         using var conn = await _db.OpenAsync(ct);
 
         await TryLoad(vm, tenantId, userId, "documents", "ged.document", async () =>
@@ -34,13 +38,26 @@ select
   count(*)::int as total_documents,
   count(*) filter (where reg_status='A' and upper(status::text)<>'DELETED')::int as active_documents,
   count(*) filter (where upper(status::text)='DELETED')::int as deleted_documents,
-  count(*) filter (where reg_status='A' and classification_id is null)::int as unclassified_documents
+  count(*) filter (where reg_status='A' and classification_id is null)::int as unclassified_documents,
+  count(*) filter (where reg_status='A' and upper(status::text)<>'DELETED' and classification_id is not null)::int as classified_documents
 from ged.document
 where tenant_id=@tenantId", new { tenantId }, cancellationToken: ct));
             vm.TotalDocuments = row.total_documents;
             vm.ActiveDocuments = row.active_documents;
             vm.DeletedDocuments = row.deleted_documents;
             vm.UnclassifiedDocuments = row.unclassified_documents;
+            vm.ClassifiedDocuments = row.classified_documents;
+            if (await ColumnExistsAsync(conn, "ged", "document", "created_at", ct))
+            {
+                vm.ReceivedInPeriod = await conn.ExecuteScalarAsync<int>(new CommandDefinition(@"
+select count(*)::int
+from ged.document
+where tenant_id=@tenantId
+  and reg_status='A'
+  and upper(status::text)<>'DELETED'
+  and created_at >= now() - make_interval(days => @days)", new { tenantId, days = periodDays }, cancellationToken: ct));
+            }
+            else MarkUnavailable(vm, "Indicador de documentos recebidos no período indisponível nesta instalação.");
             vm.DocumentBySituation =
             [
                 new() { Label = "Ativos", Value = vm.ActiveDocuments },
@@ -70,6 +87,15 @@ select
 from ged.ocr_job where tenant_id=@tenantId", new { tenantId }, cancellationToken: ct));
             vm.OcrCompleted24h = row24h.completed_24h;
             vm.OcrAverageSeconds = row24h.avg_sec;
+            if (await ColumnExistsAsync(conn, "ged", "ocr_job", "document_version_id", ct))
+            {
+                vm.OcrCompletedDocuments = await conn.ExecuteScalarAsync<int>(new CommandDefinition(@"
+select count(distinct document_version_id)::int
+from ged.ocr_job
+where tenant_id=@tenantId
+  and upper(status::text)='COMPLETED'
+  and document_version_id is not null", new { tenantId }, cancellationToken: ct));
+            }
         });
 
         await LoadLoansAsync(conn, vm, tenantId, userId, ct);
@@ -99,8 +125,19 @@ where h.tenant_id=@tenantId order by h.moved_at desc limit 10", new { tenantId }
 
         await LoadSecurityAsync(conn, vm, tenantId, userId, ct);
         await LoadRetentionAsync(conn, vm, tenantId, userId, ct);
+        await LoadOperationalQueuesAsync(conn, vm, tenantId, userId, periodDays, ct);
 
-        vm.ConfidentialDocuments = 0;
+        if (await ColumnExistsAsync(conn, "ged", "document", "is_confidential", ct))
+        {
+            await TryLoad(vm, tenantId, userId, "confidential", "ged.document", async () =>
+            {
+                vm.ConfidentialDocuments = await conn.ExecuteScalarAsync<int>(new CommandDefinition(@"
+select count(*)::int
+from ged.document
+where tenant_id=@tenantId and reg_status='A' and is_confidential is true", new { tenantId }, cancellationToken: ct));
+            });
+        }
+        else MarkUnavailable(vm, "Indicador de documentos confidenciais indisponível nesta instalação.");
 
         _cache.Set(key, vm, TimeSpan.FromSeconds(30));
         return vm;
@@ -291,6 +328,51 @@ from ged.retention_queue where tenant_id=@tenantId", new { tenantId }, cancellat
             vm.RetentionExpired = row.expired;
             vm.RetentionDue30Days = row.due30;
         });
+    }
+
+    private async Task LoadOperationalQueuesAsync(IDbConnection conn, GedDashboardVm vm, Guid tenantId, Guid userId, int periodDays, CancellationToken ct)
+    {
+        if (await TableExistsAsync(conn, "ged", "preview_status", ct))
+        {
+            await TryLoad(vm, tenantId, userId, "preview-failed", "ged.preview_status", async () =>
+            {
+                vm.PreviewFailed = await conn.ExecuteScalarAsync<int>(new CommandDefinition(@"
+select count(*)::int
+from ged.preview_status
+where tenant_id=@tenantId
+  and status::text in ('FAILED','ERROR')", new { tenantId }, cancellationToken: ct));
+            });
+        }
+        else MarkUnavailable(vm, "Indicador de previews com erro indisponível nesta instalação.");
+
+        if (await TableExistsAsync(conn, "ged", "upload_session", ct) && await ColumnExistsAsync(conn, "ged", "upload_session", "completed_at", ct))
+        {
+            await TryLoad(vm, tenantId, userId, "uploads-completed", "ged.upload_session", async () =>
+            {
+                vm.UploadsCompletedInPeriod = await conn.ExecuteScalarAsync<int>(new CommandDefinition(@"
+select count(*)::int
+from ged.upload_session
+where tenant_id=@tenantId
+  and upper(status::text)='COMPLETED'
+  and completed_at >= now() - make_interval(days => @days)", new { tenantId, days = periodDays }, cancellationToken: ct));
+            });
+        }
+        else MarkUnavailable(vm, "Indicador de uploads concluídos indisponível nesta instalação.");
+
+        if (await TableExistsAsync(conn, "ged", "processing_job", ct))
+        {
+            await TryLoad(vm, tenantId, userId, "processing-failed", "ged.processing_job", async () =>
+            {
+                vm.ProcessingFailed = await conn.ExecuteScalarAsync<int>(new CommandDefinition(@"
+select count(*)::int
+from ged.processing_job
+where tenant_id=@tenantId
+  and reg_status='A'
+  and upper(status::text) in ('FAILED','ERROR')
+  and created_at >= now() - make_interval(days => @days)", new { tenantId, days = periodDays }, cancellationToken: ct));
+            });
+        }
+        else MarkUnavailable(vm, "Indicador de processamentos com falha indisponível nesta instalação.");
     }
 
     private void MarkUnavailable(GedDashboardVm vm, string message)

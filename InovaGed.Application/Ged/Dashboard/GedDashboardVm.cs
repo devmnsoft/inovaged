@@ -9,11 +9,18 @@ public sealed class GedDashboardVm
     public int ActiveDocuments { get; set; }
     public int DeletedDocuments { get; set; }
     public int UnclassifiedDocuments { get; set; }
+    public int ClassifiedDocuments { get; set; }
+    public int? ReceivedInPeriod { get; set; }
+    public int PeriodDays { get; set; } = 7;
+    public int? PreviewFailed { get; set; }
+    public int? UploadsCompletedInPeriod { get; set; }
+    public int? ProcessingFailed { get; set; }
     public int ConfidentialDocuments { get; set; }
 
     public int OcrPending { get; set; }
     public int OcrProcessing { get; set; }
     public int OcrCompleted { get; set; }
+    public int? OcrCompletedDocuments { get; set; }
     public int OcrError { get; set; }
     public int OcrCancelled { get; set; }
     public int OcrCompleted24h { get; set; }
