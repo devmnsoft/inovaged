@@ -90,6 +90,8 @@ public sealed class DocumentsControllerMoveTests
     [Theory]
     [InlineData("ACCESS_DENIED", StatusCodes.Status403Forbidden)]
     [InlineData("DOCUMENT_NOT_FOUND", StatusCodes.Status404NotFound)]
+    [InlineData("FOLDER_NOT_FOUND", StatusCodes.Status404NotFound)]
+    [InlineData("CONCURRENT_MODIFICATION", StatusCodes.Status409Conflict)]
     [InlineData("CONFLICT", StatusCodes.Status409Conflict)]
     public async Task Move_mapeia_falhas(string code, int expectedStatus)
     {
@@ -110,6 +112,42 @@ public sealed class DocumentsControllerMoveTests
         var result = await controller.Move(NewMoveRequest(), CancellationToken.None);
 
         Assert.IsType<OkObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task MoveBulk_nao_anuncia_sucesso_total_quando_ha_falha()
+    {
+        var move = new FakeDocumentMoveService
+        {
+            BulkResult = Result<DocumentBulkMoveResultDto>.Ok(new DocumentBulkMoveResultDto
+            {
+                BatchId = Guid.NewGuid(),
+                Total = 2,
+                SuccessCount = 1,
+                FailCount = 1,
+                Items = [new DocumentMoveResultDto { DocumentId = Guid.NewGuid(), Success = false, ErrorCode = "DOCUMENT_NOT_FOUND", Message = "Documento não encontrado." }]
+            })
+        };
+        var controller = CreateController(move);
+
+        var result = await controller.MoveBulk(new DocumentBulkMoveRequestVM
+        {
+            DocumentIds = [Guid.NewGuid(), Guid.NewGuid()],
+            DestinationFolderId = Guid.NewGuid(),
+            AllOrNothing = true,
+            IdempotencyKey = "lote-1"
+        }, CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        Assert.Equal(true, move.LastAllOrNothing);
+        Assert.Equal("lote-1", move.LastIdempotencyKey);
+        Assert.False(ReadBool(ok.Value, "success"));
+    }
+
+    private static bool ReadBool(object? value, string name)
+    {
+        var property = value?.GetType().GetProperty(name);
+        return property?.GetValue(value) is true;
     }
 
     [Fact]
@@ -157,23 +195,39 @@ public sealed class DocumentsControllerMoveTests
         public Guid SearchTenantId { get; private set; }
         public Guid SearchUserId { get; private set; }
 
+        public Result<DocumentBulkMoveResultDto>? BulkResult { get; set; }
+        public bool? LastAllOrNothing { get; private set; }
+        public string? LastIdempotencyKey { get; private set; }
+        public string? LastCorrelationId { get; private set; }
+
         public Task<Result<DocumentMoveResultDto>> MoveAsync(Guid tenantId, Guid userId, string? userName, Guid documentId, Guid destinationFolderId, string? reason, string source, bool isAdmin, CancellationToken ct)
+            => MoveAsync(tenantId, userId, userName, documentId, destinationFolderId, reason, source, isAdmin, null, null, ct);
+
+        public Task<Result<DocumentMoveResultDto>> MoveAsync(Guid tenantId, Guid userId, string? userName, Guid documentId, Guid destinationFolderId, string? reason, string source, bool isAdmin, string? correlationId, string? idempotencyKey, CancellationToken ct)
         {
             LastTenantId = tenantId;
             LastUserId = userId;
             LastIsAdmin = isAdmin;
             LastCancellationToken = ct;
+            LastCorrelationId = correlationId;
+            LastIdempotencyKey = idempotencyKey;
             return Task.FromResult(MoveResult);
         }
 
         public Task<Result<DocumentBulkMoveResultDto>> MoveBulkAsync(Guid tenantId, Guid userId, string? userName, IReadOnlyList<Guid> documentIds, Guid destinationFolderId, string? reason, string source, bool isAdmin, CancellationToken ct)
+            => MoveBulkAsync(tenantId, userId, userName, documentIds, destinationFolderId, reason, source, isAdmin, false, null, null, ct);
+
+        public Task<Result<DocumentBulkMoveResultDto>> MoveBulkAsync(Guid tenantId, Guid userId, string? userName, IReadOnlyList<Guid> documentIds, Guid destinationFolderId, string? reason, string source, bool isAdmin, bool allOrNothing, string? idempotencyKey, string? correlationId, CancellationToken ct)
         {
             BulkCalls++;
             LastTenantId = tenantId;
             LastUserId = userId;
             LastIsAdmin = isAdmin;
             LastCancellationToken = ct;
-            return Task.FromResult(Result<DocumentBulkMoveResultDto>.Ok(new DocumentBulkMoveResultDto { BatchId = Guid.NewGuid(), Total = documentIds.Count, SuccessCount = documentIds.Count }));
+            LastAllOrNothing = allOrNothing;
+            LastIdempotencyKey = idempotencyKey;
+            LastCorrelationId = correlationId;
+            return Task.FromResult(BulkResult ?? Result<DocumentBulkMoveResultDto>.Ok(new DocumentBulkMoveResultDto { BatchId = Guid.NewGuid(), Total = documentIds.Count, SuccessCount = documentIds.Count }));
         }
 
         public Task<IReadOnlyList<FolderOptionDto>> SearchFoldersAsync(Guid tenantId, Guid userId, string? term, CancellationToken ct)

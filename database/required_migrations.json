@@ -1083,5 +1083,12 @@
     "area": "Preview",
     "required": true,
     "description": "Garante o enum de preview na coluna de status e a chave única do upsert, sem apagar tentativas nem comparar varchar com o enum."
+  },
+  {
+    "name": "2026_11_08_document_move_root_history",
+    "path": "database/migrations/2026_11_08_document_move_root_history.sql",
+    "area": "Ged",
+    "required": true,
+    "description": "Permite histórico de movimentação para a raiz e grava o identificador de correlação, sem apagar registros."
   }
 ]

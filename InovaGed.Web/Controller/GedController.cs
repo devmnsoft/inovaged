@@ -3542,16 +3542,17 @@ SELECT
             if (!_currentUser.IsAuthenticated) return Unauthorized();
             if (await DenyDocumentAsync(request.DocumentId, "EDIT", ct) is { } deniedMove) return deniedMove;
             var isAdmin = RolePolicyHelper.IsFullAdmin(User);
-            _logger.LogInformation("Upload/drop destino resolvido. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} UploadFolderId={UploadFolderId} Source={Source} DocumentIds={DocumentIds} FileCount={FileCount}", _currentUser.TenantId, _currentUser.UserId, request.RequestedFolderId ?? request.DestinationFolderId, request.DestinationFolderId, request.Source ?? "SINGLE", request.DocumentId, 0);
-            var result = await _documentMoveService.MoveAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentId, request.DestinationFolderId, request.Reason, request.Source ?? "SINGLE", isAdmin, ct);
+            var correlationId = HttpContext.TraceIdentifier;
+            _logger.LogInformation("Movimentação individual solicitada. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} Destination={DestinationFolderId} Source={Source} Document={DocumentId} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, request.RequestedFolderId ?? request.DestinationFolderId, request.DestinationFolderId, request.Source ?? "SINGLE", request.DocumentId, correlationId);
+            var result = await _documentMoveService.MoveAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentId, request.DestinationFolderId, request.Reason, request.Source ?? "SINGLE", isAdmin, correlationId, request.IdempotencyKey, ct);
             if (!result.IsSuccess)
-                return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível mover o documento." });
-            return Ok(new { success = true, message = "Documento movido com sucesso.", data = result.Value });
+                return BadRequest(new { success = false, code = result.Error?.Code, message = result.Error?.Message ?? "Não foi possível mover o documento.", correlationId });
+            return Ok(new { success = true, code = result.Value?.ErrorCode, message = result.Value?.Message ?? "Documento movido com sucesso.", correlationId, data = result.Value });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro em Move. Tenant={TenantId} User={UserId} Document={DocumentId} Destination={DestinationFolderId}", _currentUser.TenantId, _currentUser.UserId, request.DocumentId, request.DestinationFolderId);
-            return StatusCode(500, new { success = false, message = "Erro interno ao mover documento." });
+            _logger.LogError(ex, "Erro em Move. Tenant={TenantId} User={UserId} Document={DocumentId} Destination={DestinationFolderId} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, request.DocumentId, request.DestinationFolderId, HttpContext.TraceIdentifier);
+            return StatusCode(500, new { success = false, code = "MOVE_FAILED", message = "Erro interno ao mover documento.", correlationId = HttpContext.TraceIdentifier });
         }
     }
 
@@ -3568,16 +3569,24 @@ SELECT
                 if (await DenyDocumentAsync(documentId, "EDIT", ct) is { } deniedBulk) return deniedBulk;
             }
             var isAdmin = RolePolicyHelper.IsFullAdmin(User);
-            _logger.LogInformation("Upload/drop destino resolvido. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} UploadFolderId={UploadFolderId} Source={Source} DocumentIds={DocumentIds} FileCount={FileCount}", _currentUser.TenantId, _currentUser.UserId, request.RequestedFolderId ?? request.DestinationFolderId, request.DestinationFolderId, request.Source ?? "BULK", string.Join(",", request.DocumentIds), 0);
-            var result = await _documentMoveService.MoveBulkAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentIds, request.DestinationFolderId, request.Reason, request.Source ?? "BULK", isAdmin, ct);
+            var correlationId = HttpContext.TraceIdentifier;
+            _logger.LogInformation("Movimentação em lote solicitada. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} Destination={DestinationFolderId} Source={Source} Count={Count} AllOrNothing={AllOrNothing} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, request.RequestedFolderId ?? request.DestinationFolderId, request.DestinationFolderId, request.Source ?? "BULK", request.DocumentIds.Distinct().Count(), request.AllOrNothing, correlationId);
+            var result = await _documentMoveService.MoveBulkAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentIds, request.DestinationFolderId, request.Reason, request.Source ?? "BULK", isAdmin, request.AllOrNothing, request.IdempotencyKey, correlationId, ct);
             if (!result.IsSuccess)
-                return BadRequest(new { success = false, message = result.Error?.Message ?? "Não foi possível mover o documento." });
-            return Ok(new { success = true, message = "Movimentação em lote concluída.", data = result.Value });
+                return BadRequest(new { success = false, code = result.Error?.Code, message = result.Error?.Message ?? "Não foi possível mover os documentos.", correlationId });
+            var data = result.Value!;
+            var completed = data.FailCount == 0 && !data.RolledBack;
+            var message = data.RolledBack
+                ? "Nenhum documento foi movido. O lote foi revertido."
+                : completed
+                    ? (data.IdempotentReplay ? "Movimentação já confirmada para este destino." : "Movimentação em lote concluída.")
+                    : $"{data.SuccessCount} documento(s) movido(s) e {data.FailCount} falha(s).";
+            return Ok(new { success = completed, code = completed ? data.Items.FirstOrDefault(item => !string.IsNullOrWhiteSpace(item.ErrorCode))?.ErrorCode : data.Items.FirstOrDefault(item => !item.Success)?.ErrorCode, message, correlationId, data });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro em MoveBulk. Tenant={TenantId} User={UserId} Destination={DestinationFolderId}", _currentUser.TenantId, _currentUser.UserId, request.DestinationFolderId);
-            return StatusCode(500, new { success = false, message = "Erro interno ao mover documento." });
+            _logger.LogError(ex, "Erro em MoveBulk. Tenant={TenantId} User={UserId} Destination={DestinationFolderId} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, request.DestinationFolderId, HttpContext.TraceIdentifier);
+            return StatusCode(500, new { success = false, code = "MOVE_FAILED", message = "Erro interno ao mover documento.", correlationId = HttpContext.TraceIdentifier });
         }
     }
 

@@ -62,6 +62,8 @@ public sealed class DocumentsController : ControllerBase
                 request.Reason,
                 source,
                 IsAdmin(),
+                HttpContext.TraceIdentifier,
+                request.IdempotencyKey,
                 ct);
 
             if (!result.Success) return MapMoveFailure(result.Error?.Code, result.Error?.Message ?? result.ErrorMessage);
@@ -97,10 +99,14 @@ public sealed class DocumentsController : ControllerBase
                 request.Reason,
                 source,
                 IsAdmin(),
+                request.AllOrNothing,
+                request.IdempotencyKey,
+                HttpContext.TraceIdentifier,
                 ct);
             if (!result.Success) return MapMoveFailure(result.Error?.Code, result.Error?.Message ?? result.ErrorMessage);
             var v = result.Value!;
-            return Ok(new { success = true, batchId = v.BatchId, total = v.Total, successCount = v.SuccessCount, failCount = v.FailCount, items = v.Items });
+            var completed = v.FailCount == 0 && !v.RolledBack;
+            return Ok(new { success = completed, batchId = v.BatchId, total = v.Total, successCount = v.SuccessCount, failCount = v.FailCount, allOrNothing = v.AllOrNothing, rolledBack = v.RolledBack, idempotentReplay = v.IdempotentReplay, items = v.Items });
         }
         catch (Exception ex)
         {
@@ -139,11 +145,9 @@ public sealed class DocumentsController : ControllerBase
         return (code ?? string.Empty).ToUpperInvariant() switch
         {
             "ACCESS_DENIED" => StatusCode(StatusCodes.Status403Forbidden, body),
-            "DOCUMENT_NOT_FOUND" => NotFound(body),
-            "DESTINATION_NOT_FOUND" => NotFound(body),
-            "INVALID_DESTINATION" => BadRequest(body),
-            "VALIDATION" => BadRequest(body),
-            "CONFLICT" => Conflict(body),
+            "DOCUMENT_NOT_FOUND" or "DESTINATION_NOT_FOUND" or "FOLDER_NOT_FOUND" => NotFound(body),
+            "FOLDER_INACTIVE" or "DATABASE_CONSTRAINT_ERROR" or "CONCURRENT_MODIFICATION" or "CONFLICT" or "INVALID_DESTINATION" => Conflict(body),
+            "VALIDATION" or "LIMIT" => BadRequest(body),
             _ => StatusCode(StatusCodes.Status500InternalServerError, body)
         };
     }

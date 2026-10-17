@@ -1442,6 +1442,14 @@
       "transactional": true,
       "deploymentSafety": "Additive",
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_11_08_document_move_root_history",
+      "path": "database/migrations/2026_11_08_document_move_root_history.sql",
+      "module": "Ged",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
     }
   ]
 }
