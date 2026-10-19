@@ -79,7 +79,8 @@
 .ds-card-success { border-color: var(--ds-success-border); background: #f8fdf9; }
 
 .ds-steps { display: flex; gap: 8px; flex-wrap: wrap; list-style: none; padding: 0; margin: 8px 0; }
-.ds-steps li { border: 1.5px solid var(--ds-border); border-radius: 999px; padding: 4px 12px; font-size: .88rem; font-weight: 600; background: var(--ds-surface); }
+.ds-steps li { border: 1.5px solid var(--ds-border); border-radius: 999px; padding: 4px 12px; font-size: .88rem; font-weight: 600; background: var(--ds-surface); color: var(--ds-text, #102a43); }
+.ds-steps li[aria-current="step"] { border-color: var(--ds-primary); background: var(--ds-primary); color: var(--ds-primary-contrast, #fff); }
 
 .ds-grid { display: grid; gap: 10px; }
 .ds-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }

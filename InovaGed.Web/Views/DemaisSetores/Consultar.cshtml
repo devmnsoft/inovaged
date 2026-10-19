@@ -1,4 +1,6 @@
+@using InovaGed.Application.Sectors
 @using InovaGed.Web.Controllers
+@using InovaGed.Web.Models.Atlas
 @{
     ViewData["Title"] = "Consultar e analisar";
     var documents = (IReadOnlyList<SectorDocumentRow>)(ViewBag.Documents ?? Array.Empty<SectorDocumentRow>());
@@ -39,11 +41,24 @@
     };
     if (embedded)
         Layout = "~/Views/Shared/_DemaisSetoresFrame.cshtml";
+    var header = new AtlasPageHeaderVm(
+        "Consultar e analisar",
+        "Confirme o atendimento, escolha o documento e leia o arquivo, o texto e os dados sugeridos. Campo sugerido não é informação validada.",
+        "search",
+        "Demais setores",
+        embedded ? null : [new AtlasPageAction("Cadastrar", Url.Action("Cadastrar")!, "upload")]);
 }
 <link rel="stylesheet" href="~/css/demais-setores.css" asp-append-version="true" />
 <main class="ds-page" data-ds-consult data-embedded="@(embedded ? "1" : "0")" data-public-id="@publicId" data-partner-origin="@ViewBag.PartnerOrigin" data-allow-switch="@(ViewBag.AllowSwitch == true ? "1" : "0")" data-patient-id="@context?.PatientId" data-encounter-id="@encounterId" data-encounter-code="@context?.EncounterCode" data-find-url="@Url.Action("BuscarPaciente")" data-switch-url="@switchUrl" data-search-url="@searchUrl" data-text-url="@textUrl" data-file-url="@(publicId is Guid fileId ? Url.Action(fileAction, new { publicId = fileId }) : Url.Action(fileAction))">
     @Html.AntiForgeryToken()
-    <h1>Consultar e analisar</h1>
+    @if (embedded)
+    {
+        <h1>Consultar e analisar</h1>
+    }
+    else
+    {
+        <partial name="Atlas/_PageHeader" model="header" />
+    }
     @if(publicId is Guid sessionId)
     {
         <section class="ds-card" data-ds-session data-expires="@(((DateTimeOffset?)ViewBag.SessionExpiresAt)?.ToString("O"))" data-status-url="@Url.Action("EstadoIntegrado",new { publicId=sessionId })" data-recovery-url="@Url.Action("Recuperar",new { reference=sessionId })" data-partner-origin="@ViewBag.PartnerOrigin" aria-live="polite">
@@ -117,7 +132,7 @@
                 <label>Nome<input data-ds-filter="name" type="search" /></label>
                 <label>Origem<select data-ds-filter="origin"><option value="">Todas</option><option>GED_UPLOAD</option><option>MV</option><option>EXTERNO</option></select></label>
                 <label>Setor<input data-ds-filter="sector" /></label>
-                <label>Situação<select data-ds-filter="review"><option value="">Todas</option><option>RECEBIDO</option><option>PENDENTE</option><option>EM_CONFERENCIA</option><option>CONFERIDO</option><option>INCONSISTENTE</option><option>NAO_APLICAVEL</option><option>SUBSTITUIDO</option></select></label>
+                <label>Situação da conferência<select data-ds-filter="review"><option value="">Todas</option><option value="@SectorReview.Recebido">@SectorReview.Label(SectorReview.Recebido)</option><option value="@SectorReview.Pendente">@SectorReview.Label(SectorReview.Pendente)</option><option value="@SectorReview.EmConferencia">@SectorReview.Label(SectorReview.EmConferencia)</option><option value="@SectorReview.Conferido">@SectorReview.Label(SectorReview.Conferido)</option><option value="@SectorReview.Inconsistente">@SectorReview.Label(SectorReview.Inconsistente)</option><option value="@SectorReview.NaoAplicavel">@SectorReview.Label(SectorReview.NaoAplicavel)</option><option value="@SectorReview.Substituido">@SectorReview.Label(SectorReview.Substituido)</option></select></label>
             </div>
             @foreach (var group in documents.GroupBy(item => item.CatalogCode))
             {
@@ -126,7 +141,7 @@
                 {
                     <button type="button" class="ds-doc" data-ds-open data-url="@FileUrl(document.VersionId)" data-version="@document.VersionId" data-name="@document.Name" data-origin="@document.Origin" data-sector="@document.SectorCode" data-review="@document.ReviewStatus" data-date="@document.DocumentDate?.ToString("yyyy-MM-dd")" aria-current="false">
                         <strong>@document.Name</strong>
-                        <span class="ds-badge">@document.ReviewStatus</span>
+                        <span class="ds-badge">@SectorReview.Label(document.ReviewStatus)</span>
                         <span class="ds-badge">Prévia: @ProcessingLabel(document.PreviewStatus)</span>
                         <span class="ds-badge">OCR: @ProcessingLabel(document.OcrStatus)</span>
                         <span class="ds-badge">Extração: @ProcessingLabel(document.ExtractionStatus)</span>
@@ -154,7 +169,7 @@
                         <form method="post" action="@Url.Action("Conferir")" class="ds-inline">
                             @Html.AntiForgeryToken()
                             <input type="hidden" name="linkId" value="@document.LinkId" />
-                            <label>Conferência<select name="toStatus"><option>EM_CONFERENCIA</option><option>CONFERIDO</option><option>INCONSISTENTE</option><option>PENDENTE</option><option>NAO_APLICAVEL</option><option>RECEBIDO</option></select></label>
+                            <label>Conferência<select name="toStatus"><option value="@SectorReview.EmConferencia">@SectorReview.Label(SectorReview.EmConferencia)</option><option value="@SectorReview.Conferido">@SectorReview.Label(SectorReview.Conferido)</option><option value="@SectorReview.Inconsistente">@SectorReview.Label(SectorReview.Inconsistente)</option><option value="@SectorReview.Pendente">@SectorReview.Label(SectorReview.Pendente)</option><option value="@SectorReview.NaoAplicavel">@SectorReview.Label(SectorReview.NaoAplicavel)</option><option value="@SectorReview.Recebido">@SectorReview.Label(SectorReview.Recebido)</option></select></label>
                             <label>Justificativa<input name="justification" /></label>
                             <button type="submit">Registrar conferência</button>
                         </form>

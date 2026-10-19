@@ -1,9 +1,16 @@
+@using InovaGed.Web.Models.Atlas
 @{
     ViewData["Title"] = "Parametrizações";
+    var header = new AtlasPageHeaderVm(
+        "Parametrizações",
+        "Registre o contrato do tipo de atendimento e os acessos do módulo. DDI permanece sem significado institucional até que um departamento use esse código.",
+        "settings",
+        "Demais setores",
+        [new AtlasPageAction("Cadastrar", Url.Action("Cadastrar")!, "upload"), new AtlasPageAction("Consultar", Url.Action("Consultar")!, "search")]);
 }
 <link rel="stylesheet" href="~/css/demais-setores.css" asp-append-version="true" />
 <main class="ds-page">
-    <h1>Parametrizações</h1>
+    <partial name="Atlas/_PageHeader" model="header" />
     <p class="ds-help">DDI permanece sem significado institucional atribuído. A visão desse setor só existe para os tipos que forem associados de propósito. O Anexo II não substitui o Anexo I.</p>
     <section class="ds-card">
         <h2>Setores já cadastrados</h2>

@@ -70,6 +70,18 @@ public static class SectorReview
 
         return true;
     }
+
+    public static string Label(string? status) => status switch
+    {
+        Recebido => "Recebido",
+        Pendente => "Aguardando conferência",
+        EmConferencia => "Em conferência",
+        Conferido => "Conferido",
+        Inconsistente => "Com divergência",
+        NaoAplicavel => "Não se aplica",
+        Substituido => "Substituído",
+        _ => "Situação de conferência não reconhecida"
+    };
 }
 
 public static class SectorApplicability

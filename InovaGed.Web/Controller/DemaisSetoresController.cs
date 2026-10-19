@@ -801,7 +801,8 @@ order by t.catalog_order, l.document_date nulls last, l.created_at
     {
         await using var conn = await _db.OpenAsync(ct);
         var rows = await conn.QueryAsync<SectorCatalogChoice>(new CommandDefinition("""
-select catalog_code as Code, name as Name, catalog_order as Order
+select catalog_code as Code, name as Name, catalog_order as Order,
+       applicability as Applicability, multiple_files as MultipleFiles, physical_original as PhysicalOriginal
 from ged.sector_document_type
 where tenant_id=@tenantId and active and catalog_code = any(@codes)
 order by catalog_order
@@ -1187,7 +1188,7 @@ select l.document_id as DocumentId, l.version_id as VersionId, t.name as Name,
     private string Ua() => Request.Headers.UserAgent.ToString();
 }
 
-public sealed record SectorCatalogChoice(string Code, string Name, int Order);
+public sealed record SectorCatalogChoice(string Code, string Name, int Order, string Applicability = "", bool MultipleFiles = false, bool PhysicalOriginal = false);
 
 public sealed record SectorDocumentRow(Guid LinkId, Guid DocumentId, Guid VersionId, string Name, string CatalogCode, string Origin, string OriginalFileName, DateOnly? DocumentDate, string ReviewStatus, string PreviewStatus, string OcrStatus, string ExtractionStatus, string? IssuerName, string? InformationOwner, string? PhysicalEvidence, string? SectorCode, bool RequiresPhysical)
 {

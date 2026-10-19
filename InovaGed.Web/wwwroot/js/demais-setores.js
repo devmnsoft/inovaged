@@ -16,6 +16,40 @@
     status.textContent = text;
   }
 
+  function refreshSteps() {
+    const steps = root.querySelectorAll("[data-ds-step]");
+    if (!steps.length) return;
+    let step = "1";
+    if (current?.patientId) step = "2";
+    if (current?.encounterId) step = "3";
+    const chosen = !!(catalog?.value || files.some(function (item) { return item.catalog; }));
+    if (current?.encounterId && chosen && files.length) step = "4";
+    if (root.dataset.finished === "1" && current?.encounterId && files.length === 0) step = "5";
+    steps.forEach(function (item) {
+      if (item.dataset.dsStep === step) item.setAttribute("aria-current", "step");
+      else item.removeAttribute("aria-current");
+    });
+  }
+
+  function catalogHelp() {
+    const help = root.querySelector("[data-ds-type-help]");
+    if (!help || !catalog) return;
+    const option = catalog.selectedOptions?.[0];
+    if (!catalog.value || !option) {
+      help.textContent = "Escolha um documento do catálogo para ver quando ele se aplica, se aceita vários arquivos e se o original físico precisa de evidência.";
+      refreshSteps();
+      return;
+    }
+    const quantity = option.dataset.multiple === "1"
+      ? "Este tipo aceita vários arquivos."
+      : "Envie um arquivo por ocorrência, salvo confirmação de outra ocorrência.";
+    const physical = option.dataset.physical === "1"
+      ? "O original físico exige evidência depois da gravação."
+      : "Este tipo não exige evidência de original físico.";
+    help.textContent = (option.dataset.applicability || "A regra de obrigatoriedade deste tipo não está reconhecida.") + " " + quantity + " " + physical;
+    refreshSteps();
+  }
+
   function field(name) {
     return root.querySelector("[name='" + name + "']");
   }
@@ -48,6 +82,8 @@
       open.removeAttribute("href");
       open.setAttribute("aria-disabled", "true");
     }
+    delete root.dataset.finished;
+    refreshSteps();
   }
 
   root.querySelector("[data-ds-open]")?.addEventListener("click", function (event) {
@@ -108,6 +144,7 @@
         ? "Paciente " + payload.patient.external_code + " — " + payload.patient.display_name + ". Selecione um atendimento antes de enviar."
         : "Paciente " + payload.patient.external_code + " — " + payload.patient.display_name + ". Não há atendimentos para abrir.";
       setStatus(payload.message || "Paciente localizado.", encounters.length ? "info" : "erro");
+      refreshSteps();
     } catch (error) {
       if (error.name === "AbortError" || myGeneration !== generation) return;
       resetEncounter("Selecione um atendimento");
@@ -129,10 +166,14 @@
       open.removeAttribute("href");
       open.setAttribute("aria-disabled", "true");
     }
+    refreshSteps();
   });
+
+  catalog?.addEventListener("change", catalogHelp);
 
   function addFiles(list) {
     if (busy) return;
+    delete root.dataset.finished;
     Array.from(list || []).forEach(function (file) {
       files.push({ file: file, catalog: "", sector: "", date: "", notes: "", confirm: false });
     });
@@ -193,7 +234,7 @@
       select.removeAttribute("data-ds-catalog");
       select.value = item.catalog;
       select.disabled = !!item.uploadId;
-      select.addEventListener("change", function () { item.catalog = select.value; });
+      select.addEventListener("change", function () { item.catalog = select.value; refreshSteps(); });
       row.appendChild(label("Nome padronizado", select));
       row.appendChild(labeledInput("Setor", item.sector, function (value) { item.sector = value; }));
       row.appendChild(labeledInput("Data", item.date, function (value) { item.date = value; }, "date"));
@@ -205,6 +246,7 @@
       row.appendChild(label("Outra ocorrência, não nova versão", check));
       host.appendChild(row);
     });
+    refreshSteps();
   }
 
   function label(text, control) {
@@ -262,6 +304,7 @@
       }
     }
     files = pending;
+    if (pending.length === 0) root.dataset.finished = "1";
     controls.forEach(function (control,index) { control.disabled = disabledBefore[index]; });
     busy = false;
     renderFiles();

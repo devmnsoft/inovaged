@@ -1,13 +1,27 @@
+@using InovaGed.Application.Sectors
+@using InovaGed.Web.Models.Atlas
 @{
     ViewData["Title"] = "Cadastrar documentos";
     var types = (System.Collections.Generic.IReadOnlyList<InovaGed.Web.Controllers.SectorCatalogChoice>)(ViewBag.Types ?? Array.Empty<InovaGed.Web.Controllers.SectorCatalogChoice>());
+    var header = new AtlasPageHeaderVm(
+        "Cadastrar documentos",
+        "Confirme o paciente e o atendimento, escolha o documento do catálogo e grave os arquivos. A leitura do texto acontece depois da gravação.",
+        "upload",
+        "Demais setores",
+        [new AtlasPageAction("Consultar", Url.Action("Consultar")!, "search")]);
 }
 <link rel="stylesheet" href="~/css/demais-setores.css" asp-append-version="true" />
 <main class="ds-page" data-ds-register data-find-url="@Url.Action("BuscarPaciente")" data-start-url="@Url.Action("IniciarEnvio")" data-part-url="@Url.Action("ParteEnvio")" data-status-url="@Url.Action("SituacaoEnvio")" data-cancel-url="@Url.Action("CancelarEnvio")" data-complete-url="@Url.Action("ConcluirEnvio")" data-link-url="@Url.Action("VincularExistente")" data-retry-url="@Url.Action("Reenfileirar")" data-open-url="@Url.Action("Consultar")">
     @Html.AntiForgeryToken()
-    <h1>Cadastrar documentos</h1>
-    <p class="ds-help">Como usar: confirme o paciente e o atendimento, escolha o nome do catálogo e grave os arquivos. O envio grande segue em partes, até @ViewBag.MaxMb MB quando esse limite estiver configurado. Leitura e extração acontecem depois da gravação.</p>
-    <ol class="ds-steps"><li>1. Paciente e atendimento</li><li>2. Documentos</li><li>3. Confirmação</li></ol>
+    <partial name="Atlas/_PageHeader" model="header" />
+    <p class="ds-help">O envio grande segue em partes, até @ViewBag.MaxMb MB quando esse limite estiver configurado. O documento aparece na consulta mesmo que o reconhecimento de texto ainda esteja pendente.</p>
+    <ol class="ds-steps" data-ds-steps>
+        <li data-ds-step="1" aria-current="step">1. Paciente</li>
+        <li data-ds-step="2">2. Atendimento</li>
+        <li data-ds-step="3">3. Documento</li>
+        <li data-ds-step="4">4. Envio</li>
+        <li data-ds-step="5">5. Finalização</li>
+    </ol>
     <section class="ds-card">
         <h2>Paciente e atendimento</h2>
         <form data-ds-patient-form class="ds-grid">
@@ -29,10 +43,11 @@
                 <option value="">Escolha no catálogo</option>
                 @foreach (var item in types)
                 {
-                    <option value="@item.Code">@item.Order.ToString("00") — @item.Name</option>
+                    <option value="@item.Code" data-applicability="@SectorCatalog.ApplicabilityLabel(item.Applicability)" data-multiple="@(item.MultipleFiles ? "1" : "0")" data-physical="@(item.PhysicalOriginal ? "1" : "0")">@item.Order.ToString("00") — @item.Name</option>
                 }
             </select>
         </label>
+        <p data-ds-type-help class="ds-note">Escolha um documento do catálogo para ver quando ele se aplica, se aceita vários arquivos e se o original físico precisa de evidência.</p>
         <label>Setor comum<input name="sectorCode" placeholder="FATURAMENTO, FARMACIA, CME ou DDI" /></label>
         <label>Data comum do documento<input name="documentDate" type="date" /></label>
         <label>Emissor clínico<input name="issuerName" /></label>

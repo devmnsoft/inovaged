@@ -22,6 +22,17 @@ public static class SectorCatalog
     public static readonly string[] SectorCodes = [Faturamento, Farmacia, Ddi, Cme, Selecionado];
     public static readonly string[] EncounterKinds = ["INTERNACAO", "AMBULATORIAL", "URGENCIA"];
 
+    public static string ApplicabilityLabel(string? applicability) => applicability switch
+    {
+        HospitalInternacao => "Exigido na internação hospitalar, quando o perfil do Anexo I estiver ativo.",
+        Discharge => "Exigido na internação quando houver alta.",
+        HighCost => "Exigido na internação quando houver procedimento de alto custo.",
+        Surgery => "Exigido na internação quando houver cirurgia.",
+        Opme => "Exigido na internação quando houver OPME.",
+        WhenApplicable => "Usar quando o caso exigir. Não é obrigatório em todo atendimento.",
+        _ => "A regra de obrigatoriedade deste tipo não está reconhecida."
+    };
+
     public static readonly IReadOnlyList<SectorCatalogItem> All =
     [
         Item(1, "DS01", "Ficha de Atendimento da Internação.", HospitalInternacao, false, false, Faturamento),

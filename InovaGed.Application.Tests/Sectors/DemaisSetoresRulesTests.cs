@@ -52,6 +52,11 @@ public sealed class DemaisSetoresRulesTests
         Assert.Contains("justificativa", missing, StringComparison.OrdinalIgnoreCase);
         Assert.True(SectorReview.CanTransition(SectorReview.Pendente, SectorReview.NaoAplicavel, SectorPermissions.Conferir, "não se aplica a este caso", out _));
         Assert.False(SectorReview.CanTransition(SectorReview.Pendente, SectorReview.Substituido, SectorPermissions.Administrar, "troca", out _));
+        Assert.Equal("Aguardando conferência", SectorReview.Label(SectorReview.Pendente));
+        Assert.Equal("Com divergência", SectorReview.Label(SectorReview.Inconsistente));
+        Assert.Equal("Situação de conferência não reconhecida", SectorReview.Label("OCR_FAILED"));
+        Assert.Contains("internação hospitalar", SectorCatalog.ApplicabilityLabel(SectorCatalog.HospitalInternacao), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("não está reconhecida", SectorCatalog.ApplicabilityLabel("CODIGO_INTERNO"), StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
