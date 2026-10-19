@@ -45,7 +45,14 @@ public sealed class BillingController(ICurrentUser user, IBillingQueries queries
     public async Task<IActionResult> Details(Guid id, CancellationToken ct) => await queries.GetAsync(user.TenantId, id, ct) is { } item ? View(item) : NotFound();
 
     [HttpGet("Review/{id:guid}")]
-    public async Task<IActionResult> Review(Guid id, CancellationToken ct) => await queries.GetAsync(user.TenantId, id, ct) is { } item ? View(ToReviewInput(item)) : NotFound();
+    public async Task<IActionResult> Review(Guid id, CancellationToken ct)
+    {
+        var item = await queries.GetAsync(user.TenantId, id, ct);
+        if (item is null) return NotFound();
+        var input = ToReviewInput(item);
+        ViewData["Checklist"] = BillingChecklist.EvaluateReview(item, input);
+        return View(input);
+    }
 
     [HttpPost("Review/{id:guid}")]
     [ValidateAntiForgeryToken]
@@ -56,6 +63,7 @@ public sealed class BillingController(ICurrentUser user, IBillingQueries queries
             var existing = await queries.GetAsync(user.TenantId, id, ct);
             if (existing is null) return NotFound();
             input.Id = id; input.DocumentTitle = existing.DocumentTitle;
+            ViewData["Checklist"] = BillingChecklist.EvaluateReview(existing, input);
             return View(input);
         }
         var ok = await commands.ReviewAsync(user.TenantId, id, user.UserId, input, ct);

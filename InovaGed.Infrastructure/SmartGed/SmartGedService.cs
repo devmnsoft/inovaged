@@ -122,7 +122,7 @@ order by published_at desc, version_no desc limit 1
 select coalesce(i.classification_id, cp.id) as Id,
        i.id as ItemId,
        coalesce(i.code, cp.code) as Code,
-       coalesce(i.name, cp.name, i.title) as Title,
+       coalesce(i.name, cp.name) as Title,
        coalesce(cp.description, '') as Description,
        coalesce(i.final_destination, cp.final_destination) as FinalDestination,
        i.retention_start_event::text as TriggerEvent,
@@ -229,6 +229,46 @@ values(@tenantId,@documentId,@analysisId,@phase,@destination,@retentionReason,@c
         return new(a.Id, a.DocumentId, a.Status, a.Summary, a.DocumentType, a.Subject, a.DetectedDate.HasValue ? DateOnly.FromDateTime(a.DetectedDate.Value) : null, DeserializeDictionary(a.IdentifiersJson), DeserializeList(a.SensitiveJson), a.Confidence, classification, retention, issues);
     }
 
+    public async Task<DocumentQualityIssueList> ListOpenIssuesAsync(Guid tenantId, Guid userId, CancellationToken ct)
+    {
+        await using var c = await _db.OpenAsync(ct);
+        var available = await c.ExecuteScalarAsync<bool>(new CommandDefinition("""
+select exists(
+    select 1
+    from information_schema.tables
+    where table_schema = 'ged' and table_name = 'document_quality_issue')
+""", cancellationToken: ct));
+        if (!available) return new([], false);
+
+        var args = new DynamicParameters();
+        args.Add("tenantId", tenantId);
+        args.Add("userId", userId);
+        args.Add("permissionCode", "Documents.View");
+        args.Add("write", false);
+        args.Add("hour", DateTime.UtcNow.Hour);
+        var rows = await c.QueryAsync<QualityIssueListRow>(new CommandDefinition($"""
+select qi.id as Id,
+       qi.document_id as DocumentId,
+       d.title as DocumentTitle,
+       qi.issue_type as Type,
+       qi.severity as Severity,
+       qi.title as Title,
+       qi.recommended_action as RecommendedAction,
+       qi.status as Status,
+       qi.created_at as CreatedAt
+from ged.document_quality_issue qi
+join ged.document d on d.id = qi.document_id and d.tenant_id = qi.tenant_id
+where qi.tenant_id = @tenantId
+  and qi.status = 'OPEN'
+  and qi.reg_status = 'A'
+  and {AbacAuthorizationService.DocumentAccessPredicate("d")}
+order by case qi.severity when 'HIGH' then 1 when 'MEDIUM' then 2 else 3 end, qi.created_at desc
+limit 200
+""", args, cancellationToken: ct));
+        return new(rows.Select(x => new DocumentQualityIssueListItem(
+            x.Id, x.DocumentId, x.DocumentTitle, x.Type, x.Severity, x.Title, x.RecommendedAction, x.Status, x.CreatedAt)).ToArray(), true);
+    }
+
     public Task<IReadOnlyList<DocumentClassificationSuggestionItem>> ListPendingAsync(Guid tenantId, CancellationToken ct) =>
         ListPendingAsync(tenantId, null, ct);
 
@@ -321,13 +361,14 @@ values(@tenantId,@documentId,@analysisId,@phase,@destination,@retentionReason,@c
         notes = NormalizeReviewText(notes);
         if (status == "REJECTED") RequireReviewReason(notes);
         await using var c = await _db.OpenAsync(ct);
+        var columns = await LoadSuggestionColumns(c, "document_classification_suggestion", ct);
 
-        var existing = await c.QuerySingleOrDefaultAsync<ClassificationSuggestionDetailRow>(new CommandDefinition("""
+        var existing = await c.QuerySingleOrDefaultAsync<ClassificationSuggestionDetailRow>(new CommandDefinition($"""
 select s.id as Id, s.document_id as DocumentId, s.suggested_classification_id as ClassificationId,
        s.confidence as Confidence, s.status as Status,
-       s.version_id as VersionId, s.plan_version_id as PlanVersionId,
-       coalesce(s.is_legacy_unproven, s.version_id is null) as IsLegacyUnproven,
-       s.review_operation_id as ReviewOperationId
+       {SuggestionColumnSql.Uuid(columns, "version_id")} as VersionId, {SuggestionColumnSql.Uuid(columns, "plan_version_id")} as PlanVersionId,
+       {SuggestionColumnSql.LegacyUnproven(columns)} as IsLegacyUnproven,
+       {SuggestionColumnSql.Uuid(columns, "review_operation_id")} as ReviewOperationId
 from ged.document_classification_suggestion s
 where s.tenant_id = @tenantId and s.id = @id
 """, new { tenantId, id }, cancellationToken: ct));
@@ -364,7 +405,7 @@ where tenant_id = @tenantId and id = @id and status in ('PENDING','FAILED')
         {
             if (!existing.ClassificationId.HasValue)
                 throw new InvalidOperationException("Sugestão sem classe associada não pode ser aceita.");
-            if (existing.IsLegacyUnproven || !existing.VersionId.HasValue || !existing.PlanVersionId.HasValue)
+            if (existing.IsLegacyUnproven || !existing.VersionId.HasValue || !existing.PlanVersionId.HasValue || !SuggestionColumnSql.CanApplyReview(columns))
                 throw new InvalidOperationException("Sugestão legada ou sem origem/versionamento comprovado deve ser reanalisada antes da aplicação.");
 
             var operationId = Guid.NewGuid();
@@ -547,10 +588,11 @@ where tenant_id = @tenantId and id = @id and status = 'PROCESSING' and review_op
         notes = NormalizeReviewText(notes);
         if (status == "REJECTED") RequireReviewReason(notes);
         await using var c = await _db.OpenAsync(ct);
-        var existing = await c.QuerySingleOrDefaultAsync<RetentionSuggestionDetailRow>(new CommandDefinition("""
+        var columns = await LoadSuggestionColumns(c, "document_retention_suggestion", ct);
+        var existing = await c.QuerySingleOrDefaultAsync<RetentionSuggestionDetailRow>(new CommandDefinition($"""
 select s.id as Id, s.document_id as DocumentId, s.suggested_rule_id as RuleId,
-       s.confidence as Confidence, s.status as Status, s.version_id as VersionId,
-       s.plan_version_id as PlanVersionId,
+       s.confidence as Confidence, s.status as Status, {SuggestionColumnSql.Uuid(columns, "version_id")} as VersionId,
+       {SuggestionColumnSql.Uuid(columns, "plan_version_id")} as PlanVersionId,
        pvi.classification_id as SuggestedClassificationId,
        pvi.retention_start_event::text as TriggerEvent,
        pvi.final_destination::text as FinalDestination,
@@ -560,12 +602,12 @@ select s.id as Id, s.document_id as DocumentId, s.suggested_rule_id as RuleId,
        pvi.retention_archive_days as ArchiveDays,
        pvi.retention_archive_months as ArchiveMonths,
        pvi.retention_archive_years as ArchiveYears,
-       coalesce(s.is_legacy_unproven, s.version_id is null) as IsLegacyUnproven,
-       s.review_operation_id as ReviewOperationId
+       {SuggestionColumnSql.LegacyUnproven(columns)} as IsLegacyUnproven,
+       {SuggestionColumnSql.Uuid(columns, "review_operation_id")} as ReviewOperationId
 from ged.document_retention_suggestion s
 left join ged.classification_plan_version_item pvi
   on pvi.tenant_id = s.tenant_id
- and pvi.version_id = s.plan_version_id
+ and {SuggestionColumnSql.PlanVersionMatch(columns)}
  and pvi.id = s.suggested_rule_id
  and coalesce(pvi.reg_status,'A') = 'A'
 where s.tenant_id = @tenantId and s.id = @id
@@ -609,7 +651,7 @@ where tenant_id = @tenantId and id = @id and status in ('PENDING','FAILED')
 
         if (status == "ACCEPTED")
         {
-            if (existing.IsLegacyUnproven || !existing.VersionId.HasValue)
+            if (existing.IsLegacyUnproven || !existing.VersionId.HasValue || !SuggestionColumnSql.CanApplyReview(columns))
                 throw new InvalidOperationException("Recomendação legada ou sem origem/versionamento comprovado deve ser reanalisada antes da aplicação.");
             if (!docState.CurrentVersionId.HasValue)
                 throw new InvalidOperationException("Documento sem versão vigente não pode receber recomendação assistida.");
@@ -1280,6 +1322,21 @@ returning document_id as DocumentId, review_operation_id as OperationId, admin_r
 
     private static async Task<SmartGedReviewRecoveryResult> RecoverExpiredReviewOperationsAsync(Npgsql.NpgsqlConnection connection, Guid tenantId, CancellationToken ct)
     {
+        var classificationColumns = await LoadSuggestionColumns(connection, "document_classification_suggestion", ct);
+        var retentionColumns = await LoadSuggestionColumns(connection, "document_retention_suggestion", ct);
+        var operationTable = await connection.ExecuteScalarAsync<bool>(new CommandDefinition("""
+select exists(
+    select 1
+    from information_schema.tables
+    where table_schema = 'ged' and table_name = 'smart_ged_review_operation_result')
+""", cancellationToken: ct));
+        if (!operationTable
+            || !classificationColumns.Contains("recovered_at")
+            || !retentionColumns.Contains("recovered_at")
+            || !SuggestionColumnSql.CanApplyReview(classificationColumns)
+            || !SuggestionColumnSql.CanApplyReview(retentionColumns))
+            return new(0, 0, 0, 0, 0, 0);
+
         var classificationAppliedPending = await connection.ExecuteAsync(new CommandDefinition("""
 update ged.document_classification_suggestion s
 set status = 'FAILED_APPLIED',
@@ -1435,6 +1492,20 @@ where s.tenant_id = @tenantId
         }
 
         var exclusiveEndOfDay = createdBefore.HasValue ? createdBefore.Value.Date.AddDays(1) : (DateTime?)null;
+        var analysisColumns = await LoadSuggestionColumns(c, "document_ai_analysis", ct);
+        var qualityAvailable = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select to_regclass('ged.document_quality_issue') is not null", cancellationToken: ct));
+        var qualityStatusSql = qualityAvailable
+            ? "case when exists(select 1 from ged.document_quality_issue qi where qi.tenant_id=d.tenant_id and qi.document_id=d.id and qi.status='OPEN') then 'ATENÇÃO' else 'OK' end"
+            : "'OK'";
+        var analysisLateral = $"""
+left join lateral (
+    select {AnalysisColumnSql.LateralColumns(analysisColumns)}
+    from ged.document_ai_analysis a
+    where a.tenant_id = d.tenant_id and a.document_id = d.id and a.reg_status = 'A'
+    order by {AnalysisColumnSql.Order(analysisColumns)}
+    limit 1
+) a on true
+""";
 
         var sql = new System.Text.StringBuilder($"""
 select d.id as DocumentId,
@@ -1442,7 +1513,7 @@ select d.id as DocumentId,
        a.extracted_summary as Summary,
        a.extracted_text as ExtractedText,
        {ArchivalClassificationSql.Label()} as Classification,
-       case when exists(select 1 from ged.document_quality_issue qi where qi.tenant_id=d.tenant_id and qi.document_id=d.id and qi.status='OPEN') then 'ATENÇÃO' else 'OK' end as QualityStatus,
+       {qualityStatusSql} as QualityStatus,
        v.version_number as VersionNumber,
        d.retention_status as RetentionStatus,
        case
@@ -1456,14 +1527,7 @@ select d.id as DocumentId,
        a.version_id as AnalyzedVersionId,
        d.current_version_id as CurrentVersionId
 from ged.document d
-left join lateral (
-    select id, analysis_status, extracted_summary, extracted_text, confidence, created_at,
-           version_id, is_legacy_unproven
-    from ged.document_ai_analysis a
-    where a.tenant_id = d.tenant_id and a.document_id = d.id and a.reg_status = 'A'
-    order by (a.version_id = d.current_version_id) desc nulls last, a.created_at desc
-    limit 1
-) a on true
+{analysisLateral}
 left join ged.document_version v on v.id = d.current_version_id
 left join ged.classification_plan cp on cp.id = d.classification_id and cp.tenant_id = d.tenant_id
 left join ged.classification_plan_version_item pvi on pvi.tenant_id = d.tenant_id and pvi.version_id = d.classification_version_id and pvi.classification_id = d.classification_id
@@ -1542,7 +1606,7 @@ select d.id as DocumentId,
        a.extracted_summary as Summary,
        a.extracted_text as ExtractedText,
        {ArchivalClassificationSql.Label()} as Classification,
-       case when exists(select 1 from ged.document_quality_issue qi where qi.tenant_id=d.tenant_id and qi.document_id=d.id and qi.status='OPEN') then 'ATENÇÃO' else 'OK' end as QualityStatus,
+       {qualityStatusSql} as QualityStatus,
        v.version_number as VersionNumber,
        d.retention_status as RetentionStatus,
        case
@@ -1556,14 +1620,7 @@ select d.id as DocumentId,
        a.version_id as AnalyzedVersionId,
        d.current_version_id as CurrentVersionId
 from ged.document d
-left join lateral (
-    select id, analysis_status, extracted_summary, extracted_text, confidence, created_at,
-           version_id, is_legacy_unproven
-    from ged.document_ai_analysis a
-    where a.tenant_id = d.tenant_id and a.document_id = d.id and a.reg_status = 'A'
-    order by (a.version_id = d.current_version_id) desc nulls last, a.created_at desc
-    limit 1
-) a on true
+{analysisLateral}
 left join ged.document_version v on v.id = d.current_version_id
 left join ged.classification_plan cp on cp.id = d.classification_id and cp.tenant_id = d.tenant_id
 left join ged.classification_plan_version_item pvi on pvi.tenant_id = d.tenant_id and pvi.version_id = d.classification_version_id and pvi.classification_id = d.classification_id
@@ -1634,8 +1691,19 @@ order by array_position(@PageIds, d.id)
         return new(items, total, page, pageSize);
     }
 
+    private static async Task<HashSet<string>> LoadSuggestionColumns(Npgsql.NpgsqlConnection c, string table, CancellationToken ct)
+    {
+        var names = await c.QueryAsync<string>(new CommandDefinition("""
+select column_name
+from information_schema.columns
+where table_schema = 'ged' and table_name = @table
+""", new { table }, cancellationToken: ct));
+        return names.ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
     private static async Task<IReadOnlyList<DocumentClassificationSuggestionItem>> ListClassifications(Npgsql.NpgsqlConnection c, Guid tenantId, string filter, object args, CancellationToken ct, string orderBy = "s.confidence desc, s.created_at desc", string pageClause = "")
     {
+        var columns = await LoadSuggestionColumns(c, "document_classification_suggestion", ct);
         var sql = $"""
 select s.id as Id,
        s.document_id as DocumentId,
@@ -1648,25 +1716,21 @@ select s.id as Id,
        v.version_number as VersionNumber,
        {ArchivalClassificationSql.Label()} as CurrentClassification,
        s.created_at as CreatedAt,
-       case
-           when s.version_id is not null and d.current_version_id is not null and s.version_id <> d.current_version_id then true
-           when s.version_id is null and s.created_at < d.updated_at then true
-           else false
-       end as IsObsolete,
+       {SuggestionColumnSql.Obsolete(columns)} as IsObsolete,
        s.review_notes as ReviewNotes,
-       s.version_id as VersionId,
-       s.plan_version_id as PlanVersionId,
-       coalesce(s.is_legacy_unproven, s.version_id is null) as IsLegacyUnproven,
-       s.review_operation_id as ReviewOperationId,
-       s.processing_started_at as ProcessingStartedAt,
-       s.public_failure_message as PublicFailureMessage,
-       s.recovered_at as RecoveredAt,
-       s.recovery_notes as RecoveryNotes,
-       s.admin_resolution_by as AdminResolutionBy,
-       s.admin_resolution_at as AdminResolutionAt,
-       s.admin_resolution_reason as AdminResolutionReason,
-       s.admin_resolution_evidence as AdminResolutionEvidence,
-       s.admin_resolution_audit_status as AdminResolutionAuditStatus
+       {SuggestionColumnSql.Uuid(columns, "version_id")} as VersionId,
+       {SuggestionColumnSql.Uuid(columns, "plan_version_id")} as PlanVersionId,
+       {SuggestionColumnSql.LegacyUnproven(columns)} as IsLegacyUnproven,
+       {SuggestionColumnSql.Uuid(columns, "review_operation_id")} as ReviewOperationId,
+       {SuggestionColumnSql.Timestamp(columns, "processing_started_at")} as ProcessingStartedAt,
+       {SuggestionColumnSql.Text(columns, "public_failure_message")} as PublicFailureMessage,
+       {SuggestionColumnSql.Timestamp(columns, "recovered_at")} as RecoveredAt,
+       {SuggestionColumnSql.Text(columns, "recovery_notes")} as RecoveryNotes,
+       {SuggestionColumnSql.Uuid(columns, "admin_resolution_by")} as AdminResolutionBy,
+       {SuggestionColumnSql.Timestamp(columns, "admin_resolution_at")} as AdminResolutionAt,
+       {SuggestionColumnSql.Text(columns, "admin_resolution_reason")} as AdminResolutionReason,
+       {SuggestionColumnSql.Text(columns, "admin_resolution_evidence")} as AdminResolutionEvidence,
+       {SuggestionColumnSql.Text(columns, "admin_resolution_audit_status")} as AdminResolutionAuditStatus
 from ged.document_classification_suggestion s
 left join ged.document d on d.id = s.document_id and d.tenant_id = s.tenant_id
 left join ged.document_version v on v.id = d.current_version_id
@@ -1747,6 +1811,7 @@ where s.tenant_id = @tenantId and s.reg_status = 'A'
 
     private static async Task<IReadOnlyList<DocumentRetentionSuggestionItem>> ListRetentions(Npgsql.NpgsqlConnection c, Guid tenantId, string filter, object args, CancellationToken ct, string orderBy = "s.confidence desc, s.created_at desc", string pageClause = "")
     {
+        var columns = await LoadSuggestionColumns(c, "document_retention_suggestion", ct);
         var sql = $"""
 select s.id as Id,
        s.document_id as DocumentId,
@@ -1761,25 +1826,21 @@ select s.id as Id,
        v.version_number as VersionNumber,
        d.retention_status as CurrentRetention,
        s.created_at as CreatedAt,
-       case
-           when s.version_id is not null and d.current_version_id is not null and s.version_id <> d.current_version_id then true
-           when s.version_id is null and s.created_at < d.updated_at then true
-           else false
-       end as IsObsolete,
+       {SuggestionColumnSql.Obsolete(columns)} as IsObsolete,
        s.review_notes as ReviewNotes,
-       s.version_id as VersionId,
-       s.plan_version_id as PlanVersionId,
-       coalesce(s.is_legacy_unproven, s.version_id is null) as IsLegacyUnproven,
-       s.review_operation_id as ReviewOperationId,
-       s.processing_started_at as ProcessingStartedAt,
-       s.public_failure_message as PublicFailureMessage,
-       s.recovered_at as RecoveredAt,
-       s.recovery_notes as RecoveryNotes,
-       s.admin_resolution_by as AdminResolutionBy,
-       s.admin_resolution_at as AdminResolutionAt,
-       s.admin_resolution_reason as AdminResolutionReason,
-       s.admin_resolution_evidence as AdminResolutionEvidence,
-       s.admin_resolution_audit_status as AdminResolutionAuditStatus
+       {SuggestionColumnSql.Uuid(columns, "version_id")} as VersionId,
+       {SuggestionColumnSql.Uuid(columns, "plan_version_id")} as PlanVersionId,
+       {SuggestionColumnSql.LegacyUnproven(columns)} as IsLegacyUnproven,
+       {SuggestionColumnSql.Uuid(columns, "review_operation_id")} as ReviewOperationId,
+       {SuggestionColumnSql.Timestamp(columns, "processing_started_at")} as ProcessingStartedAt,
+       {SuggestionColumnSql.Text(columns, "public_failure_message")} as PublicFailureMessage,
+       {SuggestionColumnSql.Timestamp(columns, "recovered_at")} as RecoveredAt,
+       {SuggestionColumnSql.Text(columns, "recovery_notes")} as RecoveryNotes,
+       {SuggestionColumnSql.Uuid(columns, "admin_resolution_by")} as AdminResolutionBy,
+       {SuggestionColumnSql.Timestamp(columns, "admin_resolution_at")} as AdminResolutionAt,
+       {SuggestionColumnSql.Text(columns, "admin_resolution_reason")} as AdminResolutionReason,
+       {SuggestionColumnSql.Text(columns, "admin_resolution_evidence")} as AdminResolutionEvidence,
+       {SuggestionColumnSql.Text(columns, "admin_resolution_audit_status")} as AdminResolutionAuditStatus
 from ged.document_retention_suggestion s
 left join ged.document d on d.id = s.document_id and d.tenant_id = s.tenant_id
 left join ged.document_version v on v.id = d.current_version_id
@@ -1893,5 +1954,6 @@ order by {orderBy}
     private sealed class ClassificationRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public string? Code { get; set; } public string? Title { get; set; } public string? Reason { get; set; } public decimal Confidence { get; set; } public string Status { get; set; } = ""; public string? DocumentTitle { get; set; } public int? VersionNumber { get; set; } public string? CurrentClassification { get; set; } public DateTimeOffset? CreatedAt { get; set; } public bool IsObsolete { get; set; } public string? ReviewNotes { get; set; } public Guid? VersionId { get; set; } public Guid? PlanVersionId { get; set; } public bool IsLegacyUnproven { get; set; } public Guid? ReviewOperationId { get; set; } public DateTimeOffset? ProcessingStartedAt { get; set; } public string? PublicFailureMessage { get; set; } public DateTimeOffset? RecoveredAt { get; set; } public string? RecoveryNotes { get; set; } public Guid? AdminResolutionBy { get; set; } public DateTimeOffset? AdminResolutionAt { get; set; } public string? AdminResolutionReason { get; set; } public string? AdminResolutionEvidence { get; set; } public string? AdminResolutionAuditStatus { get; set; } }
     private sealed class RetentionRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public string? Phase { get; set; } public string? FinalDestination { get; set; } public string? TriggerEvent { get; set; } public DateTime? RetentionUntil { get; set; } public string? Reason { get; set; } public decimal Confidence { get; set; } public string Status { get; set; } = ""; public string? DocumentTitle { get; set; } public int? VersionNumber { get; set; } public string? CurrentRetention { get; set; } public DateTimeOffset? CreatedAt { get; set; } public bool IsObsolete { get; set; } public string? ReviewNotes { get; set; } public Guid? VersionId { get; set; } public Guid? PlanVersionId { get; set; } public bool IsLegacyUnproven { get; set; } public Guid? ReviewOperationId { get; set; } public DateTimeOffset? ProcessingStartedAt { get; set; } public string? PublicFailureMessage { get; set; } public DateTimeOffset? RecoveredAt { get; set; } public string? RecoveryNotes { get; set; } public Guid? AdminResolutionBy { get; set; } public DateTimeOffset? AdminResolutionAt { get; set; } public string? AdminResolutionReason { get; set; } public string? AdminResolutionEvidence { get; set; } public string? AdminResolutionAuditStatus { get; set; } }
     private sealed class IssueRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public string Type { get; set; } = ""; public string Severity { get; set; } = ""; public string Title { get; set; } = ""; public string? RecommendedAction { get; set; } public string Status { get; set; } = ""; }
+    private sealed class QualityIssueListRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public string? DocumentTitle { get; set; } public string Type { get; set; } = ""; public string Severity { get; set; } = ""; public string Title { get; set; } = ""; public string? RecommendedAction { get; set; } public string Status { get; set; } = ""; public DateTime CreatedAt { get; set; } }
     private sealed class SearchRow { public Guid DocumentId { get; set; } public string Document { get; set; } = ""; public string? Summary { get; set; } public string? ExtractedText { get; set; } public string? Classification { get; set; } public string QualityStatus { get; set; } = ""; public int? VersionNumber { get; set; } public string? RetentionStatus { get; set; } public bool IsAnalysisOutdated { get; set; } public bool IsLegacyUnproven { get; set; } public Guid? AnalyzedVersionId { get; set; } public Guid? CurrentVersionId { get; set; } }
 }

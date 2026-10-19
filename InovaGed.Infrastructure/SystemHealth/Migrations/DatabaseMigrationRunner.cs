@@ -11,17 +11,48 @@ using Npgsql;
 
 namespace InovaGed.Infrastructure.SystemHealth.Migrations;
 
-public sealed class DatabaseMigrationRunner(IDbConnectionFactory db, IHostEnvironment environment) : IDatabaseMigrationRunner
+public sealed class DatabaseMigrationRunner : IDatabaseMigrationRunner
 {
     private static readonly Regex DestructiveSql = new(@"\b(drop\s+(table|schema)|truncate|delete\s+from)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex ExplicitTransactionSql = new(@"^\s*(begin|start\s+transaction)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly IReadOnlySet<string> DestructiveAllowList = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    private readonly string _root = FindRoot(environment.ContentRootPath);
+    private readonly IDbConnectionFactory _db;
+    private readonly string? _root;
+
+    public DatabaseMigrationRunner(IDbConnectionFactory db, IHostEnvironment environment)
+        : this(db, LocateRoot(environment.ContentRootPath, AppContext.BaseDirectory, Directory.GetCurrentDirectory()))
+    {
+    }
+
+    internal DatabaseMigrationRunner(IDbConnectionFactory db, string? repositoryRoot)
+    {
+        _db = db;
+        _root = repositoryRoot;
+    }
+
+    public static string? LocateRoot(params string?[] starts)
+    {
+        foreach (var start in starts)
+        {
+            if (string.IsNullOrWhiteSpace(start)) continue;
+            DirectoryInfo? directory;
+            try { directory = new DirectoryInfo(start); }
+            catch (ArgumentException) { continue; }
+            catch (PathTooLongException) { continue; }
+            for (var current = directory; current is not null; current = current.Parent)
+            {
+                if (File.Exists(Path.Combine(current.FullName, "InovaGed.sln"))) return current.FullName;
+                if (File.Exists(Path.Combine(current.FullName, "database", "required_migrations.json"))) return current.FullName;
+            }
+        }
+        return null;
+    }
 
     public async Task<DatabaseMigrationPlan> GetPlanAsync(CancellationToken ct)
     {
+        if (_root is null) return MissingRootPlan();
         var catalog = await ReadCatalogAsync(ct);
-        await using var connection = await db.OpenAsync(ct);
+        await using var connection = await _db.OpenAsync(ct);
         await EnsureHistoryAsync(connection, ct);
         var history = (await connection.QueryAsync<HistoryRow>(new CommandDefinition("""
             select script_name as ScriptName, checksum_sha256 as ChecksumSha256, success as Success,
@@ -58,6 +89,7 @@ public sealed class DatabaseMigrationRunner(IDbConnectionFactory db, IHostEnviro
 
     public async Task<DatabaseMigrationResult> ApplyOneAsync(string migrationName, Guid? userId, string? userName, CancellationToken ct)
     {
+        if (_root is null) return Failure(migrationName, "", "Raiz do InovaGED não encontrada. O processo precisa enxergar InovaGed.sln ou database/required_migrations.json.");
         var catalog = await ReadCatalogAsync(ct);
         var entry = catalog.SingleOrDefault(x => x.Name.Equals(migrationName, StringComparison.OrdinalIgnoreCase));
         if (entry is null) return Failure(migrationName, "", "Migration não pertence ao catálogo obrigatório.");
@@ -70,7 +102,7 @@ public sealed class DatabaseMigrationRunner(IDbConnectionFactory db, IHostEnviro
         if (DestructiveSql.IsMatch(RemoveComments(sql)) && !DestructiveAllowList.Contains(entry.Name)) return Failure(entry.Name, entry.Path, "Migration bloqueada: comando destrutivo detectado.");
         var checksum = await ChecksumAsync(fullPath, ct);
         var watch = Stopwatch.StartNew();
-        await using var connection = await db.OpenAsync(ct);
+        await using var connection = await _db.OpenAsync(ct);
         await EnsureHistoryAsync(connection, ct);
         if (HasExplicitTransaction(sql))
         {
@@ -128,23 +160,26 @@ public sealed class DatabaseMigrationRunner(IDbConnectionFactory db, IHostEnviro
 
     public async Task<string> GetConsolidatedPendingScriptAsync(CancellationToken ct)
     {
+        if (_root is null) return "-- Raiz do InovaGED não encontrada. Nenhum script foi gerado.\n";
         var plan = await GetPlanAsync(ct); var output = new StringBuilder("-- InovaGED: migrations obrigatórias pendentes\n-- Gerado em UTC: ").Append(DateTimeOffset.UtcNow).AppendLine("\n-- Execute após backup e revisão pelo DBA.\n");
         foreach (var item in plan.Items.Where(x => x.Required && !x.Applied)) { output.AppendLine($"\n-- BEGIN {item.Name} | SHA-256 {item.ChecksumSha256}"); var path = ResolveCatalogPath(item.Path); if (File.Exists(path)) output.AppendLine(await File.ReadAllTextAsync(path, ct)); else output.AppendLine("-- BLOQUEADO: arquivo não encontrado; nenhuma instrução foi gerada."); output.AppendLine($"-- END {item.Name}"); }
         return output.ToString();
     }
 
-    private async Task<List<CatalogEntry>> ReadCatalogAsync(CancellationToken ct) => JsonSerializer.Deserialize<List<CatalogEntry>>(await File.ReadAllTextAsync(Path.Combine(_root, "database", "required_migrations.json"), ct), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? throw new InvalidOperationException("Catálogo de migrations vazio.");
-    private string ResolveCatalogPath(string path) { var full = Path.GetFullPath(Path.Combine(_root, path.Replace('/', Path.DirectorySeparatorChar))); var migrations = Path.GetFullPath(Path.Combine(_root, "database", "migrations")) + Path.DirectorySeparatorChar; if (!full.StartsWith(migrations, StringComparison.Ordinal)) throw new InvalidOperationException("Path de migration fora do diretório permitido."); return full; }
+    private async Task<List<CatalogEntry>> ReadCatalogAsync(CancellationToken ct) => JsonSerializer.Deserialize<List<CatalogEntry>>(await File.ReadAllTextAsync(Path.Combine(_root!, "database", "required_migrations.json"), ct), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? throw new InvalidOperationException("Catálogo de migrations vazio.");
+    private string ResolveCatalogPath(string path) { var full = Path.GetFullPath(Path.Combine(_root!, path.Replace('/', Path.DirectorySeparatorChar))); var migrations = Path.GetFullPath(Path.Combine(_root!, "database", "migrations")) + Path.DirectorySeparatorChar; if (!full.StartsWith(migrations, StringComparison.Ordinal)) throw new InvalidOperationException("Path de migration fora do diretório permitido."); return full; }
     private static async Task<string> ChecksumAsync(string path, CancellationToken ct) { await using var stream = File.OpenRead(path); return Convert.ToHexString(await SHA256.HashDataAsync(stream, ct)).ToLowerInvariant(); }
     private static string RemoveComments(string sql) => Regex.Replace(Regex.Replace(sql, @"/\*.*?\*/", "", RegexOptions.Singleline), @"--.*?$", "", RegexOptions.Multiline);
     private static bool HasExplicitTransaction(string sql) => ExplicitTransactionSql.IsMatch(RemoveComments(sql));
     private static string SafeMigrationError(Exception ex) => ex is PostgresException pg ? $"{pg.SqlState}: {pg.MessageText}{(pg.Position<=0?"":$" (posição {pg.Position})")}" : ex.Message;
-    private static string FindRoot(string start) { for (var d = new DirectoryInfo(start); d is not null; d = d.Parent) if (File.Exists(Path.Combine(d.FullName, "InovaGed.sln"))) return d.FullName; throw new DirectoryNotFoundException("Raiz do InovaGED não encontrada."); }
+    private static DatabaseMigrationPlan MissingRootPlan() => new(
+        [new("catalog", "database/required_migrations.json", "schema", "Catálogo de migrations indisponível neste processo.", true, false, true, null, null, "Raiz do InovaGED não encontrada. O processo precisa enxergar InovaGed.sln ou database/required_migrations.json.")],
+        1, 0, 1, 1);
     private static DatabaseMigrationResult Failure(string name, string path, string error, int duration = 0) => new(false, error, [new(name, path, false, duration, error)]);
     private static Task EnsureHistoryAsync(NpgsqlConnection c, CancellationToken ct) => c.ExecuteAsync(new CommandDefinition(HistorySql, cancellationToken: ct));
     private async Task InsertHistoryOutOfBandAsync(string name, string path, string checksum, Guid? userId, string? userName, bool success, int duration, string? error, CancellationToken ct)
     {
-        await using var historyConnection = await db.OpenAsync(ct);
+        await using var historyConnection = await _db.OpenAsync(ct);
         await EnsureHistoryAsync(historyConnection, ct);
         await historyConnection.ExecuteAsync(new CommandDefinition(InsertHistorySql, new { Name = name, Path = path, Checksum = checksum, UserId = userId, UserName = userName, Success = success, Duration = duration, Error = error }, cancellationToken: ct));
     }

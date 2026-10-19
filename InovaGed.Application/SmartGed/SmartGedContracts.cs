@@ -4,6 +4,7 @@ public interface IDocumentIntelligenceService
 {
     Task<Guid> AnalyzeDocumentAsync(Guid tenantId, Guid documentId, Guid? userId, CancellationToken ct);
     Task<DocumentIntelligenceDetails?> GetAnalysisAsync(Guid tenantId, Guid documentId, CancellationToken ct);
+    Task<DocumentQualityIssueList> ListOpenIssuesAsync(Guid tenantId, Guid userId, CancellationToken ct);
 }
 public interface IDocumentMetadataExtractor { Task<DocumentMetadataExtractionResult> ExtractAsync(DocumentMetadataExtractionInput input, CancellationToken ct); }
 public interface IDocumentClassificationSuggestionService
@@ -108,6 +109,8 @@ public sealed record DocumentRetentionSuggestionItem(
     string? AdminResolutionAuditStatus = null);
 
 public sealed record DocumentQualityIssueItem(Guid Id, Guid DocumentId, string Type, string Severity, string Title, string? RecommendedAction, string Status);
+public sealed record DocumentQualityIssueListItem(Guid Id, Guid DocumentId, string? DocumentTitle, string Type, string Severity, string Title, string? RecommendedAction, string Status, DateTime CreatedAt);
+public sealed record DocumentQualityIssueList(IReadOnlyList<DocumentQualityIssueListItem> Items, bool Available);
 public sealed record DocumentIntelligenceDetails(Guid AnalysisId, Guid DocumentId, string Status, string? Summary, string? DocumentType, string? Subject, DateOnly? DetectedDate, IReadOnlyDictionary<string, IReadOnlyList<string>> MaskedIdentifiers, IReadOnlyList<string> SensitiveIndicators, decimal Confidence, DocumentClassificationSuggestionItem? Classification, DocumentRetentionSuggestionItem? Retention, IReadOnlyList<DocumentQualityIssueItem> Issues);
 public sealed record SmartGedSearchQuery(Guid TenantId, Guid? UserId, string Text, int Limit = 50, int Page = 1, Guid? FolderId = null, Guid? ClassificationId = null, Guid? TypeId = null, DateTime? CreatedAfter = null, DateTime? CreatedBefore = null, string? RetentionStatus = null);
 public sealed record SmartGedSearchItem(Guid DocumentId, string Document, string? Summary, string? Classification, string? PhysicalLocation, string QualityStatus, string Excerpt, int? VersionNumber = null, string? RetentionStatus = null, bool IsAnalysisOutdated = false, bool IsLegacyUnproven = false, Guid? AnalyzedVersionId = null, Guid? CurrentVersionId = null);

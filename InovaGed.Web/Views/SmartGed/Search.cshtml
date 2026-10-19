@@ -177,6 +177,10 @@
                                 {
                                     <span class="badge bg-success text-white"><i class="bi bi-check-circle"></i> OK</span>
                                 }
+                                @if (item.IsLegacyUnproven)
+                                {
+                                    <span class="badge bg-warning text-dark ms-1" title="A análise não tem a versão documental comprovada">Sem proveniência</span>
+                                }
                                 @if (item.IsAnalysisOutdated)
                                 {
                                     <span class="badge bg-secondary text-white ms-1" title="Análise anterior à última alteração do documento">Desatualizada</span>

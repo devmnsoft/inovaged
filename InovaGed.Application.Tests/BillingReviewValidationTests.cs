@@ -78,6 +78,35 @@ public sealed class BillingChecklistTests
         Assert.Contains(checks, item => item.Code == "DATES" && !item.Passed);
         Assert.Contains(checks, item => item.Code == "GROSS" && !item.Passed);
     }
+
+    [Fact]
+    public void Review_preview_uses_the_edited_fields_and_keeps_the_identified_kind()
+    {
+        var stored = new BillingExtractionDto
+        {
+            DocumentKind = "INVOICE",
+            Confidence = 80,
+            SupplierName = "Antigo",
+            GrossAmount = 10
+        };
+        var input = new BillingReviewInput
+        {
+            SupplierName = "Fornecedor Exemplo",
+            SupplierDocument = "04.252.011/0001-10",
+            InvoiceNumber = "123",
+            GrossAmount = 100,
+            NetAmount = 90,
+            IssueDate = new DateTime(2026, 8, 1),
+            DueDate = new DateTime(2026, 8, 10),
+            CompetenceMonth = "08/2026"
+        };
+
+        var checks = BillingChecklist.EvaluateReview(stored, input);
+
+        Assert.True(BillingChecklist.CanApprove(checks));
+        Assert.Contains(checks, item => item.Code == "IDENTIFIED" && item.Detail == "Nota fiscal");
+        Assert.Contains(checks, item => item.Code == "SUPPLIER" && item.Detail == "Fornecedor Exemplo");
+    }
 }
 
 public sealed class BillingExtractionRuleValidationTests

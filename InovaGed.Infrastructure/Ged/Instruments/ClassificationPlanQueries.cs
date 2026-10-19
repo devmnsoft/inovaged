@@ -74,7 +74,7 @@ order by sort_order, code;
 select
   i.classification_id as Id,
   i.code as Code,
-  coalesce(i.name, i.title) as Name
+  i.name as Name
 from ged.classification_plan_version_item i
 join ged.classification_plan_version v on v.tenant_id = i.tenant_id and v.id = i.version_id
 where i.tenant_id = @tenant_id

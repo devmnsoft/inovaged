@@ -23,6 +23,12 @@ public sealed class SmartGedSearchPageVM
         || CreatedAfter.HasValue || CreatedBefore.HasValue || !string.IsNullOrWhiteSpace(RetentionStatus);
 }
 
+public sealed record SmartGedQualityPage(
+    IReadOnlyList<DocumentQualityIssueListItem> Issues,
+    int PendingClassifications,
+    int PendingRetentions,
+    bool IssuesAvailable);
+
 public sealed class SmartGedDocumentVM
 {
     public Guid DocumentId { get; set; }

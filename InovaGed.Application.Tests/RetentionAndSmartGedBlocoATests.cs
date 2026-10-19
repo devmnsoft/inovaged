@@ -1,6 +1,7 @@
 using InovaGed.Application.Ged.Protocols;
 using InovaGed.Application.Retention;
 using InovaGed.Application.SmartGed;
+using InovaGed.Infrastructure.SmartGed;
 using System.IO;
 using Xunit;
 
@@ -338,7 +339,7 @@ public sealed class RetentionAndSmartGedBlocoATests
 
         Assert.Contains("InsertHistoryOutOfBandAsync", explicitTransactionRegion);
         Assert.Contains("Falha ao registrar histórico", explicitTransactionRegion);
-        Assert.Contains("await using var historyConnection = await db.OpenAsync(ct);", source);
+        Assert.Contains("await using var historyConnection = await _db.OpenAsync(ct);", source);
     }
 
     [Fact]
@@ -551,6 +552,90 @@ public sealed class RetentionAndSmartGedBlocoATests
         Assert.Contains("\"RECORDING\" => \"Registro em confirmação\"", source);
         Assert.Contains("AuditStatusLabel(x.AdminResolutionAuditStatus)", source);
         Assert.DoesNotContain("x.AdminResolutionAuditStatus) ? \"PENDENTE\"", source);
+    }
+
+    [Fact]
+    public void Suggestion_version_uses_the_suggestion_column_and_not_the_plan_version()
+    {
+        var installed = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "id", "tenant_id", "document_id", "analysis_id", "suggested_classification_id",
+            "suggested_classification_code", "suggested_classification_title", "suggested_reason",
+            "confidence", "status", "reviewed_by", "reviewed_at", "review_notes", "created_at", "reg_status",
+            "suggested_rule_id", "suggested_phase", "suggested_final_destination", "suggested_trigger_event",
+            "suggested_retention_until"
+        };
+
+        Assert.Equal("null::uuid", SuggestionColumnSql.Uuid(installed, "version_id"));
+        Assert.Equal("true", SuggestionColumnSql.LegacyUnproven(installed));
+        Assert.DoesNotContain("version_id", SuggestionColumnSql.Obsolete(installed), StringComparison.Ordinal);
+        Assert.Equal("false", SuggestionColumnSql.PlanVersionMatch(installed));
+        Assert.DoesNotContain("pvi.version_id", SuggestionColumnSql.Uuid(installed, "version_id"), StringComparison.Ordinal);
+        Assert.False(SuggestionColumnSql.CanApplyReview(installed));
+
+        var proven = new HashSet<string>(installed, StringComparer.OrdinalIgnoreCase)
+        {
+            "version_id", "plan_version_id", "is_legacy_unproven", "review_operation_id",
+            "processing_started_at", "processing_expires_at", "applied_at", "failed_at",
+            "failure_code", "public_failure_message"
+        };
+        Assert.Equal("s.version_id", SuggestionColumnSql.Uuid(proven, "version_id"));
+        Assert.Contains("coalesce(s.is_legacy_unproven, s.version_id is null)", SuggestionColumnSql.LegacyUnproven(proven), StringComparison.Ordinal);
+        Assert.Contains("s.version_id <> d.current_version_id", SuggestionColumnSql.Obsolete(proven), StringComparison.Ordinal);
+        Assert.DoesNotContain("pvi.version_id", SuggestionColumnSql.Obsolete(proven), StringComparison.Ordinal);
+        Assert.Equal("pvi.version_id = s.plan_version_id", SuggestionColumnSql.PlanVersionMatch(proven));
+        Assert.True(SuggestionColumnSql.CanApplyReview(proven));
+
+        var service = File.ReadAllText(RepoPath("InovaGed.Infrastructure", "SmartGed", "SmartGedService.cs"));
+        Assert.Contains("LoadSuggestionColumns", service);
+        Assert.DoesNotContain("pvi.version_id as VersionId", service);
+        Assert.Contains("Sem proveniência", File.ReadAllText(RepoPath("InovaGed.Web", "Views", "SmartGed", "ReviewQueue.cshtml")));
+        Assert.Contains("/SmartGed/ReviewQueue?kind=retention", File.ReadAllText(RepoPath("InovaGed.Web", "Views", "Disposition", "Index.cshtml")));
+    }
+
+    [Fact]
+    public void Quality_page_lists_open_ai_issues_without_replacing_the_review_queue()
+    {
+        var service = File.ReadAllText(RepoPath("InovaGed.Infrastructure", "SmartGed", "SmartGedService.cs"));
+        var controller = File.ReadAllText(RepoPath("InovaGed.Web", "Controller", "SmartGedController.cs"));
+        var view = File.ReadAllText(RepoPath("InovaGed.Web", "Views", "SmartGed", "Quality.cshtml"));
+        var index = File.ReadAllText(RepoPath("InovaGed.Web", "Views", "SmartGed", "Index.cshtml"));
+        var queue = File.ReadAllText(RepoPath("InovaGed.Web", "Views", "Disposition", "Queue.cshtml"));
+
+        Assert.Contains("ListOpenIssuesAsync", service);
+        Assert.Contains("qi.status = 'OPEN'", service);
+        Assert.Contains("AbacAuthorizationService.DocumentAccessPredicate(\"d\")", service);
+        Assert.Contains("ListOpenIssuesAsync", controller);
+        Assert.Contains("IssuesAvailable", view);
+        Assert.DoesNotContain("Model.Classifications.Count", view);
+        Assert.Contains("/SmartGed/ReviewQueue?kind=retention", index);
+        Assert.Contains("/SmartGed/Document/@row.DocumentId", queue);
+        Assert.Contains("Não gera cobrança nem aprova pagamento.", File.ReadAllText(RepoPath("InovaGed.Web", "Views", "Billing", "Review.cshtml")));
+    }
+
+    [Fact]
+    public void Analysis_search_projects_version_only_when_the_column_exists()
+    {
+        var installed = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "id", "tenant_id", "document_id", "analysis_status", "extracted_summary", "extracted_text", "confidence", "created_at", "reg_status"
+        };
+        var installedColumns = AnalysisColumnSql.LateralColumns(installed);
+        Assert.Contains("null::uuid as version_id", installedColumns, StringComparison.Ordinal);
+        Assert.Contains("true as is_legacy_unproven", installedColumns, StringComparison.Ordinal);
+        Assert.DoesNotContain("a.version_id", AnalysisColumnSql.Order(installed), StringComparison.Ordinal);
+
+        var proven = new HashSet<string>(installed, StringComparer.OrdinalIgnoreCase) { "version_id", "is_legacy_unproven" };
+        var provenColumns = AnalysisColumnSql.LateralColumns(proven);
+        Assert.Contains("created_at, version_id, is_legacy_unproven", provenColumns, StringComparison.Ordinal);
+        Assert.DoesNotContain("null::uuid", provenColumns, StringComparison.Ordinal);
+        Assert.Contains("a.version_id = d.current_version_id", AnalysisColumnSql.Order(proven), StringComparison.Ordinal);
+        Assert.DoesNotContain("pvi.version_id", AnalysisColumnSql.Order(proven), StringComparison.Ordinal);
+
+        var billing = File.ReadAllText(RepoPath("InovaGed.Infrastructure", "Billing", "BillingQueries.cs"));
+        Assert.Contains("document_search", billing);
+        Assert.DoesNotContain("ds.ocr_text", billing);
+        Assert.Contains("Sem proveniência", File.ReadAllText(RepoPath("InovaGed.Web", "Views", "SmartGed", "Search.cshtml")));
     }
 
     private static string RepoPath(params string[] segments)

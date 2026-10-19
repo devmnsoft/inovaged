@@ -17,6 +17,11 @@ and (@Status is null or e.extraction_status=@Status)
 and (@MinimumAmount is null or e.gross_amount>=@MinimumAmount)
 """;
         var args = new { tenantId, filter.Supplier, filter.SupplierDocument, filter.Competence, filter.Status, filter.MinimumAmount };
+        var searchColumns = (await conn.QueryAsync<string>(new CommandDefinition("select column_name from information_schema.columns where table_schema='ged' and table_name='document_search'", cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var textColumn = searchColumns.Contains("ocr_text") ? "ocr_text" : searchColumns.Contains("content") ? "content" : searchColumns.Contains("search_text") ? "search_text" : null;
+        var withoutOcrSql = textColumn is null
+            ? "0"
+            : $"(select count(*)::int from ged.document d where d.tenant_id=@tenantId and d.reg_status='A' and not exists(select 1 from ged.document_search ds where ds.tenant_id=d.tenant_id and ds.document_id=d.id and nullif(btrim(ds.{textColumn}),'') is not null))";
         var rows = (await conn.QueryAsync<BillingExtractionDto>(new CommandDefinition($$"""
 select e.id "Id", e.document_id "DocumentId", e.document_version_id "DocumentVersionId", coalesce(d.title,d.code,'Documento') "DocumentTitle",
 e.extraction_status "ExtractionStatus", e.document_kind "DocumentKind", e.supplier_name "SupplierName", e.supplier_document "SupplierDocument",
@@ -28,11 +33,11 @@ e.ust_unit_value "UstUnitValue", e.confidence "Confidence", e.created_at "Create
 from ged.billing_document_extraction e left join ged.document d on d.tenant_id=e.tenant_id and d.id=e.document_id
 {{where}} order by e.created_at desc limit 300
 """, args, cancellationToken: ct))).AsList();
-        var k = await conn.QuerySingleAsync<BillingKpis>(new CommandDefinition("""
+        var k = await conn.QuerySingleAsync<BillingKpis>(new CommandDefinition($"""
 select count(*)::int "Extracted", count(*) filter(where extraction_status='PENDING_REVIEW')::int "PendingReview",
 count(*) filter(where extraction_status='APPROVED')::int "Approved", count(*) filter(where extraction_status='DIVERGENT')::int "Divergent",
 coalesce(sum(gross_amount),0) "TotalAmount",
-(select count(*)::int from ged.document d where d.tenant_id=@tenantId and d.reg_status='A' and not exists(select 1 from ged.document_search ds where ds.tenant_id=d.tenant_id and ds.document_id=d.id and nullif(btrim(ds.ocr_text),'') is not null)) "WithoutOcr"
+{withoutOcrSql} "WithoutOcr"
 from ged.billing_document_extraction where tenant_id=@tenantId and reg_status='A'
 """, new { tenantId }, cancellationToken: ct));
         return (k, rows);

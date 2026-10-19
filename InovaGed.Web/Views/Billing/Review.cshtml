@@ -3,6 +3,10 @@
 @model BillingReviewInput
 @{ViewData["Title"]="Revisar extração";var header=new AtlasPageHeaderVm("Revisão financeira",Model.DocumentTitle,"edit","Faturamento",new[]{new AtlasPageAction("Cancelar",Url.Action("Details","Billing",new{id=Model.Id})!,"close",false)});}
 <partial name="Atlas/_PageHeader" model="header" />
+@if (ViewData["Checklist"] is IReadOnlyList<BillingChecklistItem> checks)
+{
+    <div class="mb-3"><partial name="_BillingChecklist" model="checks" /></div>
+}
 <form method="post" class="card border-0 shadow-sm">
 <div class="card-body row g-3">@Html.AntiForgeryToken()
 <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
@@ -16,5 +20,5 @@
 <div class="col-md-4"><label asp-for="UstQuantity" class="form-label">Quantidade UST</label><input asp-for="UstQuantity" class="form-control" type="number" step=".0001" /></div>
 <div class="col-md-4"><label asp-for="UstUnitValue" class="form-label">Valor unitário UST</label><input asp-for="UstUnitValue" class="form-control" type="number" step=".0001" /></div>
 <div class="col-12 form-check ms-2"><input asp-for="HasDivergence" class="form-check-input"><label asp-for="HasDivergence" class="form-check-label">Marcar divergência para tratamento (permite salvar campos fiscais incompletos)</label></div>
-</div><div class="card-footer text-end"><button class="btn btn-primary">Salvar revisão</button></div></form>
+</div><div class="card-footer d-flex justify-content-between align-items-center gap-3"><span class="small text-muted">Salvar a revisão registra a conferência. Não gera cobrança nem aprova pagamento.</span><button class="btn btn-primary">Salvar revisão</button></div></form>
 @section Scripts { <partial name="_ValidationScriptsPartial" /> }

@@ -10,7 +10,8 @@
         [
             new AtlasPageAction("Ver fila", "/Disposition/Queue", "list", true),
             new AtlasPageAction("Termos", "/Disposition/Terms", "documents", false),
-            new AtlasPageAction("Tabela de temporalidade", "/ClassificationPlan/RetentionRules", "settings", false)
+            new AtlasPageAction("Tabela de temporalidade", "/ClassificationPlan/RetentionRules", "settings", false),
+            new AtlasPageAction("Revisão da IA", "/SmartGed/ReviewQueue?kind=retention", "stars", false)
         ]);
     var metrics = new[]
     {
@@ -26,6 +27,7 @@
     <div class="card-body">
         <h2 class="h5">Como ler estes prazos</h2>
         <p class="mb-2">A fase e o destino saem da regra vinculada à classificação do documento. A data de vencimento é a persistida em <span class="font-monospace">retention_due_at</span>.</p>
+        <p class="mb-2">As sugestões da IA ficam na <a href="/SmartGed/ReviewQueue?kind=retention">fila de revisão de temporalidade</a>. Aceitar uma sugestão só pede o recálculo do prazo já persistido. Não elimina nem transfere o documento.</p>
         <p class="text-muted mb-0">Um documento sem regra, sem evento inicial ou com impedimento permanece em revisão. Esta tela não executa eliminação nem transferência.</p>
     </div>
 </section>

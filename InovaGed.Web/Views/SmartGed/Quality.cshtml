@@ -1,3 +1,85 @@
-@model InovaGed.Application.SmartGed.SmartGedReviewQueue
-@{ViewData["Title"]="Qualidade documental inteligente";ViewData["Subtitle"]="Pendências produzidas por análise local e sujeitas à revisão humana.";ViewData["Icon"]="health";}
-<partial name="Atlas/_AtlasPageHero"/><div class="row g-3"><div class="col-md-6"><div class="card atlas-card"><div class="card-body"><span class="text-muted">Classificações pendentes</span><div class="display-6">@Model.Classifications.Count</div></div></div></div><div class="col-md-6"><div class="card atlas-card"><div class="card-body"><span class="text-muted">Temporalidades pendentes</span><div class="display-6">@Model.Retentions.Count</div></div></div></div></div><div class="alert alert-info mt-4">Análises com baixa confiança e ausência do plano de classificação geram problemas de qualidade automaticamente.</div>
+@using InovaGed.Web.Models.Atlas
+@using InovaGed.Web.Models.SmartGed
+@model SmartGedQualityPage
+@{
+    ViewData["Title"] = "Qualidade documental";
+    var header = new AtlasPageHeaderVm(
+        "Qualidade documental",
+        "Pendências abertas pela análise assistida: plano indisponível, classe inativa e baixa confiança.",
+        "shield",
+        "GED inteligente",
+        [
+            new AtlasPageAction("Classificação", "/SmartGed/ReviewQueue?kind=classification", "label", true),
+            new AtlasPageAction("Temporalidade", "/SmartGed/ReviewQueue?kind=retention", "calendar", false)
+        ]);
+    var metrics = new[]
+    {
+        new AtlasMetricVm("Pendências abertas", Model.IssuesAvailable ? Model.Issues.Count.ToString() : "Indisponível", "problemas de qualidade ainda abertos", "warning", "warning"),
+        new AtlasMetricVm("Classificações pendentes", Model.PendingClassifications.ToString(), "sugestões aguardando revisão", "info", "label", "/SmartGed/ReviewQueue?kind=classification&status=PENDING"),
+        new AtlasMetricVm("Temporalidades pendentes", Model.PendingRetentions.ToString(), "prazos sugeridos sem aceite", "info", "calendar", "/SmartGed/ReviewQueue?kind=retention&status=PENDING")
+    };
+    string Severity(string value) => value switch
+    {
+        "HIGH" => "Alta",
+        "MEDIUM" => "Média",
+        "LOW" => "Baixa",
+        _ => value
+    };
+}
+<partial name="Atlas/_PageHeader" model="header" />
+<partial name="Atlas/_PageMetrics" model="metrics" />
+<div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Documento</th>
+                    <th>Pendência</th>
+                    <th>Gravidade</th>
+                    <th>Ação recomendada</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            @if (!Model.IssuesAvailable)
+            {
+                <tr>
+                    <td colspan="5" class="text-center py-5">
+                        <h2 class="h5">Qualidade documental indisponível</h2>
+                        <p class="text-muted mb-0">A tabela de pendências não está instalada. As sugestões de classificação e temporalidade continuam na fila de revisão.</p>
+                    </td>
+                </tr>
+            }
+            else if (Model.Issues.Count == 0)
+            {
+                <tr>
+                    <td colspan="5" class="text-center py-5">
+                        <h2 class="h5">Nenhuma pendência aberta</h2>
+                        <p class="text-muted mb-0">A análise grava um problema quando o plano não pode sugerir classe ou quando a confiança fica abaixo de 55.</p>
+                    </td>
+                </tr>
+            }
+            @foreach (var issue in Model.Issues)
+            {
+                <tr>
+                    <td>
+                        <div class="fw-semibold">@(string.IsNullOrWhiteSpace(issue.DocumentTitle) ? "Documento sem título" : issue.DocumentTitle)</div>
+                        <div class="small text-muted">@issue.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</div>
+                    </td>
+                    <td>
+                        <div class="fw-semibold">@issue.Title</div>
+                        <div class="small text-muted">@issue.Type</div>
+                    </td>
+                    <td><span class="badge @(issue.Severity == "HIGH" ? "text-bg-danger" : "text-bg-warning")">@Severity(issue.Severity)</span></td>
+                    <td class="small">@(issue.RecommendedAction ?? "Revise o documento antes de aceitar uma sugestão.")</td>
+                    <td class="text-end"><a class="btn btn-sm btn-outline-secondary" href="/SmartGed/Document/@issue.DocumentId">Abrir análise</a></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</div>
+@if (Model.IssuesAvailable && Model.Issues.Count == 200)
+{
+    <p class="small text-muted mt-2 mb-0">A lista mostra as 200 pendências abertas de maior gravidade.</p>
+}

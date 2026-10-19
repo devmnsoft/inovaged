@@ -34,6 +34,24 @@ public static class BillingChecklist
         ];
     }
 
+    public static IReadOnlyList<BillingChecklistItem> EvaluateReview(BillingExtractionDto stored, BillingReviewInput input) =>
+        Evaluate(new BillingExtractionDto
+        {
+            DocumentKind = stored.DocumentKind,
+            Confidence = stored.Confidence,
+            SupplierName = input.SupplierName,
+            SupplierDocument = input.SupplierDocument,
+            InvoiceNumber = input.InvoiceNumber,
+            IssueDate = input.IssueDate,
+            DueDate = input.DueDate,
+            CompetenceMonth = input.CompetenceMonth,
+            GrossAmount = input.GrossAmount,
+            NetAmount = input.NetAmount,
+            TaxAmount = input.TaxAmount,
+            UstQuantity = input.UstQuantity,
+            UstUnitValue = input.UstUnitValue
+        });
+
     public static bool CanApprove(IEnumerable<BillingChecklistItem> items) => items.Where(item => item.Required).All(item => item.Passed);
 
     public static string KindLabel(string? kind) => kind switch

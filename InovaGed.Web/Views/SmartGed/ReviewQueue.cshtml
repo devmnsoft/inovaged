@@ -34,6 +34,7 @@
             • <strong>Decisão individual:</strong> Cada ação afeta estritamente a sugestão selecionada. Nenhuma outra sugestão é aprovada ou aplicada automaticamente.<br />
             • <strong>Classificação e Temporalidade:</strong> A aprovação da classificação enfileira o cálculo canônico de temporalidade no plano vigente. A aprovação de temporalidade aciona o recálculo canônico sobre o documento sem inventar regras.<br />
             • <strong>Sugestões Obsoletas:</strong> Marcadas com aviso amarelo se o documento recebeu novas versões após a análise. Recomenda-se reanalisar a versão atual antes da decisão.<br />
+            • <strong>Sem proveniência:</strong> Sugestão gravada sem a versão documental comprovada permanece na fila, pode ser rejeitada e não pode ser aplicada. A versão do plano não substitui essa origem.<br />
             • <strong>Justificativa do Revisor:</strong> Todas as decisões exigem ou permitem justificativa personalizada, gravada na trilha de auditoria.
         </span>
     </div>
@@ -281,6 +282,12 @@
                             @if (x.Status == "PENDING")
                             {
                                 <div class="d-flex flex-column gap-2">
+                                    @if (x.IsLegacyUnproven)
+                                    {
+                                        <div class="small text-muted">Sem proveniência da versão documental. Reanalise antes de aplicar. A rejeição continua disponível.</div>
+                                    }
+                                    else
+                                    {
                                     <!-- Ação de Aceite com Justificativa Editável -->
                                     <details class="border rounded p-2 bg-light">
                                         <summary class="btn btn-sm btn-success w-100 text-start d-flex justify-content-between align-items-center">
@@ -298,6 +305,7 @@
                                             </button>
                                         </form>
                                     </details>
+                                    }
 
                                     <!-- Ação de Rejeição com Motivo Obrigatório -->
                                     <details class="border rounded p-2 bg-light">
@@ -524,6 +532,12 @@
                             @if (x.Status == "PENDING")
                             {
                                 <div class="d-flex flex-column gap-2">
+                                    @if (x.IsLegacyUnproven)
+                                    {
+                                        <div class="small text-muted">Sem proveniência da versão documental. Reanalise antes de recalcular. A rejeição continua disponível. Esta ação não elimina nem transfere o documento.</div>
+                                    }
+                                    else
+                                    {
                                     <!-- Ação de Aceite com Justificativa Editável -->
                                     <details class="border rounded p-2 bg-light">
                                         <summary class="btn btn-sm btn-success w-100 text-start d-flex justify-content-between align-items-center">
@@ -544,6 +558,7 @@
                                             </button>
                                         </form>
                                     </details>
+                                    }
 
                                     <!-- Ação de Rejeição com Motivo Obrigatório -->
                                     <details class="border rounded p-2 bg-light">

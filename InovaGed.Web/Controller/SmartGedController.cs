@@ -313,7 +313,13 @@ where d.tenant_id = @tenantId and d.id = @documentId and coalesce(d.reg_status, 
     }
 
     [HttpGet("Quality")]
-    public async Task<IActionResult> Quality(CancellationToken ct) => View(await BuildQueue(ct));
+    public async Task<IActionResult> Quality(CancellationToken ct)
+    {
+        var issues = await _intelligence.ListOpenIssuesAsync(_user.TenantId, _user.UserId, ct);
+        var pendingClassifications = await _classifications.CountAsync(_user.TenantId, "PENDING", _user.UserId, ct);
+        var pendingRetentions = await _retentions.CountAsync(_user.TenantId, "PENDING", _user.UserId, ct);
+        return View(new SmartGedQualityPage(issues.Items, pendingClassifications, pendingRetentions, issues.Available));
+    }
 
     [HttpGet("Search")]
     public async Task<IActionResult> Search(
@@ -452,7 +458,7 @@ where d.tenant_id = @tenantId and d.id = @documentId and coalesce(d.reg_status, 
             new CommandDefinition("""
 select coalesce(i.classification_id, cp.id) as Id,
        coalesce(i.code, cp.code) as Code,
-       coalesce(i.name, cp.name, i.title) as Name
+       coalesce(i.name, cp.name) as Name
 from ged.classification_plan_version_item i
 join ged.classification_plan_version v on v.tenant_id=i.tenant_id and v.id=i.version_id
 left join ged.classification_plan cp on cp.tenant_id=i.tenant_id and cp.id=i.classification_id
@@ -466,9 +472,6 @@ order by i.code;
             new CommandDefinition("select id, name from ged.document_type where tenant_id=@TenantId and coalesce(reg_status,'A')='A' order by name", new { TenantId = _user.TenantId }, cancellationToken: ct));
         vm.DocumentTypes = types.Select(t => new SelectListItem(t.Name, t.Id.ToString(), t.Id == vm.TypeId)).ToList();
     }
-
-    private async Task<SmartGedReviewQueue> BuildQueue(CancellationToken ct) =>
-        new(await _classifications.ListPendingAsync(_user.TenantId, _user.UserId, ct), await _retentions.ListPendingAsync(_user.TenantId, _user.UserId, ct));
 
     private sealed class DocumentDetailsRow
     {

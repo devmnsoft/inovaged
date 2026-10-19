@@ -101,7 +101,10 @@
                     <td>@(row.RetentionDueAt?.ToString("dd/MM/yyyy") ?? "Prazo não calculado")<div class="text-muted small">@(row.RetentionStatus ?? "Situação de guarda não informada")</div></td>
                     <td><span class="badge text-bg-light">@Label(row.DispositionStatus)</span></td>
                     <td>@(row.DispositionAt?.ToString("dd/MM/yyyy HH:mm") ?? "Ainda não destinada")</td>
-                    <td class="text-end"><a class="btn btn-sm btn-outline-secondary" href="/Ged/Details?id=@row.DocumentId">Abrir</a></td>
+                    <td class="text-end">
+                        <a class="btn btn-sm btn-outline-secondary" href="/Ged/Details?id=@row.DocumentId">Abrir</a>
+                        <a class="btn btn-sm btn-outline-secondary" href="/SmartGed/Document/@row.DocumentId">Sugestão da IA</a>
+                    </td>
                 </tr>
             }
             </tbody>
