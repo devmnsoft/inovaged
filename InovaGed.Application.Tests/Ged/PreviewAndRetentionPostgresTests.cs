@@ -680,6 +680,68 @@ values (@foreignId, @otherTenant, null, @versionId, 'PREVIEW', 'FAILED', 'outro 
         Assert.Equal("FAILED", await database.Connection.ExecuteScalarAsync<string>("select status from ged.processing_job where id=@foreignId", new { foreignId }));
     }
 
+    [LocalPgFact]
+    public async Task Jobs_abandonados_de_outros_tipos_voltam_a_fila_e_o_preview_permanece_com_o_worker_dele()
+    {
+        await using var database = await ScratchDatabase.CreateAsync();
+        await database.ExecuteAsync("""
+create schema if not exists ged;
+create table ged.processing_job (
+    id uuid primary key,
+    tenant_id uuid not null,
+    document_id uuid null,
+    document_version_id uuid null,
+    upload_batch_id uuid null,
+    upload_batch_item_id uuid null,
+    job_type text not null,
+    status text not null,
+    priority int not null default 5,
+    attempt_count int not null default 0,
+    max_attempts int not null default 3,
+    error_message text null,
+    started_at timestamptz null,
+    finished_at timestamptz null,
+    next_attempt_at timestamptz null,
+    locked_by text null,
+    locked_at timestamptz null,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz null,
+    reg_status char(1) not null default 'A'
+);
+""");
+        var tenant = database.TenantId;
+        var indexId = Guid.NewGuid();
+        var classId = Guid.NewGuid();
+        var ocrId = Guid.NewGuid();
+        var previewId = Guid.NewGuid();
+        var liveId = Guid.NewGuid();
+        await database.Connection.ExecuteAsync("""
+insert into ged.processing_job (id, tenant_id, job_type, status, locked_by, locked_at)
+values
+ (@indexId, @tenant, 'SMART_INDEX', 'PROCESSING', 'morto', now() - interval '30 minutes'),
+ (@classId, @tenant, 'CLASSIFICATION', 'PROCESSING', 'morto', now() - interval '30 minutes'),
+ (@ocrId, @tenant, 'OCR', 'PROCESSING', null, null),
+ (@previewId, @tenant, 'PREVIEW', 'PROCESSING', 'preview', now() - interval '30 minutes'),
+ (@liveId, @tenant, 'SECTOR_EXTRACT', 'PROCESSING', 'vivo', now());
+""", new { tenant, indexId, classId, ocrId, previewId, liveId });
+
+        var jobs = new GedProcessingJobRepository(database.Factory, NullLogger<GedProcessingJobRepository>.Instance);
+        var recovered = await jobs.RecoverAbandonedExceptAsync("PREVIEW", TimeSpan.FromMinutes(10), CancellationToken.None);
+        Assert.Equal(3, recovered);
+        Assert.Equal("PENDING", await database.Connection.ExecuteScalarAsync<string>("select status from ged.processing_job where id=@indexId", new { indexId }));
+        Assert.Equal("PENDING", await database.Connection.ExecuteScalarAsync<string>("select status from ged.processing_job where id=@classId", new { classId }));
+        Assert.Equal("PENDING", await database.Connection.ExecuteScalarAsync<string>("select status from ged.processing_job where id=@ocrId", new { ocrId }));
+        Assert.Equal("PROCESSING", await database.Connection.ExecuteScalarAsync<string>("select status from ged.processing_job where id=@previewId", new { previewId }));
+        Assert.Equal("PROCESSING", await database.Connection.ExecuteScalarAsync<string>("select status from ged.processing_job where id=@liveId", new { liveId }));
+
+        await jobs.TouchLockAsync(tenant, liveId, "vivo", CancellationToken.None);
+        Assert.Equal(0, await jobs.RecoverAbandonedExceptAsync("PREVIEW", TimeSpan.FromMinutes(10), CancellationToken.None));
+        var claimed = await jobs.DequeueAsync("worker-b", 10, CancellationToken.None);
+        Assert.Contains(claimed, job => job.Id == indexId);
+        Assert.DoesNotContain(claimed, job => job.Id == previewId || job.Id == liveId);
+        Assert.Equal(1, await database.Connection.ExecuteScalarAsync<int>("select count(*) from ged.processing_job where id=@indexId", new { indexId }));
+    }
+
     private static PreviewStatusUpsert Write(Guid tenantId, Guid versionId, PreviewProcessingStatus status, DateTimeOffset requestedAt, Guid attemptId, string? error = null, string? path = null, bool confirm = false)
         => new()
         {

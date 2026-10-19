@@ -10,4 +10,6 @@ public interface IDocumentMoveService
     Task<Result<DocumentBulkMoveResultDto>> MoveBulkAsync(Guid tenantId, Guid userId, string? userName, IReadOnlyList<Guid> documentIds, Guid destinationFolderId, string? reason, string source, bool isAdmin, bool allOrNothing, string? idempotencyKey, string? correlationId, CancellationToken ct);
     Task<IReadOnlyList<FolderOptionDto>> SearchFoldersAsync(Guid tenantId, Guid userId, string? term, CancellationToken ct);
     Task<IReadOnlyList<DocumentMoveHistoryDto>> GetMoveHistoryAsync(Guid tenantId, Guid documentId, CancellationToken ct);
+    Task<Result<DocumentMoveResultDto>> UndoAsync(Guid tenantId, Guid userId, string? userName, Guid documentId, Guid? historyId, string? reason, bool isAdmin, string? correlationId, string? idempotencyKey, CancellationToken ct);
+    Task<Result<DocumentBulkMoveResultDto>> UndoBulkAsync(Guid tenantId, Guid userId, string? userName, IReadOnlyList<DocumentUndoItemVM> items, string? reason, bool isAdmin, string? correlationId, string? idempotencyKey, CancellationToken ct);
 }

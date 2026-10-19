@@ -13,5 +13,10 @@ public sealed class NavigationSimplicityTests
         var groups = Regex.Matches(fullAdmin, "<summary>([^<]+)</summary>").Select(match => match.Groups[1].Value).ToArray();
         Assert.Equal(["Visão Geral", "Gestão Documental", "Demais setores", "Arquivo Físico", "Atendimento", "Governança", "Administração"], groups);
         Assert.Equal(7, Regex.Matches(fullAdmin, "<details class=\"sidebar-group\"").Count);
+        Assert.Contains("Mover documentos em lote", fullAdmin, StringComparison.Ordinal);
+        Assert.Contains("asp-action=\"AutoSchedule\"", fullAdmin, StringComparison.Ordinal);
+        Assert.Contains("asp-action=\"Cadastrar\"", fullAdmin, StringComparison.Ordinal);
+        Assert.Contains("asp-action=\"Consultar\"", fullAdmin, StringComparison.Ordinal);
+        Assert.Contains("asp-action=\"Parametrizar\"", fullAdmin, StringComparison.Ordinal);
     }
 }

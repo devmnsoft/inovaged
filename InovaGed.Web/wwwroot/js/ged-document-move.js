@@ -8,6 +8,8 @@
         FOLDER_INACTIVE: 'A pasta de destino está inativa.',
         DATABASE_CONSTRAINT_ERROR: 'A movimentação foi recusada por uma regra do arquivo.',
         CONCURRENT_MODIFICATION: 'O documento foi alterado por outra operação. Atualize a lista e tente de novo.',
+        DOCUMENT_LOCKED: 'O documento está bloqueado e a reversão não foi aplicada.',
+        HISTORY_NOT_FOUND: 'Não há movimentação recente para desfazer.',
         MOVE_FAILED: 'Não foi possível concluir a movimentação.'
     };
 
@@ -250,6 +252,52 @@
             updateBulkUi();
         }
 
+        function historyOf(item) { return item?.historyId || item?.HistoryId || null; }
+        function succeededMove(item) {
+            const ok = item?.success === true || item?.Success === true;
+            const code = item?.errorCode || item?.ErrorCode;
+            return ok && code !== 'ALREADY_IN_DESTINATION';
+        }
+        function collectUndoItems(data, items) {
+            const fromItems = (items || [])
+                .filter(succeededMove)
+                .map(item => ({ documentId: item.documentId || item.DocumentId, historyId: historyOf(item) }))
+                .filter(item => item.documentId && item.historyId);
+            if (fromItems.length) return fromItems;
+            if (!succeededMove(data)) return [];
+            const documentId = data?.documentId || data?.DocumentId || selectedIds[0];
+            const historyId = historyOf(data);
+            return documentId && historyId ? [{ documentId, historyId }] : [];
+        }
+        function offerUndo(data, items) {
+            const entries = collectUndoItems(data, items);
+            if (!entries.length || typeof window.WorkspaceUndo?.offer !== 'function') return;
+            window.WorkspaceUndo.offer({
+                title: entries.length > 1 ? 'Documentos movidos' : 'Documento movido',
+                message: 'A reversão só ocorre se cada documento ainda estiver na pasta de destino.',
+                duration: 12000,
+                undo: () => postUndo(entries)
+            });
+        }
+        async function postUndo(entries) {
+            const body = entries.length === 1
+                ? { documentId: entries[0].documentId, historyId: entries[0].historyId }
+                : { items: entries };
+            try {
+                const response = await fetch('/Ged/Documents/UndoMove', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', ...(token ? { RequestVerificationToken: token } : {}) }, body: JSON.stringify(body) });
+                const payloadResp = await response.json().catch(() => null);
+                const message = payloadResp?.message || friendlyMessage(payloadResp, 'Não foi possível desfazer a movimentação.');
+                await refreshMovedFolders();
+                if (!response.ok || payloadResp?.success === false) {
+                    window.showAppToast?.(message, 'error', 'Reversão não aplicada');
+                    return;
+                }
+                window.showAppToast?.(message || 'Movimentação desfeita.', 'success', 'Reversão concluída');
+            } catch {
+                window.showAppToast?.('Falha de comunicação ao desfazer a movimentação.', 'error', 'Reversão não aplicada');
+            }
+        }
+
         async function confirmMove() {
             if (!selectedIds.length) return;
             if (!destinationFolderId.value) {
@@ -296,6 +344,7 @@
                     if (successCount > 0 && !rolledBack) {
                         keepFailedSelection(items);
                         await refreshMovedFolders();
+                        offerUndo(data, items);
                     }
                     return;
                 }
@@ -308,6 +357,7 @@
                     window.showAppToast?.(message || 'Documento movido com sucesso.', 'success', 'Movimentação concluída');
                 }
                 await refreshMovedFolders();
+                offerUndo(data, items);
                 if (failCount === 0 && !rolledBack) moveModal.hide();
             } catch {
                 showMoveModalMessage('Falha de comunicação com o servidor. Tente novamente.', 'danger');

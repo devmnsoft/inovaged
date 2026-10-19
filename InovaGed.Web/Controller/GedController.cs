@@ -1617,6 +1617,8 @@ WHERE j.tenant_id = @tenantId;";
             metrics.Completed24h = (int)jobs.completed24h;
             metrics.Cancelled24h = (int)jobs.cancelled24h;
             metrics.PreviewActive = (int)jobs.previewactive;
+            metrics.AverageProcessingSeconds = Convert.ToDecimal(jobs.averageprocessingseconds);
+            metrics.ReprocessCount = (int)jobs.reprocesscount;
         }
         catch (PostgresException ex) when (ex.SqlState is PostgresErrorCodes.UndefinedTable or PostgresErrorCodes.UndefinedColumn)
         {
@@ -1634,7 +1636,47 @@ WHERE j.tenant_id = @tenantId;";
             _logger.LogWarning(ex, "Métricas de upload indisponíveis.");
         }
 
+        metrics.DocumentsWithoutOcr = await CountOptionalAsync(conn, """
+select count(*)::int
+from ged.document d
+where d.tenant_id = @tenantId
+  and coalesce(d.reg_status, 'A') = 'A'
+  and d.current_version_id is not null
+  and not exists (
+      select 1
+      from ged.document_search ds
+      where ds.tenant_id = d.tenant_id
+        and ds.document_id = d.id
+        and nullif(btrim(coalesce(ds.ocr_text, '')), '') is not null)
+""", tenantId, ct);
+        metrics.PreviewUnavailable = await CountOptionalAsync(conn, """
+select count(*)::int
+from ged.preview_status p
+where p.tenant_id = @tenantId
+  and p.status::text in ('FAILED', 'ERROR')
+""", tenantId, ct);
+        metrics.ClassificationReview = await CountOptionalAsync(conn, """
+select count(*)::int
+from ged.document_classification_suggestion s
+where s.tenant_id = @tenantId
+  and s.reg_status = 'A'
+  and upper(s.status) = 'PENDING'
+""", tenantId, ct);
+
         return metrics;
+    }
+
+    private async Task<int> CountOptionalAsync(System.Data.Common.DbConnection conn, string sql, Guid tenantId, CancellationToken ct)
+    {
+        try
+        {
+            return await conn.ExecuteScalarAsync<int>(new CommandDefinition(sql, new { tenantId }, cancellationToken: ct));
+        }
+        catch (PostgresException ex) when (ex.SqlState is PostgresErrorCodes.UndefinedTable or PostgresErrorCodes.UndefinedColumn)
+        {
+            _logger.LogWarning(ex, "Indicador opcional da central indisponível.");
+            return 0;
+        }
     }
 
     private async Task<List<ProcessingErrorVm>> ListRecentOcrErrorsAsync(Guid tenantId, CancellationToken ct)
@@ -1696,6 +1738,11 @@ LIMIT 20;";
         public int PreviewActive { get; set; }
         public int UploadActive { get; set; }
         public long ReceivedBytes24h { get; set; }
+        public decimal AverageProcessingSeconds { get; set; }
+        public int ReprocessCount { get; set; }
+        public int DocumentsWithoutOcr { get; set; }
+        public int PreviewUnavailable { get; set; }
+        public int ClassificationReview { get; set; }
     }
 
     public sealed class ProcessingErrorVm
@@ -3587,6 +3634,54 @@ SELECT
         {
             _logger.LogError(ex, "Erro em MoveBulk. Tenant={TenantId} User={UserId} Destination={DestinationFolderId} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, request.DestinationFolderId, HttpContext.TraceIdentifier);
             return StatusCode(500, new { success = false, code = "MOVE_FAILED", message = "Erro interno ao mover documento.", correlationId = HttpContext.TraceIdentifier });
+        }
+    }
+
+    [HttpPost("/Ged/Documents/UndoMove")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UndoMove([FromBody] DocumentUndoMoveRequestVM request, CancellationToken ct)
+    {
+        try
+        {
+            if (!_currentUser.IsAuthenticated) return Unauthorized();
+            if (request is null) return BadRequest(new { success = false, code = "VALIDATION", message = "Informe a movimentação a desfazer." });
+            if (request.Reason?.Length > 500) return BadRequest(new { success = false, code = "VALIDATION", message = "Motivo deve ter no máximo 500 caracteres." });
+            var entries = request.Items is { Count: > 0 }
+                ? request.Items.Where(item => item.DocumentId != Guid.Empty).GroupBy(item => item.DocumentId).Select(group => group.First()).ToList()
+                : request.DocumentId == Guid.Empty
+                    ? []
+                    : new List<DocumentUndoItemVM> { new() { DocumentId = request.DocumentId, HistoryId = request.HistoryId } };
+            if (entries.Count == 0) return BadRequest(new { success = false, code = "VALIDATION", message = "Informe o documento a desfazer." });
+            if (entries.Count > 200) return BadRequest(new { success = false, code = "LIMIT", message = "O limite é de 200 documentos por reversão." });
+            foreach (var entry in entries)
+            {
+                if (await DenyDocumentAsync(entry.DocumentId, "EDIT", ct) is { } deniedUndo) return deniedUndo;
+            }
+
+            var isAdmin = RolePolicyHelper.IsFullAdmin(User);
+            var correlationId = HttpContext.TraceIdentifier;
+            if (entries.Count == 1 && request.Items is not { Count: > 0 })
+            {
+                var result = await _documentMoveService.UndoAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, entries[0].DocumentId, entries[0].HistoryId, request.Reason, isAdmin, correlationId, request.IdempotencyKey, ct);
+                if (!result.IsSuccess)
+                    return BadRequest(new { success = false, code = result.Error?.Code, message = result.Error?.Message ?? "Não foi possível desfazer a movimentação.", correlationId });
+                return Ok(new { success = true, code = result.Value?.ErrorCode, message = result.Value?.Message ?? "Movimentação desfeita.", correlationId, data = result.Value });
+            }
+
+            var bulk = await _documentMoveService.UndoBulkAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, entries, request.Reason, isAdmin, correlationId, request.IdempotencyKey, ct);
+            if (!bulk.IsSuccess)
+                return BadRequest(new { success = false, code = bulk.Error?.Code, message = bulk.Error?.Message ?? "Não foi possível desfazer a movimentação.", correlationId });
+            var data = bulk.Value!;
+            var completed = data.FailCount == 0;
+            var message = completed
+                ? "Movimentação desfeita."
+                : $"{data.SuccessCount} documento(s) revertido(s) e {data.FailCount} falha(s).";
+            return Ok(new { success = completed, message, correlationId, data });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro em UndoMove. Tenant={TenantId} User={UserId} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, HttpContext.TraceIdentifier);
+            return StatusCode(500, new { success = false, code = "MOVE_FAILED", message = "Erro interno ao desfazer a movimentação.", correlationId = HttpContext.TraceIdentifier });
         }
     }
 

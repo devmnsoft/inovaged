@@ -33,9 +33,11 @@
     <details class="sidebar-group" open="@(ActiveAny("Ged", "GedSearch", "GedUploads", "SmartSearch", "Ocr", "DocumentQuality", "Billing", "GedClassification", "ClassificationDashboard", "Disposition", "ClassificationPlan", "SmartGed", "SmartAssistant", "SmartWorkflow") == "active" ? "open" : null)">
         <summary>Gestão Documental</summary>
         <a asp-controller="Ged" asp-action="Index" class="@ActiveAny("Ged", "GedSearch")"><i class="bi bi-folder2-open"></i><span>GED</span></a>
+        <a asp-controller="Ged" asp-action="Index" class="@Active("Ged", "Index")"><i class="bi bi-folder-symlink"></i><span>Mover documentos em lote</span></a>
         <a asp-controller="GedUploads" asp-action="Index" class="@ActiveAny("GedUploads")"><i class="bi bi-cloud-upload"></i><span>Uploads</span></a>
         <a asp-controller="SmartSearch" asp-action="Index" class="@ActiveAny("SmartSearch")"><i class="bi bi-search"></i><span>Busca Inteligente</span></a>
-        <a asp-controller="Ocr" asp-action="Index" class="@ActiveAny("Ocr")"><i class="bi bi-filetype-pdf"></i><span>OCR</span></a>
+        <a asp-controller="Ocr" asp-action="Index" class="@Active("Ocr", "Index", "Queue")"><i class="bi bi-filetype-pdf"></i><span>OCR</span></a>
+        <a asp-controller="Ocr" asp-action="AutoSchedule" class="@Active("Ocr", "AutoSchedule")"><i class="bi bi-calendar2-check"></i><span>OCR automático diário</span></a>
         <a asp-controller="Billing" asp-action="Index" class="@ActiveAny("Billing")"><i class="bi bi-receipt"></i><span>Faturamento</span></a>
         <a asp-controller="DocumentQuality" asp-action="Index" class="@ActiveAny("DocumentQuality")"><i class="bi bi-shield-check"></i><span>Qualidade Documental</span></a>
         <a asp-controller="GedClassification" asp-action="Queue" class="@ActiveAny("GedClassification", "ClassificationDashboard")"><i class="bi bi-tags"></i><span>Classificação</span></a>

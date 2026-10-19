@@ -163,7 +163,9 @@ SELECT
   count(*) FILTER (WHERE j.status = 'FAILED' AND j.created_at >= now() - interval '24 hours')::int AS Failed24h,
   count(*) FILTER (WHERE j.status = 'COMPLETED' AND j.finished_at >= now() - interval '24 hours')::int AS Completed24h,
   count(*) FILTER (WHERE j.status = 'CANCELLED' AND j.finished_at >= now() - interval '24 hours')::int AS Cancelled24h,
-  count(*) FILTER (WHERE j.job_type = 'PREVIEW' AND j.status IN ('PENDING','PROCESSING'))::int AS PreviewActive
+  count(*) FILTER (WHERE j.job_type = 'PREVIEW' AND j.status IN ('PENDING','PROCESSING'))::int AS PreviewActive,
+  coalesce(avg(extract(epoch from (j.finished_at - j.started_at))) FILTER (WHERE j.status = 'COMPLETED' AND j.finished_at >= now() - interval '24 hours' AND j.started_at IS NOT NULL), 0)::int AS AverageProcessingSeconds,
+  count(*) FILTER (WHERE j.attempt_count > 1 AND j.updated_at >= now() - interval '24 hours')::int AS ReprocessCount
 FROM ged.processing_job j
 WHERE j.tenant_id = @tenantId
   AND j.reg_status = 'A';

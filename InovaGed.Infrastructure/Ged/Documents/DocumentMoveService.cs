@@ -161,6 +161,86 @@ order by h.moved_at desc;
         }
     }
 
+    public async Task<Result<DocumentMoveResultDto>> UndoAsync(Guid tenantId, Guid userId, string? userName, Guid documentId, Guid? historyId, string? reason, bool isAdmin, string? correlationId, string? idempotencyKey, CancellationToken ct)
+    {
+        try
+        {
+            if (documentId == Guid.Empty)
+                return Result<DocumentMoveResultDto>.Fail("VALIDATION", "Documento inválido.");
+            var item = await UndoOneAsync(tenantId, userId, userName, documentId, historyId, reason, isAdmin, correlationId, idempotencyKey, ct);
+            return item.Success
+                ? Result<DocumentMoveResultDto>.Ok(item)
+                : Result<DocumentMoveResultDto>.Fail(item.ErrorCode ?? "MOVE_FAILED", item.Message ?? "Não foi possível desfazer a movimentação.");
+        }
+        catch (Exception ex)
+        {
+            LogMoveFailure(ex, "UndoAsync", tenantId, userId, Guid.Empty, correlationId, documentId);
+            return Result<DocumentMoveResultDto>.Fail(CodeFor(ex), "Não foi possível desfazer a movimentação do documento no momento.");
+        }
+    }
+
+    public async Task<Result<DocumentBulkMoveResultDto>> UndoBulkAsync(Guid tenantId, Guid userId, string? userName, IReadOnlyList<DocumentUndoItemVM> items, string? reason, bool isAdmin, string? correlationId, string? idempotencyKey, CancellationToken ct)
+    {
+        try
+        {
+            if (items.Count == 0) return Result<DocumentBulkMoveResultDto>.Fail("VALIDATION", "Nenhum documento selecionado.");
+            var distinct = items.Where(item => item.DocumentId != Guid.Empty).GroupBy(item => item.DocumentId).Select(group => group.First()).ToArray();
+            if (distinct.Length == 0) return Result<DocumentBulkMoveResultDto>.Fail("VALIDATION", "Nenhum documento selecionado.");
+            if (distinct.Length > BulkLimit) return Result<DocumentBulkMoveResultDto>.Fail("LIMIT", $"Limite máximo de {BulkLimit} documentos por operação.");
+
+            var results = new List<DocumentMoveResultDto>(distinct.Length);
+            foreach (var item in distinct)
+            {
+                var key = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey.Trim() + ":" + item.DocumentId.ToString("N");
+                try
+                {
+                    results.Add(await UndoOneAsync(tenantId, userId, userName, item.DocumentId, item.HistoryId, reason, isAdmin, correlationId, key, ct));
+                }
+                catch (Exception ex)
+                {
+                    LogMoveFailure(ex, "UndoBulkAsync", tenantId, userId, Guid.Empty, correlationId, item.DocumentId);
+                    results.Add(Fail(item.DocumentId, CodeFor(ex), "Não foi possível desfazer a movimentação deste documento."));
+                }
+            }
+
+            return Result<DocumentBulkMoveResultDto>.Ok(Summarize(Guid.NewGuid(), results, allOrNothing: false, rolledBack: false, replay: false));
+        }
+        catch (Exception ex)
+        {
+            LogMoveFailure(ex, "UndoBulkAsync", tenantId, userId, Guid.Empty, correlationId, null);
+            return Result<DocumentBulkMoveResultDto>.Fail(CodeFor(ex), "Não foi possível desfazer a movimentação dos documentos.");
+        }
+    }
+
+    private async Task<DocumentMoveResultDto> UndoOneAsync(Guid tenantId, Guid userId, string? userName, Guid documentId, Guid? historyId, string? reason, bool isAdmin, string? correlationId, string? idempotencyKey, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        var history = await conn.QueryFirstOrDefaultAsync<MoveHistoryProbe>(new CommandDefinition("""
+select h.id as "Id", h.old_folder_id as "OldFolderId", h.new_folder_id as "NewFolderId"
+from ged.document_folder_move_history h
+where h.tenant_id = @tenantId
+  and h.document_id = @documentId
+  and h.reg_status = 'A'
+  and (cast(@historyId as uuid) is null or h.id = cast(@historyId as uuid))
+order by h.moved_at desc
+limit 1
+""", new { tenantId, documentId, historyId }, cancellationToken: ct));
+        if (history is null || history.Id == Guid.Empty)
+            return Fail(documentId, "HISTORY_NOT_FOUND", "Não há movimentação recente deste documento para desfazer.");
+
+        var destination = history.OldFolderId ?? VirtualRootFolderId;
+        var key = string.IsNullOrWhiteSpace(idempotencyKey) ? "undo:" + history.Id.ToString("N") : idempotencyKey.Trim();
+        var batchId = BatchIdFrom(tenantId, key);
+        var conflict = await ReadIdempotencyConflictAsync(conn, null, tenantId, batchId, destination, ct);
+        if (conflict is not null)
+            return Fail(documentId, "MOVE_FAILED", conflict);
+
+        var item = await MoveOneCoreAsync(conn, null, tenantId, userId, userName, documentId, destination, string.IsNullOrWhiteSpace(reason) ? "Reversão da movimentação" : reason.Trim(), "UNDO", isAdmin, batchId, correlationId, ct, history.NewFolderId, enforceExpectedFolder: true, respectRetentionHold: true);
+        if (item.Success && item.ErrorCode == "ALREADY_IN_DESTINATION")
+            item.Message = "Esta reversão já tinha sido aplicada.";
+        return item;
+    }
+
     private async Task<DocumentBulkMoveResultDto> MovePartialAsync(NpgsqlConnection conn, Guid tenantId, Guid userId, string? userName, IReadOnlyList<Guid> documentIds, Guid destinationFolderId, string? reason, string source, bool isAdmin, Guid batchId, string? correlationId, CancellationToken ct)
     {
         var items = new List<DocumentMoveResultDto>(documentIds.Count);
@@ -188,13 +268,13 @@ order by h.moved_at desc;
         return Summarize(batchId, applied, allOrNothing: true, rolledBack: false, replay: false);
     }
 
-    private async Task<DocumentMoveResultDto> MoveOneCoreAsync(NpgsqlConnection conn, DbTransaction? tx, Guid tenantId, Guid userId, string? userName, Guid documentId, Guid destinationFolderId, string? reason, string source, bool isAdmin, Guid? batchId, string? correlationId, CancellationToken ct)
+    private async Task<DocumentMoveResultDto> MoveOneCoreAsync(NpgsqlConnection conn, DbTransaction? tx, Guid tenantId, Guid userId, string? userName, Guid documentId, Guid destinationFolderId, string? reason, string source, bool isAdmin, Guid? batchId, string? correlationId, CancellationToken ct, Guid? expectedFolderId = null, bool enforceExpectedFolder = false, bool respectRetentionHold = false)
     {
         var ownsTransaction = tx is null;
         DbTransaction? localTx = tx;
         NpgsqlTransaction? ownedTx = null;
         var committed = false;
-        Guid? targetFolderId = null;
+        Guid? targetFolderId = destinationFolderId == VirtualRootFolderId ? null : destinationFolderId;
         try
         {
             if (ownsTransaction)
@@ -206,6 +286,15 @@ order by h.moved_at desc;
             var replay = await ReadDocumentReplayAsync(conn, localTx, tenantId, documentId, batchId, destinationFolderId, ct);
             if (replay is not null)
             {
+                if (enforceExpectedFolder)
+                {
+                    var current = await LockedFolderAsync(conn, localTx, tenantId, documentId, ct);
+                    if (current is null)
+                        return await FinishAsync(ownsTransaction, localTx, Fail(documentId, "DOCUMENT_NOT_FOUND", "Documento não encontrado."), ct);
+                    if (current.FolderId != targetFolderId)
+                        return await FinishAsync(ownsTransaction, localTx, Fail(documentId, "CONCURRENT_MODIFICATION", "A reversão já tinha sido registrada, mas o documento foi movido novamente."), ct);
+                }
+
                 if (ownsTransaction) await localTx!.RollbackAsync(ct);
                 return replay;
             }
@@ -229,9 +318,14 @@ for update;
             if (doc is null || doc.Id == Guid.Empty)
                 return await FinishAsync(ownsTransaction, localTx, Fail(documentId, "DOCUMENT_NOT_FOUND", "Documento não encontrado."), ct);
 
-            targetFolderId = destinationFolderId == VirtualRootFolderId ? null : destinationFolderId;
+            if (enforceExpectedFolder && doc.FolderId != expectedFolderId)
+                return await FinishAsync(ownsTransaction, localTx, Fail(documentId, "CONCURRENT_MODIFICATION", "O documento não está mais na pasta desta movimentação. A reversão não foi aplicada."), ct);
+
             if (doc.FolderId == targetFolderId)
                 return await FinishAsync(ownsTransaction, localTx, Already(documentId, doc.FolderId, targetFolderId), ct);
+
+            if (respectRetentionHold && await IsRetentionHeldAsync(conn, localTx, tenantId, documentId, ct))
+                return await FinishAsync(ownsTransaction, localTx, Fail(documentId, "DOCUMENT_LOCKED", "O documento está bloqueado por temporalidade e a reversão não foi aplicada."), ct);
 
             if (!isAdmin && !await CanMoveAsync(conn, localTx, tenantId, userId, doc.IsConfidential, ct))
             {
@@ -267,6 +361,8 @@ where tenant_id = @tenantId
             if (rowsAffected != 1)
                 return await FinishAsync(ownsTransaction, localTx, Fail(documentId, "CONCURRENT_MODIFICATION", "O documento foi alterado por outra operação. Atualize a lista e tente novamente."), ct);
 
+            var historyId = Guid.NewGuid();
+            var undoing = string.Equals(source, "UNDO", StringComparison.OrdinalIgnoreCase);
             await conn.ExecuteAsync(new CommandDefinition("""
 insert into ged.document_folder_move_history
     (id, tenant_id, document_id, old_folder_id, new_folder_id, moved_by, moved_by_name, reason, batch_id, source, correlation_id, reg_status)
@@ -274,7 +370,7 @@ values
     (@id, @tenantId, @documentId, cast(@oldFolderId as uuid), cast(@newFolderId as uuid), @movedBy, @movedByName, @reason, cast(@batchId as uuid), @source, @correlationId, 'A')
 """, new
             {
-                id = Guid.NewGuid(),
+                id = historyId,
                 tenantId,
                 documentId,
                 oldFolderId = doc.FolderId,
@@ -301,12 +397,20 @@ where tenant_id = @tenantId
             {
                 await localTx!.CommitAsync(ct);
                 committed = true;
-                await WriteAuditSafelyAsync(tenantId, userId, "MOVE_DOCUMENT_FOLDER", documentId,
-                    "Documento movido de pasta", new { oldFolderId = doc.FolderId, newFolderId = targetFolderId, source, batchId, correlationId }, ct);
+                await WriteAuditSafelyAsync(tenantId, userId, undoing ? "UNDO_DOCUMENT_FOLDER" : "MOVE_DOCUMENT_FOLDER", documentId,
+                    undoing ? "Movimentação de pasta desfeita" : "Documento movido de pasta", new { oldFolderId = doc.FolderId, newFolderId = targetFolderId, source, batchId, correlationId, historyId }, ct);
             }
 
             _logger.LogInformation("Documento movido confirmado. Tenant={TenantId} User={UserId} Document={DocumentId} OldFolder={OldFolderId} NewFolder={DestinationFolderId} CorrelationId={CorrelationId}", tenantId, userId, documentId, doc.FolderId, targetFolderId, correlationId);
-            return new DocumentMoveResultDto { DocumentId = documentId, Success = true, Message = "Documento movido com sucesso.", OldFolderId = doc.FolderId, NewFolderId = targetFolderId };
+            return new DocumentMoveResultDto
+            {
+                DocumentId = documentId,
+                Success = true,
+                Message = undoing ? "Movimentação desfeita. O documento voltou para a pasta anterior." : "Documento movido com sucesso.",
+                OldFolderId = doc.FolderId,
+                NewFolderId = targetFolderId,
+                HistoryId = historyId
+            };
         }
         catch (Exception ex) when (ex is PostgresException || ex.InnerException is PostgresException)
         {
@@ -445,6 +549,46 @@ where tenant_id = @tenantId
         {
             _logger.LogError(ex, "AUDIT_RECOVERY_REQUIRED Tenant={TenantId} User={UserId} Action={Action} Entity={EntityId}", tenantId, userId, action, entityId);
         }
+    }
+
+    private static async Task<FolderProbe?> LockedFolderAsync(NpgsqlConnection conn, DbTransaction? tx, Guid tenantId, Guid documentId, CancellationToken ct)
+        => await conn.QueryFirstOrDefaultAsync<FolderProbe>(new CommandDefinition("""
+select folder_id as "FolderId"
+from ged.document
+where tenant_id = @tenantId
+  and id = @documentId
+  and upper(status::text) <> 'DELETED'
+for update
+""", new { tenantId, documentId }, transaction: tx, cancellationToken: ct));
+
+    private static async Task<bool> IsRetentionHeldAsync(NpgsqlConnection conn, DbTransaction? tx, Guid tenantId, Guid documentId, CancellationToken ct)
+    {
+        var hasColumn = await conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
+select exists (
+    select 1 from information_schema.columns
+    where table_schema = 'ged' and table_name = 'document' and column_name = 'retention_hold')
+""", transaction: tx, cancellationToken: ct));
+        if (hasColumn)
+        {
+            var held = await conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
+select coalesce(retention_hold, false)
+from ged.document
+where tenant_id = @tenantId and id = @documentId
+""", new { tenantId, documentId }, transaction: tx, cancellationToken: ct));
+            if (held) return true;
+        }
+
+        var hasTable = await conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
+select exists (
+    select 1 from information_schema.tables
+    where table_schema = 'ged' and table_name = 'retention_hold')
+""", transaction: tx, cancellationToken: ct));
+        if (!hasTable) return false;
+        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition("""
+select exists (
+    select 1 from ged.retention_hold
+    where tenant_id = @tenantId and document_id = @documentId and is_active = true)
+""", new { tenantId, documentId }, transaction: tx, cancellationToken: ct));
     }
 
     private async Task<bool> CanMoveAsync(NpgsqlConnection conn, DbTransaction? tx, Guid tenantId, Guid userId, bool isConfidential, CancellationToken ct)
@@ -595,5 +739,17 @@ where ur.tenant_id = @tenantId
         public Guid Id { get; set; }
         public bool IsActive { get; set; }
         public string RegStatus { get; set; } = string.Empty;
+    }
+
+    private sealed class FolderProbe
+    {
+        public Guid? FolderId { get; set; }
+    }
+
+    private sealed class MoveHistoryProbe
+    {
+        public Guid Id { get; set; }
+        public Guid? OldFolderId { get; set; }
+        public Guid? NewFolderId { get; set; }
     }
 }

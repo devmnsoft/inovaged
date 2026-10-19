@@ -115,9 +115,50 @@ public sealed class DocumentsController : ControllerBase
         }
     }
 
+    [HttpPost("undo-move")]
+    public async Task<IActionResult> UndoMove([FromBody] DocumentUndoMoveRequestVM request, CancellationToken ct)
+    {
+        if (request is null) return ValidationFailure("Informe a movimentação a desfazer.");
+        if (!ValidateReason(request.Reason, out var reasonError)) return ValidationFailure(reasonError);
+        var entries = UndoEntries(request);
+        if (entries.Count == 0) return ValidationFailure("Informe o documento a desfazer.");
+        if (entries.Count > MaxBulkMoveDocuments) return ValidationFailure($"O lote excede o limite máximo de {MaxBulkMoveDocuments} documentos.");
+
+        try
+        {
+            var correlationId = HttpContext.TraceIdentifier;
+            var userName = User.Identity?.Name ?? _currentUser.Email;
+            if (entries.Count == 1 && request.Items is not { Count: > 0 })
+            {
+                var result = await _moveService.UndoAsync(_currentUser.TenantId, _currentUser.UserId, userName, entries[0].DocumentId, entries[0].HistoryId, request.Reason, IsAdmin(), correlationId, request.IdempotencyKey, ct);
+                if (!result.Success) return MapMoveFailure(result.Error?.Code, result.Error?.Message ?? result.ErrorMessage);
+                return Ok(new { success = true, code = result.Value!.ErrorCode, message = result.Value.Message, documentId = result.Value.DocumentId, oldFolderId = result.Value.OldFolderId, newFolderId = result.Value.NewFolderId, historyId = result.Value.HistoryId });
+            }
+
+            var bulk = await _moveService.UndoBulkAsync(_currentUser.TenantId, _currentUser.UserId, userName, entries, request.Reason, IsAdmin(), correlationId, request.IdempotencyKey, ct);
+            if (!bulk.Success) return MapMoveFailure(bulk.Error?.Code, bulk.Error?.Message ?? bulk.ErrorMessage);
+            var value = bulk.Value!;
+            var completed = value.FailCount == 0;
+            return Ok(new { success = completed, batchId = value.BatchId, total = value.Total, successCount = value.SuccessCount, failCount = value.FailCount, items = value.Items });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro ao desfazer movimentação Tenant={TenantId} User={UserId} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, HttpContext.TraceIdentifier);
+            return StatusCode(500, new { success = false, message = "Erro interno ao desfazer a movimentação." });
+        }
+    }
+
     [HttpGet("{id:guid}/move-history")]
     public async Task<IActionResult> MoveHistory([FromRoute] Guid id, CancellationToken ct)
         => Ok(await _moveService.GetMoveHistoryAsync(_currentUser.TenantId, id, ct));
+
+    private static List<DocumentUndoItemVM> UndoEntries(DocumentUndoMoveRequestVM request)
+    {
+        if (request.Items is { Count: > 0 })
+            return request.Items.Where(item => item.DocumentId != Guid.Empty).GroupBy(item => item.DocumentId).Select(group => group.First()).ToList();
+        if (request.DocumentId == Guid.Empty) return [];
+        return [new DocumentUndoItemVM { DocumentId = request.DocumentId, HistoryId = request.HistoryId }];
+    }
 
     private bool IsAdmin() => DocumentMoveAuthorizationRoles.IsAdministrative(_currentUser.Roles);
 
@@ -145,8 +186,8 @@ public sealed class DocumentsController : ControllerBase
         return (code ?? string.Empty).ToUpperInvariant() switch
         {
             "ACCESS_DENIED" => StatusCode(StatusCodes.Status403Forbidden, body),
-            "DOCUMENT_NOT_FOUND" or "DESTINATION_NOT_FOUND" or "FOLDER_NOT_FOUND" => NotFound(body),
-            "FOLDER_INACTIVE" or "DATABASE_CONSTRAINT_ERROR" or "CONCURRENT_MODIFICATION" or "CONFLICT" or "INVALID_DESTINATION" => Conflict(body),
+            "DOCUMENT_NOT_FOUND" or "DESTINATION_NOT_FOUND" or "FOLDER_NOT_FOUND" or "HISTORY_NOT_FOUND" => NotFound(body),
+            "FOLDER_INACTIVE" or "DATABASE_CONSTRAINT_ERROR" or "CONCURRENT_MODIFICATION" or "CONFLICT" or "INVALID_DESTINATION" or "DOCUMENT_LOCKED" => Conflict(body),
             "VALIDATION" or "LIMIT" => BadRequest(body),
             _ => StatusCode(StatusCodes.Status500InternalServerError, body)
         };

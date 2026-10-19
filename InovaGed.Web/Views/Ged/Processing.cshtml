@@ -102,6 +102,12 @@
         <div class="col-6 col-md-3"><div class="card processing-metric"><div class="card-body py-2"><div class="metric-label">Concluídos em 24 h</div><div class="metric-value" id="metricCompleted">@metrics.Completed24h</div></div></div></div>
         <div class="col-6 col-md-3"><div class="card processing-metric"><div class="card-body py-2"><div class="metric-label">Cancelados em 24 h</div><div class="metric-value" id="metricCancelled">@metrics.Cancelled24h</div></div></div></div>
         <div class="col-6 col-md-3"><div class="card processing-metric"><div class="card-body py-2"><div class="metric-label">Volume recebido em 24 h</div><div class="metric-value" id="metricVolume">@((metrics.ReceivedBytes24h / 1048576d).ToString("0.0")) MB</div></div></div></div>
+        <div class="col-6 col-md-3"><div class="card processing-metric"><div class="card-body py-2"><div class="metric-label">Espera média na fila OCR</div><div class="metric-value">@metrics.AvgQueueSeconds.ToString("0") s</div></div></div></div>
+        <div class="col-6 col-md-3"><div class="card processing-metric"><div class="card-body py-2"><div class="metric-label">Tempo médio dos jobs concluídos</div><div class="metric-value">@metrics.AverageProcessingSeconds.ToString("0") s</div></div></div></div>
+        <div class="col-6 col-md-3"><div class="card processing-metric"><div class="card-body py-2"><div class="metric-label">Reprocessamentos em 24 h</div><div class="metric-value">@metrics.ReprocessCount</div></div></div></div>
+        <div class="col-6 col-md-3"><div class="card processing-metric"><div class="card-body py-2"><div class="metric-label">Documentos sem OCR</div><div class="metric-value">@metrics.DocumentsWithoutOcr</div></div></div></div>
+        <div class="col-6 col-md-3"><div class="card processing-metric"><div class="card-body py-2"><div class="metric-label">Visualizações indisponíveis</div><div class="metric-value">@metrics.PreviewUnavailable</div></div></div></div>
+        <div class="col-6 col-md-3"><div class="card processing-metric"><div class="card-body py-2"><div class="metric-label">Classificações aguardando revisão</div><div class="metric-value">@metrics.ClassificationReview</div></div></div></div>
     </div>
 
     <div id="processingToken" hidden>@Html.AntiForgeryToken()</div>

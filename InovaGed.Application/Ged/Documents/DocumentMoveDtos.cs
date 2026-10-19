@@ -23,6 +23,21 @@ public sealed class DocumentBulkMoveRequestVM
     public string? Source { get; set; }
 }
 
+public sealed class DocumentUndoItemVM
+{
+    public Guid DocumentId { get; set; }
+    public Guid? HistoryId { get; set; }
+}
+
+public sealed class DocumentUndoMoveRequestVM
+{
+    public Guid DocumentId { get; set; }
+    public Guid? HistoryId { get; set; }
+    public List<DocumentUndoItemVM>? Items { get; set; }
+    public string? Reason { get; set; }
+    public string? IdempotencyKey { get; set; }
+}
+
 public sealed class DocumentMoveResultDto
 {
     public Guid DocumentId { get; set; }
@@ -31,6 +46,7 @@ public sealed class DocumentMoveResultDto
     public string? ErrorCode { get; set; }
     public Guid? OldFolderId { get; set; }
     public Guid? NewFolderId { get; set; }
+    public Guid? HistoryId { get; set; }
 }
 
 public sealed class DocumentBulkMoveResultDto

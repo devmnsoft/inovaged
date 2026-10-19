@@ -65,6 +65,12 @@ public sealed class ProcessingCenterCatalogTests
         Assert.Contains("target.tenant_id = @tenantId", ProcessingCenterSql.RetryJob, StringComparison.Ordinal);
         Assert.DoesNotContain("j.status = @status", ProcessingCenterSql.Ocr, StringComparison.Ordinal);
         Assert.Contains("NOT EXISTS", ProcessingCenterSql.RetryJob, StringComparison.Ordinal);
+        Assert.Contains("AverageProcessingSeconds", ProcessingCenterSql.JobCounts, StringComparison.Ordinal);
+
+        var worker = File.ReadAllText(Path.Combine(RepoRoot(), "InovaGed.Infrastructure/Ged/Documents/GedProcessingWorker.cs"));
+        Assert.Contains("RecoverAbandonedExceptAsync(\"PREVIEW\"", worker, StringComparison.Ordinal);
+        Assert.Contains("TouchLockAsync", worker, StringComparison.Ordinal);
+        Assert.DoesNotContain("Worker cancelado", worker, StringComparison.Ordinal);
 
         var controller = File.ReadAllText(Path.Combine(RepoRoot(), "InovaGed.Web/Controllers/OcrController.cs"));
         Assert.DoesNotContain("[HttpGet(\"/Ged/Processing\")]", controller, StringComparison.Ordinal);

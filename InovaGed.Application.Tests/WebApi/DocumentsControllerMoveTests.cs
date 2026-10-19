@@ -176,6 +176,49 @@ public sealed class DocumentsControllerMoveTests
         return controller;
     }
 
+    [Fact]
+    public async Task Undo_envia_historico_e_mapeia_concorrencia_para_conflito()
+    {
+        var historyId = Guid.NewGuid();
+        var move = new FakeDocumentMoveService { UndoResult = Result<DocumentMoveResultDto>.Fail("CONCURRENT_MODIFICATION", "O documento não está mais na pasta desta movimentação.") };
+        var controller = CreateController(move);
+
+        var result = await controller.UndoMove(new DocumentUndoMoveRequestVM { DocumentId = Guid.NewGuid(), HistoryId = historyId }, CancellationToken.None);
+
+        var conflict = Assert.IsType<ConflictObjectResult>(result);
+        Assert.Equal(StatusCodes.Status409Conflict, conflict.StatusCode);
+        Assert.Equal(TenantId, move.LastTenantId);
+        Assert.Equal(historyId, move.LastUndoHistoryId);
+        Assert.Equal(1, move.UndoCalls);
+    }
+
+    [Fact]
+    public async Task Undo_lote_nao_anuncia_sucesso_quando_ha_falha()
+    {
+        var move = new FakeDocumentMoveService
+        {
+            BulkResult = Result<DocumentBulkMoveResultDto>.Ok(new DocumentBulkMoveResultDto
+            {
+                Total = 2,
+                SuccessCount = 1,
+                FailCount = 1,
+                Items = [new DocumentMoveResultDto { Success = false, ErrorCode = "DOCUMENT_LOCKED", Message = "bloqueado" }]
+            })
+        };
+        var controller = CreateController(move);
+        var result = await controller.UndoMove(new DocumentUndoMoveRequestVM
+        {
+            Items =
+            [
+                new DocumentUndoItemVM { DocumentId = Guid.NewGuid(), HistoryId = Guid.NewGuid() },
+                new DocumentUndoItemVM { DocumentId = Guid.NewGuid(), HistoryId = Guid.NewGuid() }
+            ]
+        }, CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        Assert.False(ReadBool(ok.Value, "success"));
+    }
+
     private static DocumentMoveRequestVM NewMoveRequest() => new() { DocumentId = Guid.NewGuid(), DestinationFolderId = Guid.NewGuid(), Reason = "teste" };
 
     private sealed record FakeCurrentUser(Guid TenantId, Guid UserId, IReadOnlyList<string> Roles) : ICurrentUser
@@ -199,6 +242,9 @@ public sealed class DocumentsControllerMoveTests
         public bool? LastAllOrNothing { get; private set; }
         public string? LastIdempotencyKey { get; private set; }
         public string? LastCorrelationId { get; private set; }
+        public Result<DocumentMoveResultDto> UndoResult { get; set; } = Result<DocumentMoveResultDto>.Ok(new DocumentMoveResultDto { Success = true, Message = "desfeito" });
+        public Guid? LastUndoHistoryId { get; private set; }
+        public int UndoCalls { get; private set; }
 
         public Task<Result<DocumentMoveResultDto>> MoveAsync(Guid tenantId, Guid userId, string? userName, Guid documentId, Guid destinationFolderId, string? reason, string source, bool isAdmin, CancellationToken ct)
             => MoveAsync(tenantId, userId, userName, documentId, destinationFolderId, reason, source, isAdmin, null, null, ct);
@@ -239,5 +285,28 @@ public sealed class DocumentsControllerMoveTests
 
         public Task<IReadOnlyList<DocumentMoveHistoryDto>> GetMoveHistoryAsync(Guid tenantId, Guid documentId, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<DocumentMoveHistoryDto>>([]);
+
+        public Task<Result<DocumentMoveResultDto>> UndoAsync(Guid tenantId, Guid userId, string? userName, Guid documentId, Guid? historyId, string? reason, bool isAdmin, string? correlationId, string? idempotencyKey, CancellationToken ct)
+        {
+            UndoCalls++;
+            LastTenantId = tenantId;
+            LastUserId = userId;
+            LastIsAdmin = isAdmin;
+            LastCorrelationId = correlationId;
+            LastIdempotencyKey = idempotencyKey;
+            LastUndoHistoryId = historyId;
+            return Task.FromResult(UndoResult);
+        }
+
+        public Task<Result<DocumentBulkMoveResultDto>> UndoBulkAsync(Guid tenantId, Guid userId, string? userName, IReadOnlyList<DocumentUndoItemVM> items, string? reason, bool isAdmin, string? correlationId, string? idempotencyKey, CancellationToken ct)
+        {
+            BulkCalls++;
+            LastTenantId = tenantId;
+            LastUserId = userId;
+            LastIsAdmin = isAdmin;
+            LastCorrelationId = correlationId;
+            LastIdempotencyKey = idempotencyKey;
+            return Task.FromResult(BulkResult ?? Result<DocumentBulkMoveResultDto>.Ok(new DocumentBulkMoveResultDto { Total = items.Count, SuccessCount = items.Count }));
+        }
     }
 }

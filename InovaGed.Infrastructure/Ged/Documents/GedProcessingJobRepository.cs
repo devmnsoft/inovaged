@@ -104,13 +104,35 @@ SET status='PENDING', locked_by=NULL, locked_at=NULL, next_attempt_at=now(), upd
 WHERE reg_status='A'
   AND job_type=@jobType
   AND status='PROCESSING'
-  AND locked_at IS NOT NULL
-  AND locked_at < now() - (@leaseSeconds || ' seconds')::interval;
+  AND (locked_at IS NULL OR locked_at < now() - (@leaseSeconds || ' seconds')::interval);
 """;
         try
         {
             await using var conn = await _db.OpenAsync(ct);
             return await conn.ExecuteAsync(new CommandDefinition(sql, new { jobType, leaseSeconds = Math.Max(60, (int)lease.TotalSeconds) }, cancellationToken: ct));
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            _logger.LogWarning(ex, "Tabela ged.processing_job ausente; recuperação de jobs abandonados adiada.");
+            return 0;
+        }
+    }
+
+    public async Task<int> RecoverAbandonedExceptAsync(string excludedJobType, TimeSpan lease, CancellationToken ct)
+    {
+        const string sql = """
+UPDATE ged.processing_job
+SET status='PENDING', locked_by=NULL, locked_at=NULL, next_attempt_at=now(), updated_at=now(),
+    error_message=left(coalesce(error_message, '') || ' PROCESSING abandonado recuperado para nova tentativa.', 2000)
+WHERE reg_status='A'
+  AND job_type <> @excludedJobType
+  AND status='PROCESSING'
+  AND (locked_at IS NULL OR locked_at < now() - (@leaseSeconds || ' seconds')::interval);
+""";
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            return await conn.ExecuteAsync(new CommandDefinition(sql, new { excludedJobType, leaseSeconds = Math.Max(60, (int)lease.TotalSeconds) }, cancellationToken: ct));
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
         {

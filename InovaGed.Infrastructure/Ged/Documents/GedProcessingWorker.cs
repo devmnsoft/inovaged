@@ -28,7 +28,7 @@ public sealed class GedProcessingWorker : BackgroundService
             {
                 using var scope = _scopeFactory.CreateScope();
                 var repo = scope.ServiceProvider.GetRequiredService<IGedProcessingJobRepository>();
-                await repo.RecoverAbandonedAsync("SECTOR_EXTRACT", TimeSpan.FromMinutes(10), stoppingToken);
+                await repo.RecoverAbandonedExceptAsync("PREVIEW", TimeSpan.FromMinutes(10), stoppingToken);
                 var jobs = await repo.DequeueAsync(_workerId, 5, stoppingToken);
                 if (jobs.Count == 0)
                 {
@@ -61,6 +61,41 @@ public sealed class GedProcessingWorker : BackgroundService
     }
 
     private async Task ProcessJobAsync(IServiceProvider services, IGedProcessingJobRepository repo, GedProcessingJobDto job, CancellationToken ct)
+    {
+        using var heartbeat = new CancellationTokenSource();
+        var heartbeatTask = TouchUntilStoppedAsync(repo, job, heartbeat.Token);
+        try
+        {
+            await ProcessClaimedJobAsync(services, repo, job, ct);
+        }
+        finally
+        {
+            heartbeat.Cancel();
+            try { await heartbeatTask; } catch (OperationCanceledException) { }
+        }
+    }
+
+    private async Task TouchUntilStoppedAsync(IGedProcessingJobRepository repo, GedProcessingJobDto job, CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(2));
+        while (await timer.WaitForNextTickAsync(ct))
+        {
+            try
+            {
+                await repo.TouchLockAsync(job.TenantId, job.Id, _workerId, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Falha ao renovar o lease do job. JobId={JobId} Tenant={TenantId}", job.Id, job.TenantId);
+            }
+        }
+    }
+
+    private async Task ProcessClaimedJobAsync(IServiceProvider services, IGedProcessingJobRepository repo, GedProcessingJobDto job, CancellationToken ct)
     {
         try
         {
@@ -103,21 +138,18 @@ public sealed class GedProcessingWorker : BackgroundService
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
+            await repo.ReleaseAsync(job.TenantId, job.Id, _workerId, CancellationToken.None);
             if (job.JobType == "SECTOR_EXTRACT")
-            {
-                await repo.ReleaseAsync(job.TenantId, job.Id, _workerId, CancellationToken.None);
-                await services.GetRequiredService<InovaGed.Infrastructure.Sectors.SectorVersionProcessor>().RefreshQueueStatusAsync(job,CancellationToken.None);
-                return;
-            }
-            await repo.CancelAsync(job.TenantId, job.Id, "Worker cancelado", CancellationToken.None);
+                await services.GetRequiredService<InovaGed.Infrastructure.Sectors.SectorVersionProcessor>().RefreshQueueStatusAsync(job, CancellationToken.None);
         }
         catch (TaskCanceledException) when (ct.IsCancellationRequested)
         {
-            await repo.CancelAsync(job.TenantId, job.Id, "Worker cancelado", CancellationToken.None);
+            await repo.ReleaseAsync(job.TenantId, job.Id, _workerId, CancellationToken.None);
         }
         catch (Exception ex) when (IsDiagnosticSourceFailure(ex))
         {
             _logger.LogCritical(ex, "RUNTIME_DEPENDENCY_ERROR Worker=GedProcessingWorker Dependency=System.Diagnostics.DiagnosticSource JobId={JobId}; o job não será marcado como falho e o worker tentará novamente após backoff.", job.Id);
+            await repo.ReleaseAsync(job.TenantId, job.Id, _workerId, CancellationToken.None);
             await Task.Delay(TimeSpan.FromMinutes(5), ct);
         }
         catch (Exception ex)

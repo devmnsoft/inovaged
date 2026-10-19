@@ -21,6 +21,7 @@ public interface IGedProcessingJobRepository
     Task<IReadOnlyList<GedProcessingJobDto>> DequeueAsync(string workerId, int take, CancellationToken ct);
     Task<IReadOnlyList<GedProcessingJobDto>> DequeueAsync(string workerId, int take, string? jobType, CancellationToken ct);
     Task<int> RecoverAbandonedAsync(string jobType, TimeSpan lease, CancellationToken ct);
+    Task<int> RecoverAbandonedExceptAsync(string excludedJobType, TimeSpan lease, CancellationToken ct);
     Task<IReadOnlyList<GedProcessingJobDto>> ExpirePendingAsync(string jobType, TimeSpan maxAge, CancellationToken ct);
     Task TouchLockAsync(Guid tenantId, Guid jobId, string workerId, CancellationToken ct);
     Task ReleaseAsync(Guid tenantId, Guid jobId, string workerId, CancellationToken ct);

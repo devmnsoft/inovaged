@@ -26,10 +26,14 @@ public sealed class DocumentMovePostgresTests
         var html = File.ReadAllText(Path.Combine(root, "InovaGed.Web", "Views", "Ged", "Index.cshtml"));
         Assert.DoesNotContain(", 500)", js);
         Assert.Contains("refreshCurrentFolder", js);
+        Assert.Contains("/Ged/Documents/UndoMove", js);
+        Assert.Contains("WorkspaceUndo", js);
         Assert.Contains("moveAllOrNothing", html);
         Assert.Contains("moveResultDetails", html);
         var service = File.ReadAllText(Path.Combine(root, "InovaGed.Infrastructure", "Ged", "Documents", "DocumentMoveService.cs"));
         Assert.Contains("is not distinct from", service, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("HISTORY_NOT_FOUND", service);
+        Assert.Contains("A reversão não foi aplicada", service);
     }
 
     [LocalPgFact]
@@ -297,6 +301,92 @@ for each row execute function ged.reject_document_folder_change();
         Assert.Equal(destination, await FolderOfAsync(database.Connection, duplicate));
         Assert.Equal(1, await database.Connection.ExecuteScalarAsync<int>("select count(*) from ged.document_folder_move_history where document_id=@duplicate", new { duplicate }));
         Assert.Equal(origin, await FolderOfAsync(database.Connection, right));
+    }
+
+    [LocalPgFact]
+    public async Task Desfazer_grava_novo_historico_e_recusa_concorrencia_bloqueio_e_pasta_indisponivel()
+    {
+        await using var database = await MoveDatabase.CreateAsync();
+        await database.ExecuteAsync(SchemaSql(newFolderNullable: true));
+        var tenant = database.TenantId;
+        var user = Guid.NewGuid();
+        var origin = await InsertFolderAsync(database.Connection, tenant, "Origem");
+        var destination = await InsertFolderAsync(database.Connection, tenant, "Destino");
+        var other = await InsertFolderAsync(database.Connection, tenant, "Outra");
+        var documentId = await InsertDocumentAsync(database.Connection, tenant, origin, "Reversivel");
+        await InsertVersionAsync(database.Connection, tenant, documentId);
+        var service = CreateService(database.Factory, new GrantPermissions());
+
+        var moved = await service.MoveAsync(tenant, user, "tester", documentId, destination, "organizar", "SINGLE", true, "corr-undo", "move-undo", CancellationToken.None);
+        Assert.True(moved.Success);
+        Assert.NotNull(moved.Value!.HistoryId);
+
+        var undone = await service.UndoAsync(tenant, user, "tester", documentId, moved.Value.HistoryId, null, true, "corr-undo-back", null, CancellationToken.None);
+        Assert.True(undone.Success);
+        Assert.Equal(origin, await FolderOfAsync(database.Connection, documentId));
+        Assert.Equal(1, await database.Connection.ExecuteScalarAsync<int>("select count(*) from ged.document"));
+        Assert.Equal(1, await database.Connection.ExecuteScalarAsync<int>("select count(*) from ged.document_version"));
+        Assert.Equal("CLASS-1", await database.Connection.ExecuteScalarAsync<string>("select classification_code from ged.document where id=@documentId", new { documentId }));
+        Assert.Equal("ocr-text", await database.Connection.ExecuteScalarAsync<string>("select ocr_text from ged.document_version where document_id=@documentId", new { documentId }));
+        Assert.Equal("preview/path", await database.Connection.ExecuteScalarAsync<string>("select preview_path from ged.document_version where document_id=@documentId", new { documentId }));
+        var history = await service.GetMoveHistoryAsync(tenant, documentId, CancellationToken.None);
+        Assert.Equal(2, history.Count);
+        Assert.Contains(history, row => row.Id == moved.Value.HistoryId && row.Source == "SINGLE");
+        Assert.Contains(history, row => row.Source == "UNDO" && row.NewFolderId == origin && row.OldFolderId == destination);
+
+        var repeated = await service.UndoAsync(tenant, user, "tester", documentId, moved.Value.HistoryId, null, true, "corr-undo-repeat", null, CancellationToken.None);
+        Assert.True(repeated.Success);
+        Assert.Equal("ALREADY_IN_DESTINATION", repeated.Value!.ErrorCode);
+        Assert.Equal(2, await database.Connection.ExecuteScalarAsync<int>("select count(*) from ged.document_folder_move_history where document_id=@documentId", new { documentId }));
+
+        var movedAgain = await service.MoveAsync(tenant, user, "tester", documentId, destination, "organizar", "SINGLE", true, "corr-undo-2", null, CancellationToken.None);
+        var away = await service.MoveAsync(tenant, user, "tester", documentId, other, "seguir", "SINGLE", true, "corr-away", null, CancellationToken.None);
+        Assert.True(away.Success);
+        var beforeConcurrent = await database.Connection.ExecuteScalarAsync<int>("select count(*) from ged.document_folder_move_history where document_id=@documentId", new { documentId });
+        var concurrent = await service.UndoAsync(tenant, user, "tester", documentId, movedAgain.Value!.HistoryId, null, true, "corr-concurrent", null, CancellationToken.None);
+        Assert.False(concurrent.Success);
+        Assert.Equal("CONCURRENT_MODIFICATION", concurrent.Error?.Code);
+        Assert.Equal(other, await FolderOfAsync(database.Connection, documentId));
+        Assert.Equal(beforeConcurrent, await database.Connection.ExecuteScalarAsync<int>("select count(*) from ged.document_folder_move_history where document_id=@documentId", new { documentId }));
+
+        var held = await InsertDocumentAsync(database.Connection, tenant, origin, "Bloqueado");
+        var heldMove = await service.MoveAsync(tenant, user, "tester", held, destination, null, "SINGLE", true, "corr-hold", null, CancellationToken.None);
+        await database.Connection.ExecuteAsync("alter table ged.document add column retention_hold boolean not null default false");
+        await database.Connection.ExecuteAsync("update ged.document set retention_hold = true where id = @held", new { held });
+        var blocked = await service.UndoAsync(tenant, user, "tester", held, heldMove.Value!.HistoryId, null, true, "corr-hold-undo", null, CancellationToken.None);
+        Assert.False(blocked.Success);
+        Assert.Equal("DOCUMENT_LOCKED", blocked.Error?.Code);
+        Assert.Equal(destination, await FolderOfAsync(database.Connection, held));
+
+        var missingFolder = await InsertDocumentAsync(database.Connection, tenant, origin, "Sem pasta");
+        var missingMove = await service.MoveAsync(tenant, user, "tester", missingFolder, destination, null, "SINGLE", true, "corr-missing-folder", null, CancellationToken.None);
+        await database.Connection.ExecuteAsync("delete from ged.folder where id = @origin", new { origin });
+        var missing = await service.UndoAsync(tenant, user, "tester", missingFolder, missingMove.Value!.HistoryId, null, true, "corr-missing-undo", null, CancellationToken.None);
+        Assert.Equal("FOLDER_NOT_FOUND", missing.Error?.Code);
+        Assert.Equal(destination, await FolderOfAsync(database.Connection, missingFolder));
+
+        var inactiveDoc = await InsertDocumentAsync(database.Connection, tenant, destination, "Inativo");
+        var inactiveMove = await service.MoveAsync(tenant, user, "tester", inactiveDoc, other, null, "SINGLE", true, "corr-inactive-move", null, CancellationToken.None);
+        await database.Connection.ExecuteAsync("update ged.folder set is_active = false where id = @destination", new { destination });
+        var inactive = await service.UndoAsync(tenant, user, "tester", inactiveDoc, inactiveMove.Value!.HistoryId, null, true, "corr-inactive-undo", null, CancellationToken.None);
+        Assert.Equal("FOLDER_INACTIVE", inactive.Error?.Code);
+        Assert.Equal(other, await FolderOfAsync(database.Connection, inactiveDoc));
+
+        await database.Connection.ExecuteAsync("update ged.folder set is_active = true where id = @destination", new { destination });
+        var deniedDoc = await InsertDocumentAsync(database.Connection, tenant, other, "Negado");
+        var deniedMove = await service.MoveAsync(tenant, user, "tester", deniedDoc, destination, null, "SINGLE", true, "corr-deny-move", null, CancellationToken.None);
+        var denied = CreateService(database.Factory, new GrantPermissions());
+        var deniedUndo = await denied.UndoAsync(tenant, user, "tester", deniedDoc, deniedMove.Value!.HistoryId, null, false, "corr-deny-undo", null, CancellationToken.None);
+        Assert.Equal("ACCESS_DENIED", deniedUndo.Error?.Code);
+        Assert.Equal(destination, await FolderOfAsync(database.Connection, deniedDoc));
+
+        var rooted = await service.MoveAsync(tenant, user, "tester", deniedDoc, RootId, "raiz", "SINGLE", true, "corr-root-undo", null, CancellationToken.None);
+        Assert.True(rooted.Success);
+        Assert.Null(await FolderOfAsync(database.Connection, deniedDoc));
+        var back = await service.UndoAsync(tenant, user, "tester", deniedDoc, rooted.Value!.HistoryId, null, true, "corr-root-back", null, CancellationToken.None);
+        Assert.True(back.Success);
+        Assert.Equal(destination, await FolderOfAsync(database.Connection, deniedDoc));
+        Assert.Equal(1, await database.Connection.ExecuteScalarAsync<int>("select count(*) from ged.document where id=@deniedDoc", new { deniedDoc }));
     }
 
     private static DocumentMoveService CreateService(NpgsqlConnectionFactory factory, IPermissionService permissions, IAuditWriter? audit = null)
