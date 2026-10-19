@@ -1,79 +1,120 @@
-﻿@model InovaGed.Application.Common.Paging.PagedResult<InovaGed.Application.Reports.DispositionRowVM>
+@using InovaGed.Web.Models.Atlas
+@model InovaGed.Application.Common.Paging.PagedResult<InovaGed.Application.Reports.DispositionRowVM>
 @{
-  ViewData["Title"] = "Fila de Destinação";
-  var items = Model.Items;
-  long total = Model.Total;
-  int page = Model.Page;
-  int pageSize = Model.PageSize;
-
-  string? status = ViewBag.Status as string;
-  string? q = ViewBag.Q as string;
-  DateTimeOffset? from = ViewBag.From as DateTimeOffset?;
-  DateTimeOffset? to = ViewBag.To as DateTimeOffset?;
-
-  int totalPages = (int)Math.Ceiling(total / (double)pageSize);
-  string Qs(int p) => $"/Disposition/Queue?status={status}&q={q}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}&page={p}&pageSize={pageSize}";
+    ViewData["Title"] = "Fila de temporalidade";
+    var items = Model.Items;
+    long total = Model.Total;
+    int page = Model.Page;
+    int pageSize = Model.PageSize;
+    string? status = ViewBag.Status as string;
+    string? q = ViewBag.Q as string;
+    DateTimeOffset? from = ViewBag.From as DateTimeOffset?;
+    DateTimeOffset? to = ViewBag.To as DateTimeOffset?;
+    int totalPages = pageSize <= 0 ? 1 : (int)Math.Ceiling(total / (double)pageSize);
+    string Qs(int p) => $"/Disposition/Queue?status={Uri.EscapeDataString(status ?? "")}&q={Uri.EscapeDataString(q ?? "")}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}&page={p}&pageSize={pageSize}";
+    string Label(string? value) => value switch
+    {
+        "ELIMINATION_READY" => "Eliminação pronta",
+        "TRANSFER_READY" => "Transferência pronta",
+        "REVIEW_REQUIRED" => "Revisão requerida",
+        "DISPOSED" => "Baixado",
+        null or "" => "Sem situação",
+        _ => value
+    };
+    var header = new AtlasPageHeaderVm(
+        "Fila de temporalidade",
+        $"{total} documento(s) na consulta atual.",
+        "calendar",
+        "Temporalidade",
+        [
+            new AtlasPageAction("Painel", "/Disposition", "arrow-left", false),
+            new AtlasPageAction("Exportar CSV", $"/Disposition/QueueCsv?status={Uri.EscapeDataString(status ?? "")}&q={Uri.EscapeDataString(q ?? "")}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", "download", false)
+        ]);
 }
-
-<div class="d-flex justify-content-between align-items-start mb-3">
-  <div>
-    <h2 class="mb-0">Fila de Destinação</h2>
-    <div class="text-muted">Total: <strong>@total</strong>  @totalPages</div>
-  </div>
-  <div class="d-flex gap-2">
-    <a class="btn btn-outline-secondary" href="/Disposition"><i class="bi bi-speedometer2"></i> Painel</a>
-    <a class="btn btn-outline-secondary" href="/Disposition/QueueCsv?status=@status&q=@q&from=@from&to=@to"><i class="bi bi-download"></i> CSV</a>
-  </div>
+<partial name="Atlas/_PageHeader" model="header" />
+<form method="get" action="/Disposition/Queue" class="card border-0 shadow-sm mb-3">
+    <div class="card-body row g-2 align-items-end">
+        <div class="col-md-3">
+            <label class="form-label" for="disposition-q">Documento ou classe</label>
+            <input id="disposition-q" class="form-control" name="q" value="@q" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label" for="disposition-status">Situação</label>
+            <select id="disposition-status" class="form-select" name="status">
+                <option value="">Todas</option>
+                @foreach (var option in new[] { "ELIMINATION_READY", "TRANSFER_READY", "REVIEW_REQUIRED", "DISPOSED" })
+                {
+                    if (status == option)
+                    {
+                        <option value="@option" selected>@Label(option)</option>
+                    }
+                    else
+                    {
+                        <option value="@option">@Label(option)</option>
+                    }
+                }
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label" for="disposition-from">De</label>
+            <input id="disposition-from" class="form-control" type="date" name="from" value="@from?.ToString("yyyy-MM-dd")" />
+        </div>
+        <div class="col-md-2">
+            <label class="form-label" for="disposition-to">Até</label>
+            <input id="disposition-to" class="form-control" type="date" name="to" value="@to?.ToString("yyyy-MM-dd")" />
+        </div>
+        <div class="col-md-2 d-flex gap-2">
+            <button class="btn btn-primary w-100" type="submit">Filtrar</button>
+            <a class="btn btn-outline-secondary" href="/Disposition/Queue">Limpar</a>
+        </div>
+    </div>
+</form>
+<div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Documento</th>
+                    <th>Classificação</th>
+                    <th>Prazo</th>
+                    <th>Situação</th>
+                    <th>Destinação</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            @if (!items.Any())
+            {
+                <tr><td colspan="6" class="text-center text-muted py-5">Nenhum documento nesta consulta.</td></tr>
+            }
+            @foreach (var row in items)
+            {
+                <tr>
+                    <td>
+                        <div class="fw-semibold">@(string.IsNullOrWhiteSpace(row.DocTitle) ? "Sem título" : row.DocTitle)</div>
+                        <div class="text-muted small">@(row.DocCode ?? "Sem código")</div>
+                    </td>
+                    <td>
+                        <div class="fw-semibold">@(row.ClassCode ?? "Sem classe")</div>
+                        <div class="text-muted small">@(row.ClassName ?? "Classificação não vinculada")</div>
+                    </td>
+                    <td>@(row.RetentionDueAt?.ToString("dd/MM/yyyy") ?? "Prazo não calculado")<div class="text-muted small">@(row.RetentionStatus ?? "Situação de guarda não informada")</div></td>
+                    <td><span class="badge text-bg-light">@Label(row.DispositionStatus)</span></td>
+                    <td>@(row.DispositionAt?.ToString("dd/MM/yyyy HH:mm") ?? "Ainda não destinada")</td>
+                    <td class="text-end"><a class="btn btn-sm btn-outline-secondary" href="/Ged/Details?id=@row.DocumentId">Abrir</a></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
 </div>
-
-<!-- tabela -->
-<div class="card">
-  <div class="card-body table-responsive">
-    <table class="table table-striped align-middle">
-      <thead>
-        <tr>
-          <th>Documento</th>
-          <th>Classificação</th>
-          <th style="width:180px;">Status</th>
-          <th style="width:200px;">Data</th>
-          <th style="width:140px;"></th>
-        </tr>
-      </thead>
-      <tbody>
-      @foreach(var r in items)
-      {
-        <tr>
-          <td>
-            <div class="fw-semibold">@r.DocTitle</div>
-            <div class="text-muted small">@r.DocCode</div>
-          </td>
-          <td>
-            <div class="fw-semibold">@r.ClassCode</div>
-            <div class="text-muted small">@r.ClassName</div>
-          </td>
-          <td><span class="badge bg-secondary">@r.DispositionStatus</span></td>
-          <td>@(r.DispositionAt?.ToString("dd/MM/yyyy HH:mm") ?? "—")</td>
-          <td class="text-end">
-            <a class="btn btn-sm btn-outline-secondary" href="/Ged/Details?id=@r.DocumentId">
-              <i class="bi bi-box-arrow-up-right"></i> Abrir
-            </a>
-          </td>
-        </tr>
-      }
-      </tbody>
-    </table>
-    @if(!items.Any()){ <div class="text-muted">Nenhum registro.</div> }
-  </div>
-</div>
-
-<!-- paginação -->
 @if (totalPages > 1)
 {
-  <nav class="mt-3">
-    <ul class="pagination">
-      <li class="page-item @(page<=1?"disabled":"")"><a class="page-link" href="@(page<=1?"#":Qs(page-1))">Anterior</a></li>
-      <li class="page-item disabled"><span class="page-link">Página @totalPages</span></li>
-      <li class="page-item @(page>=totalPages?"disabled":"")"><a class="page-link" href="@(page>=totalPages?"#":Qs(page+1))">Próxima</a></li>
-    </ul>
-  </nav>
+    <nav class="mt-3" aria-label="Páginas da fila">
+        <ul class="pagination">
+            <li class="page-item @(page <= 1 ? "disabled" : "")"><a class="page-link" href="@(page <= 1 ? "#" : Qs(page - 1))">Anterior</a></li>
+            <li class="page-item disabled"><span class="page-link">Página @(page) de @totalPages</span></li>
+            <li class="page-item @(page >= totalPages ? "disabled" : "")"><a class="page-link" href="@(page >= totalPages ? "#" : Qs(page + 1))">Próxima</a></li>
+        </ul>
+    </nav>
 }

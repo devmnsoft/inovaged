@@ -4,7 +4,7 @@
 @{
  ViewData["Title"]="Faturamento"; var k=(BillingKpis)ViewBag.Kpis; var f=(BillingFilter)ViewBag.Filter;
  var header=new AtlasPageHeaderVm("Faturamento", "Extração e conferência de dados fiscais a partir do OCR documental.", "report", "Operação financeira",
-  new[]{new AtlasPageAction("Extrair documento", Url.Action("Extraction","Billing")!, "ocr", true),new AtlasPageAction("Regras",Url.Action("Rules","Billing")!,"settings",false)});
+  new[]{new AtlasPageAction("Checklist", Url.Action("Checklist","Billing")!, "list", true),new AtlasPageAction("Extrair documento", Url.Action("Extraction","Billing")!, "ocr", false),new AtlasPageAction("Regras",Url.Action("Rules","Billing")!,"settings",false)});
  var metrics=new[]{new AtlasMetricVm("Extraídos",k.Extracted.ToString(),"documentos processados","info","documents"),new AtlasMetricVm("Pendentes",k.PendingReview.ToString(),"aguardando revisão","warning","history"),new AtlasMetricVm("Aprovados",k.Approved.ToString(),"revisados","success","check"),new AtlasMetricVm("Divergências",k.Divergent.ToString(),"exigem atenção","danger","warning"),new AtlasMetricVm("Valor identificado",k.TotalAmount.ToString("C"),"valor bruto acumulado","info","report"),new AtlasMetricVm("Sem OCR",k.WithoutOcr.ToString(),"não podem ser extraídos","warning","ocr")};
 }
 <partial name="Atlas/_PageHeader" model="header" />

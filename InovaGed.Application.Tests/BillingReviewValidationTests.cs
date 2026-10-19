@@ -39,6 +39,47 @@ public sealed class BillingReviewValidationTests
     }
 }
 
+public sealed class BillingChecklistTests
+{
+    [Fact]
+    public void Complete_invoice_is_ready_for_review()
+    {
+        var checks = BillingChecklist.Evaluate(new BillingExtractionDto
+        {
+            DocumentKind = "INVOICE",
+            SupplierName = "Fornecedor Exemplo",
+            SupplierDocument = "04.252.011/0001-10",
+            InvoiceNumber = "123",
+            GrossAmount = 100,
+            NetAmount = 90,
+            IssueDate = new DateTime(2026, 8, 1),
+            DueDate = new DateTime(2026, 8, 10),
+            CompetenceMonth = "08/2026",
+            Confidence = 80
+        });
+
+        Assert.True(BillingChecklist.CanApprove(checks));
+        Assert.Equal("Nota fiscal", BillingChecklist.KindLabel("INVOICE"));
+    }
+
+    [Fact]
+    public void Missing_fiscal_fields_block_approval()
+    {
+        var checks = BillingChecklist.Evaluate(new BillingExtractionDto
+        {
+            DocumentKind = "BILL",
+            GrossAmount = 0,
+            DueDate = new DateTime(2026, 8, 1),
+            IssueDate = new DateTime(2026, 8, 10)
+        });
+
+        Assert.False(BillingChecklist.CanApprove(checks));
+        Assert.Contains(checks, item => item.Code == "TAX_ID" && !item.Passed);
+        Assert.Contains(checks, item => item.Code == "DATES" && !item.Passed);
+        Assert.Contains(checks, item => item.Code == "GROSS" && !item.Passed);
+    }
+}
+
 public sealed class BillingExtractionRuleValidationTests
 {
     [Fact]

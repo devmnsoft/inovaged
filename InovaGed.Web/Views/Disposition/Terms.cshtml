@@ -1,148 +1,114 @@
-﻿@model IReadOnlyList<InovaGed.Application.Reports.TermRowVM>
-
+@using InovaGed.Web.Models.Atlas
+@model IReadOnlyList<InovaGed.Application.Reports.TermRowVM>
 @{
-    ViewData["Title"] = "Relatório de Termos";
-    ViewData["Subtitle"] = "Termos de eliminação/transferência gerados pela temporalidade";
-
-    // filtros vindos do controller via ViewBag
+    ViewData["Title"] = "Termos de temporalidade";
     DateTimeOffset? from = ViewBag.From as DateTimeOffset?;
     DateTimeOffset? to = ViewBag.To as DateTimeOffset?;
     string? status = ViewBag.Status as string;
-
-    string fmt(DateTime? dt) => dt is null ? "-" : dt.Value.ToString("dd/MM/yyyy HH:mm");
+    string fmt(DateTime? dt) => dt is null ? "—" : dt.Value.ToString("dd/MM/yyyy HH:mm");
     string fmtOff(DateTimeOffset? dt) => dt is null ? "" : dt.Value.ToString("yyyy-MM-dd");
+    string Label(string? value) => value switch
+    {
+        "DRAFT" => "Rascunho",
+        "SIGNED" => "Assinado",
+        "EXECUTED" => "Executado",
+        "CANCELLED" => "Cancelado",
+        null or "" => "Sem situação",
+        _ => value
+    };
+    var header = new AtlasPageHeaderVm(
+        "Termos de temporalidade",
+        "Termos de eliminação e transferência gerados pela temporalidade. A exportação usa a tabela visível.",
+        "documents",
+        "Temporalidade",
+        [new AtlasPageAction("Voltar ao painel", "/Disposition", "arrow-left", false)]);
 }
-
-<div class="page-header mb-3">
-    <div class="d-flex align-items-start justify-content-between flex-wrap gap-2">
-        <div>
-            <h2 class="page-title mb-1">
-                <i class="bi bi-journal-text me-2"></i> @ViewData["Title"]
-            </h2>
-            <div class="text-muted">@ViewData["Subtitle"]</div>
+<partial name="Atlas/_PageHeader" model="header" />
+<form method="get" action="/Disposition/Terms" class="card border-0 shadow-sm mb-3">
+    <div class="card-body row g-2 align-items-end">
+        <div class="col-md-3">
+            <label class="form-label" for="term-from">De</label>
+            <input id="term-from" type="date" class="form-control" name="from" value="@fmtOff(from)" />
         </div>
-
-        <div class="d-flex gap-2">
-            <a class="btn btn-outline-secondary" href="/Disposition/Index">
-                <i class="bi bi-arrow-left"></i> Voltar
-            </a>
-
-            <button class="btn btn-outline-secondary" type="button" onclick="location.reload()">
-                <i class="bi bi-arrow-repeat"></i> Atualizar
-            </button>
-
-            <button class="btn btn-primary" type="button" onclick="exportCsv()">
-                <i class="bi bi-download"></i> Exportar CSV
-            </button>
+        <div class="col-md-3">
+            <label class="form-label" for="term-to">Até</label>
+            <input id="term-to" type="date" class="form-control" name="to" value="@fmtOff(to)" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label" for="term-status">Situação</label>
+            <select id="term-status" class="form-select" name="status">
+                <option value="">Todas</option>
+                @foreach (var option in new[] { "DRAFT", "SIGNED", "EXECUTED", "CANCELLED" })
+                {
+                    if (status == option)
+                    {
+                        <option value="@option" selected>@Label(option)</option>
+                    }
+                    else
+                    {
+                        <option value="@option">@Label(option)</option>
+                    }
+                }
+            </select>
+        </div>
+        <div class="col-md-3 d-flex gap-2">
+            <button class="btn btn-primary" type="submit">Filtrar</button>
+            <a class="btn btn-outline-secondary" href="/Disposition/Terms">Limpar</a>
+            <button class="btn btn-outline-secondary" type="button" onclick="exportTermsCsv()">Exportar CSV</button>
         </div>
     </div>
-</div>
-
-<div class="card shadow-sm mb-3">
+</form>
+<div class="card border-0 shadow-sm">
     <div class="card-body">
-        <form method="get" action="/Disposition/Terms" class="row g-2 align-items-end">
-            <div class="col-12 col-md-3">
-                <label class="form-label">De</label>
-                <input type="date" class="form-control" name="from" value="@fmtOff(from)" />
-            </div>
-
-            <div class="col-12 col-md-3">
-                <label class="form-label">Até</label>
-                <input type="date" class="form-control" name="to" value="@fmtOff(to)" />
-            </div>
-
-            <div class="col-12 col-md-3">
-                <label class="form-label">Status</label>
-                <select class="form-select" name="status">
-                    <option value="" selected="@(string.IsNullOrWhiteSpace(status))">Todos</option>
-                    <option value="DRAFT" selected="@(status == "DRAFT")">Rascunho</option>
-                    <option value="SIGNED" selected="@(status == "SIGNED")">Assinado</option>
-                    <option value="EXECUTED" selected="@(status == "EXECUTED")">Executado</option>
-                    <option value="CANCELLED" selected="@(status == "CANCELLED")">Cancelado</option>
-                </select>
-            </div>
-
-            <div class="col-12 col-md-3 d-flex gap-2">
-                <button class="btn btn-primary w-100" type="submit">
-                    <i class="bi bi-funnel"></i> Filtrar
-                </button>
-                <a class="btn btn-outline-secondary w-100" href="/Disposition/Terms">
-                    Limpar
-                </a>
-            </div>
-        </form>
-    </div>
-</div>
-
-<div class="card shadow-sm">
-    <div class="card-body">
-        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
-            <div class="text-muted">
-                Total: <strong>@(Model?.Count ?? 0)</strong>
-            </div>
-        </div>
-
+        <p class="text-muted">Total: <strong>@(Model?.Count ?? 0)</strong></p>
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0" id="tblTerms">
-                <thead class="table-light">
+                <thead>
                     <tr>
                         <th>Termo</th>
                         <th>Tipo</th>
-                        <th>Status</th>
-                        <th>Case</th>
+                        <th>Situação</th>
+                        <th>Caso</th>
                         <th>Criado em</th>
                         <th>Assinado em</th>
                         <th>Executado em</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @if (Model is null || Model.Count == 0)
+                @if (Model is null || Model.Count == 0)
+                {
+                    <tr><td colspan="7" class="text-center text-muted py-4">Nenhum termo encontrado com os filtros atuais.</td></tr>
+                }
+                else
+                {
+                    foreach (var row in Model)
                     {
                         <tr>
-                            <td colspan="7" class="text-center text-muted py-4">
-                                Nenhum termo encontrado com os filtros atuais.
-                            </td>
+                            <td class="text-nowrap"><strong>#@row.TermNo</strong><div class="small text-muted">@row.TermId</div></td>
+                            <td>@(row.TermType ?? "Tipo não informado")</td>
+                            <td>@Label(row.Status)</td>
+                            <td class="small">@row.CaseId</td>
+                            <td class="text-nowrap">@fmt(row.CreatedAt)</td>
+                            <td class="text-nowrap">@fmt(row.SignedAt)</td>
+                            <td class="text-nowrap">@fmt(row.ExecutedAt)</td>
                         </tr>
                     }
-                    else
-                    {
-                        foreach (var r in Model)
-                        {
-                            <tr>
-                                <td class="text-nowrap">
-                                    <strong>#@r.TermNo</strong><br />
-                                    <small class="text-muted">@r.TermId</small>
-                                </td>
-                                <td class="text-nowrap">@r.TermType</td>
-                                <td class="text-nowrap">
-                                    <span class="badge bg-secondary">@r.Status</span>
-                                </td>
-                                <td class="text-nowrap">
-                                    <small>@r.CaseId</small>
-                                </td>
-                                <td class="text-nowrap">@fmt(r.CreatedAt)</td>
-                                <td class="text-nowrap">@fmt(r.SignedAt)</td>
-                                <td class="text-nowrap">@fmt(r.ExecutedAt)</td>
-                            </tr>
-                        }
-                    }
+                }
                 </tbody>
             </table>
         </div>
     </div>
 </div>
-
 @section Scripts {
     <script>
-        function exportCsv() {
+        function exportTermsCsv() {
             const table = document.getElementById("tblTerms");
             if (!table) return;
-
             const rows = table.querySelectorAll("tr");
-            let csv = [];
+            const csv = [];
             for (const row of rows) {
                 const cols = row.querySelectorAll("th, td");
-                let line = [];
+                const line = [];
                 for (const col of cols) {
                     let text = (col.innerText || "").replace(/\r?\n|\r/g, " ").trim();
                     text = '"' + text.replace(/"/g, '""') + '"';
@@ -150,17 +116,14 @@
                 }
                 csv.push(line.join(";"));
             }
-
             const blob = new Blob([csv.join("\n")], { type: "text/csv;charset=utf-8;" });
             const url = URL.createObjectURL(blob);
-
             const a = document.createElement("a");
             a.href = url;
-            a.download = "termos.csv";
+            a.download = "termos-temporalidade.csv";
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
-
             URL.revokeObjectURL(url);
         }
     </script>

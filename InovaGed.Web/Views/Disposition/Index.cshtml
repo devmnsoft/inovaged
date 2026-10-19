@@ -1,54 +1,31 @@
-﻿@model InovaGed.Application.Reports.DispositionKpiVM
+@using InovaGed.Web.Models.Atlas
+@model InovaGed.Application.Reports.DispositionKpiVM
 @{
-    ViewData["Title"] = "Destinação";
+    ViewData["Title"] = "Temporalidade";
+    var header = new AtlasPageHeaderVm(
+        "Temporalidade",
+        "Prazos de guarda, destinação e termos do acervo. Os números vêm da fila operacional já persistida.",
+        "calendar",
+        "Gestão documental",
+        [
+            new AtlasPageAction("Ver fila", "/Disposition/Queue", "list", true),
+            new AtlasPageAction("Termos", "/Disposition/Terms", "documents", false),
+            new AtlasPageAction("Tabela de temporalidade", "/ClassificationPlan/RetentionRules", "settings", false)
+        ]);
+    var metrics = new[]
+    {
+        new AtlasMetricVm("Eliminação pronta", Model.EliminationReady.ToString(), "prazo encerrado com destinação de eliminação", "danger", "warning", "/Disposition/Queue?status=ELIMINATION_READY"),
+        new AtlasMetricVm("Transferência pronta", Model.TransferReady.ToString(), "prazo encerrado com destinação de transferência", "info", "share", "/Disposition/Queue?status=TRANSFER_READY"),
+        new AtlasMetricVm("Revisão requerida", Model.ReviewRequired.ToString(), "aguardam decisão antes da destinação", "warning", "history", "/Disposition/Queue?status=REVIEW_REQUIRED"),
+        new AtlasMetricVm("Baixados em 30 dias", Model.DisposedLast30D.ToString(), "destinação já registrada", "success", "check", "/Disposition/Queue?status=DISPOSED")
+    };
 }
-
-<div class="d-flex justify-content-between align-items-start mb-3">
-    <div>
-        <h2 class="mb-0">Painel de Destinação</h2>
-        <div class="text-muted">Fila operacional pós-execução de casos/termos.</div>
+<partial name="Atlas/_PageHeader" model="header" />
+<partial name="Atlas/_PageMetrics" model="metrics" />
+<section class="card border-0 shadow-sm">
+    <div class="card-body">
+        <h2 class="h5">Como ler estes prazos</h2>
+        <p class="mb-2">A fase e o destino saem da regra vinculada à classificação do documento. A data de vencimento é a persistida em <span class="font-monospace">retention_due_at</span>.</p>
+        <p class="text-muted mb-0">Um documento sem regra, sem evento inicial ou com impedimento permanece em revisão. Esta tela não executa eliminação nem transferência.</p>
     </div>
-    <div class="d-flex gap-2">
-        <a class="btn btn-outline-secondary" href="/Disposition/Queue"><i class="bi bi-inbox"></i> Ver fila</a>
-        <a class="btn btn-outline-secondary" href="/Disposition/Terms"><i class="bi bi-file-earmark-text"></i> Termos</a>
-    </div>
-</div>
-
-<div class="row g-3">
-    <div class="col-md-3">
-        <div class="card">
-            <div class="card-body">
-                <div class="text-muted">Eliminação pronta</div>
-                <div class="display-6">@Model.EliminationReady</div>
-                <a class="btn btn-sm btn-outline-danger mt-2" href="/Disposition/Queue?status=ELIMINATION_READY">Abrir</a>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card">
-            <div class="card-body">
-                <div class="text-muted">Transferência pronta</div>
-                <div class="display-6">@Model.TransferReady</div>
-                <a class="btn btn-sm btn-outline-primary mt-2" href="/Disposition/Queue?status=TRANSFER_READY">Abrir</a>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card">
-            <div class="card-body">
-                <div class="text-muted">Revisão requerida</div>
-                <div class="display-6">@Model.ReviewRequired</div>
-                <a class="btn btn-sm btn-outline-warning mt-2" href="/Disposition/Queue?status=REVIEW_REQUIRED">Abrir</a>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card">
-            <div class="card-body">
-                <div class="text-muted">Baixados (30 dias)</div>
-                <div class="display-6">@Model.DisposedLast30D</div>
-                <a class="btn btn-sm btn-outline-success mt-2" href="/Disposition/Queue?status=DISPOSED">Abrir</a>
-            </div>
-        </div>
-    </div>
-</div>
+</section>

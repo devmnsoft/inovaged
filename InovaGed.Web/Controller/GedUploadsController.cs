@@ -99,7 +99,10 @@ WHERE b.tenant_id=@tenantId AND b.id=@batchId AND coalesce(b.reg_status,'A')='A'
             var reviewMap = await _reviews.GetForDocumentsAsync(_currentUser.TenantId,
                 items.Where(x => x.DocumentId.HasValue).Select(x => x.DocumentId!.Value).ToArray(), ct);
             foreach (var item in items.Where(x => x.DocumentId.HasValue))
+            {
                 if (reviewMap.TryGetValue(item.DocumentId!.Value, out var review)) item.IntakeReviewStatus = review.Status;
+                else item.IntakeReviewStatus = "UNAVAILABLE";
+            }
             await _audit.WriteAsync(_currentUser.TenantId, _currentUser.UserId, "UPLOAD_BATCH_DETAIL_VIEW", "UPLOAD_BATCH", batchId, "Detalhe de upload visualizado", null, null, null, ct);
             return View(new GedUploadBatchDetailVM { Batch = batch, Items = items });
         }
@@ -219,18 +222,30 @@ ORDER BY b.created_at DESC LIMIT 1;
         if (ids.Count == 0) return BadRequest(new { success = false, message = "Selecione pelo menos um documento." });
         if (request.Status == DocumentIntakeReviewStatus.NeedsCorrection && string.IsNullOrWhiteSpace(request.Reason))
             return BadRequest(new { success = false, message = "Informe o motivo da correção." });
+        if (request.Status is not (DocumentIntakeReviewStatus.Reviewed or DocumentIntakeReviewStatus.NeedsCorrection or DocumentIntakeReviewStatus.Pending))
+            return BadRequest(new { success = false, message = "Situação de conferência inválida." });
+        var failed = 0;
         foreach (var id in ids)
         {
-            if (request.Status == DocumentIntakeReviewStatus.Reviewed)
-                await _reviews.MarkReviewedAsync(_currentUser.TenantId, _currentUser.UserId, id, request.Reason, ct);
-            else if (request.Status == DocumentIntakeReviewStatus.NeedsCorrection)
-                await _reviews.MarkNeedsCorrectionAsync(_currentUser.TenantId, _currentUser.UserId, id, request.Reason!, ct);
-            else if (request.Status == DocumentIntakeReviewStatus.Pending)
-                await _reviews.ResetPendingAsync(_currentUser.TenantId, _currentUser.UserId, id, ct);
-            else return BadRequest(new { success = false, message = "Situação de conferência inválida." });
+            try
+            {
+                if (request.Status == DocumentIntakeReviewStatus.Reviewed)
+                    await _reviews.MarkReviewedAsync(_currentUser.TenantId, _currentUser.UserId, id, request.Reason, ct);
+                else if (request.Status == DocumentIntakeReviewStatus.NeedsCorrection)
+                    await _reviews.MarkNeedsCorrectionAsync(_currentUser.TenantId, _currentUser.UserId, id, request.Reason!, ct);
+                else
+                    await _reviews.ResetPendingAsync(_currentUser.TenantId, _currentUser.UserId, id, ct);
+            }
+            catch (KeyNotFoundException)
+            {
+                failed++;
+            }
         }
-        return Json(new { success = true, requested = ids.Count, succeeded = ids.Count, failed = 0,
-            message = ids.Count == 1 ? "Conferência atualizada." : $"Conferência atualizada em {ids.Count} documentos." });
+        var succeeded = ids.Count - failed;
+        return Json(new { success = failed == 0, requested = ids.Count, succeeded, failed,
+            message = failed == 0
+                ? (ids.Count == 1 ? "Conferência atualizada." : $"Conferência atualizada em {ids.Count} documentos.")
+                : $"{succeeded} conferido(s). {failed} documento(s) não encontrado(s) ou inacessível(is)." });
     }
 
     [HttpPost("{batchId:guid}/BulkClassify")]

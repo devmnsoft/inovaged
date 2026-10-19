@@ -12,7 +12,9 @@ public sealed class DocumentIntakeReviewService(IDbConnectionFactory db, IAuditW
     public async Task<DocumentIntakeReviewDto> GetAsync(Guid tenantId, Guid documentId, CancellationToken ct)
     {
         var rows = await GetForDocumentsAsync(tenantId, new[] { documentId }, ct);
-        return rows[documentId];
+        if (!rows.TryGetValue(documentId, out var row))
+            throw new KeyNotFoundException("Documento não encontrado ou inacessível.");
+        return row;
     }
 
     public async Task<IReadOnlyDictionary<Guid, DocumentIntakeReviewDto>> GetForDocumentsAsync(
@@ -37,8 +39,6 @@ where d.tenant_id=@tenantId and d.id=any(@chunk) and coalesce(d.reg_status,'A')=
                 existing[dto.DocumentId] = dto;
             }
         }
-        foreach (var id in ids)
-            if (!existing.ContainsKey(id)) throw new KeyNotFoundException("Documento n\u00e3o encontrado ou inacess\u00edvel.");
         return existing;
     }
 

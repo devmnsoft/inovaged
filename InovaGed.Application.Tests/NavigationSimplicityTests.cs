@@ -18,5 +18,9 @@ public sealed class NavigationSimplicityTests
         Assert.Contains("asp-action=\"Cadastrar\"", fullAdmin, StringComparison.Ordinal);
         Assert.Contains("asp-action=\"Consultar\"", fullAdmin, StringComparison.Ordinal);
         Assert.Contains("asp-action=\"Parametrizar\"", fullAdmin, StringComparison.Ordinal);
+        Assert.Contains("<details class=\"sidebar-group\" open>", fullAdmin, StringComparison.Ordinal);
+        Assert.Contains("Checklist de faturamento", fullAdmin, StringComparison.Ordinal);
+        Assert.Contains(">Faturamento<", fullAdmin, StringComparison.Ordinal);
+        Assert.Contains(">Temporalidade<", fullAdmin, StringComparison.Ordinal);
     }
 }

@@ -45,6 +45,33 @@
 .sidebar-search input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--ig-text); }
 .sidebar-search button { padding: 0; border: 0; background: transparent; color: inherit; }
 .sidebar-menu { min-height: 0; flex: 1; overflow: auto; padding: 0 var(--ig-space-3); }
+.sidebar-group { margin: 0 0 var(--ig-space-2); }
+.sidebar-group > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 36px;
+    padding: var(--ig-space-2);
+    color: var(--ig-text);
+    font-size: .72rem;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    cursor: pointer;
+    list-style: none;
+}
+.sidebar-group > summary::-webkit-details-marker { display: none; }
+.sidebar-group > summary::after {
+    width: .45rem;
+    height: .45rem;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    content: "";
+    transform: rotate(-45deg);
+}
+.sidebar-group[open] > summary::after { transform: rotate(45deg); }
+.sidebar-group > summary:focus-visible { border-radius: var(--ig-radius-sm); outline: 2px solid var(--ig-accent-500); outline-offset: 2px; }
+.app-shell.sidebar-collapsed .sidebar-group > summary { display: none; }
 .sidebar-menu-section + .sidebar-menu-section { margin-top: var(--ig-space-3); }
 .sidebar-section-title { margin: 0; padding: var(--ig-space-2); color: var(--ig-text-muted); font-size: .68rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 .sidebar-section-title button { display: flex; width: 100%; align-items: center; justify-content: space-between; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; }

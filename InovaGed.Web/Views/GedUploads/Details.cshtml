@@ -65,14 +65,14 @@
             {
                 var isFailure = i.Status == "ERROR" || i.Status == "ABORTED" || i.Status == "RETRYABLE";
                 <tr class="@(isFailure ? "table-warning" : "")" data-status="@i.Status" data-created="@(i.DocumentId.HasValue ? "true" : "false")" data-retry="@(i.CanRetry ? "true" : "false")">
-                    <td>@if (i.DocumentId.HasValue) { <input type="checkbox" class="js-upload-doc-check" value="@i.DocumentId" /> }</td>
+                    <td>@if (i.DocumentId.HasValue && i.IntakeReviewStatus != "UNAVAILABLE") { <input type="checkbox" class="js-upload-doc-check" value="@i.DocumentId" /> }</td>
                     <td>@i.OriginalFileName</td>
                     <td><span class="badge bg-secondary">@i.OperationalStatus</span></td>
                     <td>@(i.DocumentId.HasValue ? i.ClassificationDisplay : "Não aplicável")</td>
                     <td><span class="badge bg-light text-dark">@i.ReviewLabel</span></td>
                     <td class="text-danger">@(i.ErrorMessage ?? i.ProcessingWarning ?? "-")</td>
                     <td>@(i.ErrorStep ?? "-")</td>
-                    <td>@if (i.DocumentId.HasValue) { <a asp-controller="Ged" asp-action="Details" asp-route-id="@i.DocumentId">Abrir documento</a> } else { <span>-</span> }</td>
+                    <td>@if (i.DocumentId.HasValue && i.IntakeReviewStatus != "UNAVAILABLE") { <a asp-controller="Ged" asp-action="Details" asp-route-id="@i.DocumentId">Abrir documento</a> } else { <span>@(i.IntakeReviewStatus == "UNAVAILABLE" ? "Documento indisponível" : "-")</span> }</td>
                     <td>@(i.SizeBytes.HasValue ? $"{i.SizeBytes.Value:n0}" : "-")</td>
                     <td>@(i.ElapsedMs.HasValue ? $"{i.ElapsedMs.Value}ms" : "-")</td>
                     <td class="text-nowrap"><button class="btn btn-sm btn-outline-secondary js-copy-error" data-error="@(i.ErrorMessage ?? i.ProcessingWarning)" data-correlation="@i.CorrelationId">Copiar erro</button></td>

@@ -1,0 +1,67 @@
+@using InovaGed.Application.Billing
+@using InovaGed.Web.Models.Atlas
+@model IReadOnlyList<BillingExtractionDto>
+@{
+    ViewData["Title"] = "Checklist de faturamento";
+    var evaluated = Model.Select(item => (Item: item, Checks: BillingChecklist.Evaluate(item))).ToArray();
+    var ready = evaluated.Count(row => BillingChecklist.CanApprove(row.Checks));
+    var header = new AtlasPageHeaderVm(
+        "Checklist de faturamento",
+        "Conferência dos documentos que o OCR identificou como nota, fatura, boleto, recibo, medição ou ordem de serviço.",
+        "list",
+        "Faturamento",
+        [
+            new AtlasPageAction("Voltar ao faturamento", Url.Action("Index", "Billing")!, "arrow-left", false),
+            new AtlasPageAction("Extrair documento", Url.Action("Extraction", "Billing")!, "ocr", true)
+        ]);
+    var metrics = new[]
+    {
+        new AtlasMetricVm("Identificados", Model.Count.ToString(), "extrações do tenant", "info", "documents"),
+        new AtlasMetricVm("Prontos para revisão", ready.ToString(), "checklist obrigatório completo", "success", "check"),
+        new AtlasMetricVm("Pendentes", (Model.Count - ready).ToString(), "falta dado obrigatório", "warning", "warning")
+    };
+}
+<partial name="Atlas/_PageHeader" model="header" />
+<partial name="Atlas/_PageMetrics" model="metrics" />
+<div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Documento</th>
+                    <th>Identificação</th>
+                    <th>Checklist</th>
+                    <th>Situação</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            @if (evaluated.Length == 0)
+            {
+                <tr>
+                    <td colspan="5" class="text-center py-5">
+                        <h2 class="h5">Nenhum documento de faturamento identificado</h2>
+                        <p class="text-muted mb-0">A identificação acontece depois do OCR, quando o texto contém sinal fiscal ou financeiro.</p>
+                    </td>
+                </tr>
+            }
+            @foreach (var row in evaluated)
+            {
+                var required = row.Checks.Count(item => item.Required);
+                var passed = row.Checks.Count(item => item.Required && item.Passed);
+                var canApprove = BillingChecklist.CanApprove(row.Checks);
+                <tr>
+                    <td>
+                        <strong>@row.Item.DocumentTitle</strong>
+                        <div class="small text-muted">@(row.Item.SupplierName ?? "Fornecedor não informado")</div>
+                    </td>
+                    <td>@BillingChecklist.KindLabel(row.Item.DocumentKind)</td>
+                    <td>@passed/@required obrigatórios</td>
+                    <td><span class="badge @(canApprove ? "text-bg-success" : "text-bg-warning")">@(canApprove ? "Pronto para revisão" : "Pendente")</span></td>
+                    <td><a class="btn btn-sm btn-primary" asp-action="Details" asp-route-id="@row.Item.Id">Abrir</a></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</div>

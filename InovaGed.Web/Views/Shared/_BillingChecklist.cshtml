@@ -1,0 +1,30 @@
+@model IReadOnlyList<InovaGed.Application.Billing.BillingChecklistItem>
+@{
+    var required = Model.Count(item => item.Required);
+    var passed = Model.Count(item => item.Required && item.Passed);
+    var ready = InovaGed.Application.Billing.BillingChecklist.CanApprove(Model);
+}
+<section class="card border-0 shadow-sm" aria-label="Checklist de faturamento">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+            <div>
+                <h2 class="h5 mb-1">Checklist de faturamento</h2>
+                <p class="text-muted mb-0">@passed de @required itens obrigatórios conferidos. A identificação não aprova a cobrança.</p>
+            </div>
+            <span class="badge @(ready ? "text-bg-success" : "text-bg-warning")">@(ready ? "Pronto para revisão" : "Pendente")</span>
+        </div>
+        <ul class="list-group list-group-flush">
+            @foreach (var item in Model)
+            {
+                <li class="list-group-item px-0 d-flex justify-content-between gap-3">
+                    <span>
+                        <strong>@item.Label</strong>
+                        @if (!item.Required) { <span class="text-muted small">opcional</span> }
+                        <div class="small text-muted">@item.Detail</div>
+                    </span>
+                    <span class="badge @(item.Passed ? "text-bg-success" : item.Required ? "text-bg-danger" : "text-bg-secondary")">@(item.Passed ? "Ok" : "Pendente")</span>
+                </li>
+            }
+        </ul>
+    </div>
+</section>

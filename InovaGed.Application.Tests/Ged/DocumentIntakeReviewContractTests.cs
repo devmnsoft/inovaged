@@ -26,6 +26,8 @@ public class DocumentIntakeReviewContractTests
             Assert.DoesNotContain("\\\"Notes\\\"", content);
             Assert.Contains("\"DocumentId\"", content);
             Assert.Contains("\"Status\"", content);
+            Assert.DoesNotContain("if (!existing.ContainsKey(id)) throw", content);
+            Assert.Contains("if (!rows.TryGetValue(documentId, out var row))", content);
         }
     }
 

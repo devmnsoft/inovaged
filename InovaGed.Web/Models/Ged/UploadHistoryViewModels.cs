@@ -76,6 +76,7 @@ public sealed class GedUploadBatchItemVM
     {
         "REVIEWED" => "Conferido",
         "NEEDS_CORRECTION" => "Precisa de correção",
+        "UNAVAILABLE" => "Documento indisponível",
         _ => "Pendente"
     };
 }

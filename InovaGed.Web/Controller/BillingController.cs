@@ -20,6 +20,13 @@ public sealed class BillingController(ICurrentUser user, IBillingQueries queries
         return View(data.Rows);
     }
 
+    [HttpGet("Checklist")]
+    public async Task<IActionResult> Checklist(CancellationToken ct)
+    {
+        var data = await queries.DashboardAsync(user.TenantId, new BillingFilter(), ct);
+        return View(data.Rows);
+    }
+
     [HttpGet("Extraction")]
     public IActionResult Extraction() => View();
 
