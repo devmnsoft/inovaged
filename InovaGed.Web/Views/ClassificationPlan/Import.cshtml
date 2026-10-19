@@ -1,4 +1,58 @@
 @model IReadOnlyList<InovaGed.Web.Controllers.ClassificationPlanController.ImportPreviewRow>
-@{ViewData["Title"]="Importação assistida";}
+@using InovaGed.Web.Models.Atlas
+@{
+    ViewData["Title"] = "Importação assistida";
+    var header = new AtlasPageHeaderVm(
+        "Importação assistida",
+        "O plano vigente não é apagado. A pré-visualização mostra código, nome e classe pai antes de gravar.",
+        "upload",
+        "Plano de classificação",
+        [new AtlasPageAction("Voltar ao plano", Url.Action("Index")!, "arrow-left")]);
+}
 @section Styles { <link rel="stylesheet" href="~/css/classification-plan.css" asp-append-version="true" /> }
-<div class="classification-page"><header class="classification-heading"><h1>Importação assistida</h1><p>O plano atual nunca será apagado. Valide a prévia antes de confirmar.</p></header><form method="post" enctype="multipart/form-data" class="classification-form"><label>Arquivo CSV<input type="file" name="file" accept=".csv,text/csv" required/></label><button class="btn btn-primary">Validar arquivo</button></form>@if(Model.Any()){<section class="classification-import-preview"><h2>Pré-visualização</h2><table class="table"><thead><tr><th>Linha</th><th>Código</th><th>Título</th><th>Classe pai</th><th>Validação</th></tr></thead><tbody>@foreach(var r in Model){<tr><td>@r.Line</td><td>@r.Code</td><td>@r.Title</td><td>@r.ParentCode</td><td>@(r.Error??"Pronto")</td></tr>}</tbody></table>@if(Model.All(x=>x.Error is null)){<form method="post" enctype="multipart/form-data"><div class="alert alert-info">Para segurança, selecione novamente o arquivo e confirme.</div><input type="file" name="file" accept=".csv" required/><input type="hidden" name="confirm" value="true"/><button class="btn btn-success">Confirmar importação</button></form>}</section>}</div>
+<div class="classification-page">
+    <partial name="Atlas/_PageHeader" model="header" />
+    <form method="post" enctype="multipart/form-data" class="classification-form">
+        @Html.AntiForgeryToken()
+        <label>Arquivo CSV com as colunas code, title e parent_code
+            <input type="file" name="file" accept=".csv,text/csv" required />
+        </label>
+        <button class="btn btn-primary" type="submit">Validar arquivo</button>
+    </form>
+    @if (Model.Any())
+    {
+        var ready = Model.All(row => row.Error is null);
+        <section class="classification-import-preview">
+            <h2>Pré-visualização</h2>
+            <p>@(ready ? "Todas as linhas estão prontas. Selecione o arquivo outra vez para confirmar a gravação." : "Corrija as linhas com erro antes de confirmar.")</p>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle atlas-table">
+                    <thead>
+                        <tr><th>Linha</th><th>Código</th><th>Nome da classe</th><th>Classe pai</th><th>Validação</th></tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var row in Model)
+                    {
+                        <tr>
+                            <td>@row.Line</td>
+                            <td>@row.Code</td>
+                            <td>@row.Title</td>
+                            <td>@(string.IsNullOrWhiteSpace(row.ParentCode) ? "—" : row.ParentCode)</td>
+                            <td>@(row.Error ?? "Pronto")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+            @if (ready)
+            {
+                <form method="post" enctype="multipart/form-data">
+                    @Html.AntiForgeryToken()
+                    <input type="file" name="file" accept=".csv,text/csv" required />
+                    <input type="hidden" name="confirm" value="true" />
+                    <button class="btn btn-primary" type="submit">Confirmar importação</button>
+                </form>
+            }
+        </section>
+    }
+</div>

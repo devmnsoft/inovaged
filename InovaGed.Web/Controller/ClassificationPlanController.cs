@@ -1,4 +1,5 @@
 using InovaGed.Application.Classification;
+using InovaGed.Application.ClassificationPlans;
 using InovaGed.Application.Identity;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,14 +13,45 @@ public sealed class ClassificationPlanController : Controller
     private readonly IClassificationPlanService _plan;
     private readonly IRetentionRuleV2Service _rules;
     private readonly IClassificationVersionService _versions;
+    private readonly IClassificationPlanRepository _live;
     private readonly ICurrentUser _user;
     private readonly ILogger<ClassificationPlanController> _logger;
-    public ClassificationPlanController(IClassificationPlanService plan, IRetentionRuleV2Service rules, IClassificationVersionService versions, ICurrentUser user, ILogger<ClassificationPlanController> logger) => (_plan,_rules,_versions,_user,_logger)=(plan,rules,versions,user,logger);
+    public ClassificationPlanController(IClassificationPlanService plan, IRetentionRuleV2Service rules, IClassificationVersionService versions, IClassificationPlanRepository live, ICurrentUser user, ILogger<ClassificationPlanController> logger) => (_plan,_rules,_versions,_live,_user,_logger)=(plan,rules,versions,live,user,logger);
 
     [HttpGet("")]
-    public async Task<IActionResult> Index(CancellationToken ct) => View(await Safe(() => _plan.GetDashboardAsync(_user.TenantId,ct),new ClassificationPlanDashboard(0,0,0,0,0,0)));
+    public async Task<IActionResult> Index(CancellationToken ct)
+    {
+        var dashboard = await Safe(() => _plan.GetDashboardAsync(_user.TenantId, ct), new ClassificationPlanDashboard(0, 0, 0, 0, 0, 0));
+        try
+        {
+            var classes = await _live.ListTreeAsync(_user.TenantId, ct);
+            ViewBag.LiveClasses = classes.Take(12).ToList();
+            ViewBag.LiveCount = classes.Count;
+            ViewBag.LiveVersion = (await _live.ListVersionsAsync(_user.TenantId, ct)).FirstOrDefault()?.VersionNo;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Plano vigente indisponível no painel. Tenant={Tenant}", _user.TenantId);
+            ViewBag.LiveClasses = Array.Empty<ClassificationNodeRow>();
+            ViewBag.LiveCount = 0;
+        }
+        return View(dashboard);
+    }
     [HttpGet("Tree")]
-    public async Task<IActionResult> Tree(Guid? selected,CancellationToken ct){var tree=await Safe(()=>_plan.GetTreeAsync(_user.TenantId,ct),Array.Empty<ClassificationTreeNode>());ViewBag.Selected=selected;return View(tree);}
+    public async Task<IActionResult> Tree(Guid? selected, string? q, CancellationToken ct)
+    {
+        var tree = await Safe(() => _plan.GetTreeAsync(_user.TenantId, ct), Array.Empty<ClassificationTreeNode>());
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var term = q.Trim();
+            tree = tree.Where(node =>
+                node.Code.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                node.Title.Contains(term, StringComparison.OrdinalIgnoreCase)).ToList();
+        }
+        ViewBag.Selected = selected;
+        ViewBag.Query = q;
+        return View(tree);
+    }
     [HttpGet("Class/{id:guid}")]
     public async Task<IActionResult> Class(Guid id,CancellationToken ct){var item=await _plan.GetNodeAsync(_user.TenantId,id,ct);return item is null?NotFound():Json(item);}
     [HttpGet("Create")]
@@ -50,6 +82,39 @@ public sealed class ClassificationPlanController : Controller
     public IActionResult Import()=>View(Array.Empty<ImportPreviewRow>());
     [HttpPost("Import")][ValidateAntiForgeryToken][RequestSizeLimit(5_000_000)]
     public async Task<IActionResult> Import(IFormFile? file,bool confirm,CancellationToken ct){var rows=new List<ImportPreviewRow>();if(file is null||file.Length==0){ModelState.AddModelError("","Selecione um CSV.");return View(rows);}using var reader=new StreamReader(file.OpenReadStream());var header=(await reader.ReadLineAsync(ct))?.Split(',')??[];string? line;var number=1;while((line=await reader.ReadLineAsync(ct)) is not null){number++;var v=line.Split(',');var code=At("code");var title=At("title");var parent=At("parent_code");rows.Add(new(number,code,title,parent,string.IsNullOrWhiteSpace(code)||string.IsNullOrWhiteSpace(title)?"Código e título são obrigatórios.":null));string At(string key){var i=Array.FindIndex(header,h=>h.Trim().Equals(key,StringComparison.OrdinalIgnoreCase));return i>=0&&i<v.Length?v[i].Trim():"";}}if(confirm&&rows.All(x=>x.Error is null)){var tree=(await _plan.GetTreeAsync(_user.TenantId,ct)).ToDictionary(x=>x.Code,StringComparer.OrdinalIgnoreCase);foreach(var row in rows){Guid? parent=string.IsNullOrEmpty(row.ParentCode)?null:tree.GetValueOrDefault(row.ParentCode)?.Id;var id=await _plan.CreateNodeAsync(new(_user.TenantId,_user.UserId,parent,row.Code,row.Title,null,"MEIO",null,null,null,tree.Count,"DRAFT",true),ct);tree[row.Code]=new(id,parent,row.Code,row.Title,"MEIO","DRAFT",true,false);}TempData["Success"]=$"{rows.Count} classes importadas.";return RedirectToAction(nameof(Tree));}ViewBag.FileName=file.FileName;return View(rows);}
+    [HttpGet("PrintCurrent")]
+    public async Task<IActionResult> PrintCurrent(CancellationToken ct)
+    {
+        try
+        {
+            return View(await _live.ListTreeAsync(_user.TenantId, ct));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Pré-visualização do plano vigente indisponível. Tenant={Tenant}", _user.TenantId);
+            TempData["Error"] = "A pré-visualização do plano vigente não pôde ser montada.";
+            return View(Array.Empty<ClassificationNodeRow>());
+        }
+    }
+
+    [HttpGet("PrintVersion/{id:guid}")]
+    public async Task<IActionResult> PrintVersion(Guid id, CancellationToken ct)
+    {
+        try
+        {
+            var version = await _live.GetVersionAsync(_user.TenantId, id, ct);
+            if (version is null) return NotFound();
+            ViewBag.Version = version;
+            return View(await _live.ListVersionItemsAsync(_user.TenantId, id, ct));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Pré-visualização da versão {Version} indisponível", id);
+            TempData["Error"] = "A pré-visualização desta versão não pôde ser montada.";
+            return RedirectToAction(nameof(Index));
+        }
+    }
+
     [HttpGet("ReviewQueue")]
     public async Task<IActionResult> ReviewQueue(CancellationToken ct){var nodes=await _plan.GetTreeAsync(_user.TenantId,ct);var rules=await _rules.ListAsync(_user.TenantId,new(null,"DRAFT"),ct);return View(new ReviewQueueVm(nodes.Where(x=>x.ReviewStatus=="DRAFT").ToList(),rules));}
     private async Task<T> Safe<T>(Func<Task<T>> action,T fallback){try{return await action();}catch(Exception ex){_logger.LogError(ex,"Falha segura no Plano de Classificação 2.0");TempData["Error"]="Estrutura 2.0 indisponível. Aplique a migration obrigatória.";return fallback;}}

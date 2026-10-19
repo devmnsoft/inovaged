@@ -38,8 +38,18 @@ public sealed class PhysicalController : Controller
     [HttpGet("Inventory")]
     public async Task<IActionResult> Inventory(CancellationToken ct)
     {
-        ViewBag.Locations = await _archive.LocationsAsync(_user.TenantId, ct);
-        return View(await _archive.InventoriesAsync(_user.TenantId, ct));
+        try
+        {
+            ViewBag.Locations = await _archive.LocationsAsync(_user.TenantId, ct);
+            return View(await _archive.InventoriesAsync(_user.TenantId, ct));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Inventário físico indisponível. Tenant={Tenant}", _user.TenantId);
+            TempData["Err"] = "O inventário físico não pôde ser lido nesta instalação. A lista fica vazia até a estrutura de sessões ficar compatível.";
+            ViewBag.Locations = Array.Empty<InovaGed.Application.PhysicalArchive2.PhysicalOption>();
+            return View(Array.Empty<InovaGed.Application.PhysicalArchive2.PhysicalActivity>());
+        }
     }
 
     [HttpGet("Inventory/{id:guid}")]
@@ -55,20 +65,49 @@ public sealed class PhysicalController : Controller
     public async Task<IActionResult> StartInventory(Guid? locationId, string title, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(title)) { TempData["Err"] = "Informe o título do inventário."; return RedirectToAction(nameof(Inventory)); }
-        var id = await _archive.StartInventoryAsync(_user.TenantId, locationId, title, _user.UserId, ct);
-        return RedirectToAction(nameof(InventoryDetails), new { id });
+        try
+        {
+            var id = await _archive.StartInventoryAsync(_user.TenantId, locationId, title, _user.UserId, ct);
+            return RedirectToAction(nameof(InventoryDetails), new { id });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Abertura do inventário físico falhou. Tenant={Tenant}", _user.TenantId);
+            TempData["Err"] = "A conferência não foi aberta. O acervo permanece como está.";
+            return RedirectToAction(nameof(Inventory));
+        }
     }
 
     [HttpPost("Inventory/{id:guid}/Scan"), ValidateAntiForgeryToken]
     public async Task<IActionResult> ScanInventory(Guid id, string code, Guid? foundLocationId, CancellationToken ct)
     {
-        if (!string.IsNullOrWhiteSpace(code)) await _archive.ScanAsync(_user.TenantId, id, code, foundLocationId, _user.UserId, ct);
+        if (string.IsNullOrWhiteSpace(code)) return RedirectToAction(nameof(InventoryDetails), new { id });
+        try
+        {
+            await _archive.ScanAsync(_user.TenantId, id, code, foundLocationId, _user.UserId, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Leitura do inventário {Session} falhou", id);
+            TempData["Err"] = "A leitura não foi registrada.";
+        }
         return RedirectToAction(nameof(InventoryDetails), new { id });
     }
 
     [HttpPost("Inventory/{id:guid}/Close"), ValidateAntiForgeryToken]
     public async Task<IActionResult> CloseInventory(Guid id, string? notes, CancellationToken ct)
-    { await _archive.CloseInventoryAsync(_user.TenantId, id, _user.UserId, notes, ct); return RedirectToAction(nameof(InventoryDetails), new { id }); }
+    {
+        try
+        {
+            await _archive.CloseInventoryAsync(_user.TenantId, id, _user.UserId, notes, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Encerramento do inventário {Session} falhou", id);
+            TempData["Err"] = "A conferência não foi encerrada.";
+        }
+        return RedirectToAction(nameof(InventoryDetails), new { id });
+    }
 
     [HttpGet("Movements")]
     public async Task<IActionResult> Movements(CancellationToken ct)

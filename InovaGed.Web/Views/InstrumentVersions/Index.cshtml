@@ -1,55 +1,141 @@
-﻿@model IEnumerable<InstrumentVersionRow>
+@using InovaGed.Application.ClassificationPlans
+@using InovaGed.Web.Models.Atlas
+@model IReadOnlyList<InstrumentVersionRow>
 @{
-    ViewData["Title"] = "Versionamento";
     var type = (string)ViewData["Type"]!;
+    var isPlan = type is "PCD" or "TTD";
+    var title = type switch
+    {
+        "PCD" => "Versões do PCD",
+        "TTD" => "Versões da tabela de temporalidade",
+        "POP" => "Versões do procedimento",
+        _ => $"Versões de {type}"
+    };
+    var subtitle = isPlan
+        ? "O PCD é o plano de classificação dos documentos. Publicar grava um snapshot das classes vigentes. O título nomeia a versão. O nome de cada classe continua o da classe."
+        : "Cada publicação registra uma versão deste instrumento, com data, autor e notas.";
+    ViewData["Title"] = title;
+    var classes = ViewBag.Classes as IReadOnlyList<ClassificationNodeRow> ?? Array.Empty<ClassificationNodeRow>();
+    var versions = ViewBag.PlanVersions as IReadOnlyList<ClassificationVersionRow> ?? Array.Empty<ClassificationVersionRow>();
+    var newest = versions.FirstOrDefault();
+    var header = new AtlasPageHeaderVm(title, subtitle, "history", "Gestão documental",
+        [new AtlasPageAction("Plano de classificação", Url.Action("Index", "ClassificationPlan")!, "arrow-left")]);
 }
-
-<div class="card">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <div>
-            <div class="fw-bold">Versionamento - @type</div>
-            <div class="text-muted small">Publicar versão + histórico + diff</div>
+<partial name="Atlas/_PageHeader" model="header" />
+@if (TempData["Ok"] is string ok)
+{
+    <div class="alert alert-success" role="status">@ok</div>
+}
+@if (TempData["Err"] is string err)
+{
+    <div class="alert alert-warning" role="status">@err</div>
+}
+@if (isPlan)
+{
+    <section class="card border-0 shadow-sm atlas-card mb-3">
+        <div class="card-body">
+            <h2 class="h5">Publicar o plano vigente</h2>
+            <p class="text-muted">A publicação copia código, nome da classe, prazos e destino. Ela não elimina, não transfere e não troca o nome da classe pelo título da versão.</p>
+            <form method="post" action="/Instruments/Versions/@type/publish" class="row g-2 align-items-end">
+                @Html.AntiForgeryToken()
+                <div class="col-md-8">
+                    <label class="form-label" for="version-notes">Título e notas da versão</label>
+                    <input id="version-notes" name="notes" class="form-control" maxlength="300" placeholder="Ex.: revisão da tabela de 2026" />
+                </div>
+                <div class="col-md-4">
+                    <button class="btn btn-primary" type="submit">Publicar versão</button>
+                </div>
+            </form>
         </div>
-
-        <form method="post" action="/Instruments/Versions/@type/publish" class="d-flex gap-2">
-            @Html.AntiForgeryToken()
-            <input name="notes" class="form-control form-control-sm" placeholder="Notas da publicação (opcional)" />
-            <button class="btn btn-sm btn-primary">
-                <i class="bi bi-upload"></i> Publicar versão
-            </button>
-        </form>
-    </div>
-
-    <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-sm align-middle">
-                <thead>
-                    <tr>
-                        <th>Versão</th>
-                        <th>Publicado</th>
-                        <th>Por</th>
-                        <th>Notas</th>
-                        <th>Diff</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var v in Model)
+    </section>
+    <section class="card border-0 shadow-sm atlas-card mb-3">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <h2 class="h5 mb-1">Snapshots publicados</h2>
+                    <p class="text-muted mb-0">@versions.Count versão(ões). A comparação usa o nome da classe gravado em cada snapshot.</p>
+                </div>
+                <a class="btn btn-outline-primary" href="/ClassificationPlan/PrintCurrent">Pré-visualizar plano vigente</a>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0 atlas-table">
+                    <thead>
+                        <tr><th>Versão</th><th>Título da versão</th><th>Publicado</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                    @if (versions.Count == 0)
+                    {
+                        <tr><td colspan="4" class="text-center py-4">Nenhuma versão publicada. O plano vigente continua editável e pode ser publicado aqui.</td></tr>
+                    }
+                    @foreach (var version in versions)
                     {
                         <tr>
-                            <td class="fw-semibold">V@v.Version_No</td>
-                            <td>@(v.Published_At?.ToString("dd/MM/yyyy HH:mm") ?? "-")</td>
-                            <td>@(v.Published_By_Name ?? "-")</td>
-                            <td class="text-muted">@v.Notes</td>
-                            <td>
-                                <a class="btn btn-sm btn-outline-secondary"
-                                   href="/Instruments/Versions/@type/diff?from=@v.Id&to=@(Model.First().Id)">
-                                    Comparar com a mais recente
-                                </a>
+                            <td class="fw-semibold">V@version.VersionNo</td>
+                            <td>@version.Title</td>
+                            <td>@version.PublishedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                            <td class="text-end">
+                                <a class="btn btn-sm btn-outline-primary" href="/ClassificationPlan/PrintVersion/@version.Id">Pré-visualizar</a>
+                                @if (newest is not null && newest.Id != version.Id)
+                                {
+                                    <a class="btn btn-sm btn-outline-secondary" href="/Instruments/Versions/@type/diff?from=@version.Id&to=@newest.Id">Comparar com a mais recente</a>
+                                }
                             </td>
                         </tr>
                     }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+    <section class="card border-0 shadow-sm atlas-card mb-3">
+        <div class="card-body">
+            <h2 class="h5">Classes vigentes agora</h2>
+            <p class="text-muted">@classes.Count classe(s). Este é o conteúdo que a próxima publicação vai copiar.</p>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0 atlas-table">
+                    <thead><tr><th>Código</th><th>Classe</th><th>Destino</th></tr></thead>
+                    <tbody>
+                    @if (classes.Count == 0)
+                    {
+                        <tr><td colspan="3" class="text-center py-4">Nenhuma classe vigente. Cadastre o plano antes de publicar.</td></tr>
+                    }
+                    @foreach (var item in classes.Take(20))
+                    {
+                        <tr>
+                            <td class="fw-semibold">@item.Code</td>
+                            <td>@item.Name</td>
+                            <td>@item.FinalDestination</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+}
+<section class="card border-0 shadow-sm atlas-card">
+    <div class="card-body">
+        <h2 class="h5">Registro do instrumento @type</h2>
+        <p class="text-muted">Histórico de publicações deste tipo. Para a temporalidade no mesmo plano, abra <a href="/Instruments/Versions/TTD">TTD</a>.</p>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 atlas-table">
+                <thead><tr><th>Versão</th><th>Publicado</th><th>Por</th><th>Notas</th></tr></thead>
+                <tbody>
+                @if (Model.Count == 0)
+                {
+                    <tr><td colspan="4" class="text-center py-4">Nenhum registro deste instrumento.</td></tr>
+                }
+                @foreach (var version in Model)
+                {
+                    <tr>
+                        <td class="fw-semibold">V@version.Version_No</td>
+                        <td>@(version.Published_At?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "—")</td>
+                        <td>@(version.Published_By_Name ?? "—")</td>
+                        <td>@(string.IsNullOrWhiteSpace(version.Notes) ? "—" : version.Notes)</td>
+                    </tr>
+                }
                 </tbody>
             </table>
         </div>
     </div>
-</div>
+</section>

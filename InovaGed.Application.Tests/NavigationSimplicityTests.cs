@@ -22,5 +22,9 @@ public sealed class NavigationSimplicityTests
         Assert.Contains("Checklist de faturamento", fullAdmin, StringComparison.Ordinal);
         Assert.Contains(">Faturamento<", fullAdmin, StringComparison.Ordinal);
         Assert.Contains(">Temporalidade<", fullAdmin, StringComparison.Ordinal);
+        Assert.Contains(">Versões do PCD<", fullAdmin, StringComparison.Ordinal);
+        Assert.Contains(">Inventário físico<", fullAdmin, StringComparison.Ordinal);
+        Assert.Contains("asp-action=\"Inventory\"", fullAdmin, StringComparison.Ordinal);
+        Assert.Contains("[HttpGet(\"PrintCurrent\")]", ClassicThemeContractTests.Read("InovaGed.Web/Controller/ClassificationPlanController.cs"), StringComparison.Ordinal);
     }
 }

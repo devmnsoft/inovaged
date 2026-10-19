@@ -43,7 +43,9 @@
         <a asp-controller="DocumentQuality" asp-action="Index" class="@ActiveAny("DocumentQuality")"><i class="bi bi-shield-check"></i><span>Qualidade Documental</span></a>
         <a asp-controller="GedClassification" asp-action="Queue" class="@ActiveAny("GedClassification", "ClassificationDashboard")"><i class="bi bi-tags"></i><span>Classificação</span></a>
         <a asp-controller="Disposition" asp-action="Index" class="@ActiveAny("Disposition")"><i class="bi bi-calendar-check"></i><span>Temporalidade</span></a>
-        <a asp-controller="ClassificationPlan" asp-action="Tree" class="@Active("ClassificationPlan", "Tree")"><i class="bi bi-diagram-3"></i><span>Plano de Classificação</span></a>
+        <a asp-controller="ClassificationPlan" asp-action="Index" class="@Active("ClassificationPlan", "Index")"><i class="bi bi-diagram-3"></i><span>Plano de Classificação</span></a>
+        <a asp-controller="ClassificationPlan" asp-action="Tree" class="@Active("ClassificationPlan", "Tree")"><i class="bi bi-diagram-2"></i><span>Árvore do plano</span></a>
+        <a href="/Instruments/Versions/PCD" class="@ActivePathStarts("/instruments/versions")"><i class="bi bi-clock-history"></i><span>Versões do PCD</span></a>
         <a asp-controller="ClassificationPlan" asp-action="RetentionRules" class="@Active("ClassificationPlan", "RetentionRules")"><i class="bi bi-clock"></i><span>Tabela de Temporalidade</span></a>
         <a asp-controller="SmartGed" asp-action="Index" class="@ActiveAny("SmartGed", "SmartAssistant")"><i class="bi bi-stars"></i><span>GED Inteligente</span></a>
     </details>
@@ -59,7 +61,8 @@
         <a asp-controller="Physical" asp-action="Boxes" class="@Active("Physical", "Boxes")"><i class="bi bi-inbox"></i><span>Caixas</span></a>
         <a asp-controller="Physical" asp-action="Locations" class="@Active("Physical", "Locations")"><i class="bi bi-geo-alt"></i><span>Localizações</span></a>
         <a asp-controller="Labels" asp-action="Boxes" class="@ActiveAny("Labels")"><i class="bi bi-upc-scan"></i><span>Etiquetas</span></a>
-        <a asp-controller="Physical" asp-action="PhysicalMap" class="@Active("Physical", "PhysicalMap")"><i class="bi bi-boxes"></i><span>Inventário</span></a>
+        <a asp-controller="Physical" asp-action="PhysicalMap" class="@Active("Physical", "PhysicalMap")"><i class="bi bi-map"></i><span>Mapa físico</span></a>
+        <a asp-controller="Physical" asp-action="Inventory" class="@Active("Physical", "Inventory", "InventoryDetails")"><i class="bi bi-clipboard-check"></i><span>Inventário físico</span></a>
     </details>
     <details class="sidebar-group" open="@(ActiveAny("Loans", "Solicitacoes", "Protocolo", "Protocols", "ProtocolRequests", "PhysicalTransit") == "active" ? "open" : null)">
         <summary>Atendimento</summary>

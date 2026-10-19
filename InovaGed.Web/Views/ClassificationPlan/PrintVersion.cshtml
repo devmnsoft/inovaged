@@ -1,72 +1,81 @@
-﻿@model IReadOnlyList<InovaGed.Application.ClassificationPlans.ClassificationVersionItemRow>
+@model IReadOnlyList<InovaGed.Application.ClassificationPlans.ClassificationVersionItemRow>
 @{
     Layout = null;
-    var ver = (InovaGed.Application.ClassificationPlans.ClassificationVersionDetailsVM)ViewBag.Version!;
-    string Indent(int level) => new string('—', Math.Max(0, level));
+    var version = (InovaGed.Application.ClassificationPlans.ClassificationVersionDetailsVM)ViewBag.Version!;
+    var children = Model.GroupBy(item => item.ParentCode ?? "").ToDictionary(group => group.Key, group => group.OrderBy(item => item.Code).ToList());
+    var rows = new List<(int Level, InovaGed.Application.ClassificationPlans.ClassificationVersionItemRow Node)>();
+    void Walk(string parentCode, int level)
+    {
+        if (!children.TryGetValue(parentCode, out var list)) return;
+        foreach (var node in list)
+        {
+            rows.Add((level, node));
+            Walk(node.Code, level + 1);
+        }
+    }
+    Walk("", 0);
+    if (rows.Count == 0)
+    {
+        foreach (var node in Model.OrderBy(item => item.Code)) rows.Add((0, node));
+    }
 }
-
 <!doctype html>
-<html>
+<html lang="pt-BR">
 <head>
     <meta charset="utf-8" />
-    <title>PCD/TTD - V@ver.VersionNo</title>
-    <link href="/lib/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        media print {
-            .no-print
-
-        {
-            display: none;
-        }
-
-        }
-
-        .mono {
-            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
-        }
-    </style>
+    <title>Pré-visualização V@version.VersionNo</title>
+    <link rel="stylesheet" href="/css/classification-plan.css" />
 </head>
-<body class="p-4">
-    <div class="no-print d-flex justify-content-between align-items-center mb-3">
-        <div class="text-muted">Impressão da versão publicada</div>
-        <button class="btn btn-primary" onclick="window.print()">Imprimir</button>
-    </div>
-
-    <h3 class="mb-1">PCD/TTD — Versão V@ver.VersionNo</h3>
-    <div class="text-muted mb-2"><strong>Título:</strong> @ver.Title</div>
-    <div class="text-muted mb-3"><strong>Publicado:</strong> @ver.PublishedAt.ToString("dd/MM/yyyy HH:mm")</div>
-
-    @{
-        var children = Model.GroupBy(x => x.ParentCode)
-        .ToDictionary(g => g.Key, g => g.OrderBy(x => x.Code).ToList());
-
-        void Render(string? parentCode, int level)
+<body>
+    <main class="plan-print">
+        <header>
+            <div>
+                <p class="plan-print-kicker">Snapshot publicado</p>
+                <h1>Versão @version.VersionNo</h1>
+                <p>Título da versão: @version.Title. Publicado em @version.PublishedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm"). O título identifica a versão. O nome de cada linha é o da classe.</p>
+            </div>
+            <div class="plan-print-toolbar">
+                <button class="btn btn-primary" type="button" onclick="window.print()">Imprimir</button>
+                <a class="btn btn-outline-secondary" href="/Instruments/Versions/PCD">Voltar</a>
+            </div>
+        </header>
+        @if (!string.IsNullOrWhiteSpace(version.Notes))
         {
-            if (!children.TryGetValue(parentCode, out var list)) return;
-
-            foreach (var n in list)
-            {
-                <div class="border-bottom py-2">
-                    <div class="d-flex justify-content-between">
-                        <div>
-                            <span class="mono text-secondary">@Indent(level)</span>
-                            <span class="mono fw-semibold">@n.Code</span>
-                            <span class="ms-2">@n.Name</span>
-                        </div>
-                        <div class="text-muted">
-                            <small>@n.RetentionStartEvent • Destino: @n.FinalDestination</small>
-                        </div>
-                    </div>
-                    @if (!string.IsNullOrWhiteSpace(n.RetentionNotes))
-                    {
-                        <div class="text-muted"><small><strong>Obs:</strong> @n.RetentionNotes</small></div>
-                    }
-                </div>
-                Render(n.Code, level + 1);
-            }
+            <p class="plan-print-notes">Notas: @version.Notes</p>
         }
-
-        Render(null, 0);
-    }
+        <table class="atlas-table">
+            <thead>
+                <tr><th>Código</th><th>Classe</th><th>Classe pai</th><th>Fase corrente</th><th>Fase intermediária</th><th>Destino</th></tr>
+            </thead>
+            <tbody>
+            @if (rows.Count == 0)
+            {
+                <tr><td colspan="6">Esta versão não tem classes no snapshot.</td></tr>
+            }
+            @foreach (var row in rows)
+            {
+                <tr>
+                    <td class="code">@row.Node.Code</td>
+                    <td>@row.Node.Name</td>
+                    <td>@(row.Node.ParentCode ?? "—")</td>
+                    <td>@Term(row.Node.RetentionActiveYears, row.Node.RetentionActiveMonths, row.Node.RetentionActiveDays)</td>
+                    <td>@Term(row.Node.RetentionArchiveYears, row.Node.RetentionArchiveMonths, row.Node.RetentionArchiveDays)</td>
+                    <td>@row.Node.FinalDestination</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </main>
 </body>
 </html>
+@functions {
+    private static string Term(int years, int months, int days)
+    {
+        if (years == 0 && months == 0 && days == 0) return "Não informado";
+        var parts = new List<string>();
+        if (years > 0) parts.Add($"{years} ano(s)");
+        if (months > 0) parts.Add($"{months} mês(es)");
+        if (days > 0) parts.Add($"{days} dia(s)");
+        return string.Join(", ", parts);
+    }
+}

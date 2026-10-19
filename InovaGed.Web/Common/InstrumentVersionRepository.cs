@@ -74,36 +74,53 @@ values
 (@id, @tenantId, @instrumentType::ged.instrument_type, @versionNo, true, now(), @publishedBy, @notes, now(), 'A');",
         new { id = versionId, tenantId, instrumentType, versionNo = nextNo, publishedBy, notes }, tx);
 
-        // Snapshot por tipo:
-        // - PCD/TTD normalmente estão em class_node / retention_rule / classification_plan*
-        // Para operacional: copie as classes (class_node) + regras (retention_rule) para tabelas de snapshot já existentes
-        // Se no teu banco existir "classification_plan_version_item", você pode usar esse snapshot para PCD/TTD.
-        if (instrumentType is "PCD" or "TTD")
-        {
-            // Snapshot da árvore de classificação (class_node) no formato "version_item"
-            await conn.ExecuteAsync(@"
-insert into ged.classification_plan_version_item
-(id, tenant_id, version_id, node_id, code, title, parent_code, sort_order, reg_date, reg_status)
-select
-  gen_random_uuid(), cn.tenant_id, @versionId,
-  cn.id, cn.code, cn.title, cn.parent_code, cn.sort_order, now(), 'A'
-from ged.class_node cn
-where cn.tenant_id=@tenantId and cn.reg_status='A';",
-            new { versionId, tenantId }, tx);
-        }
-        else if (instrumentType == "POP")
-        {
-            // POP: snapshot de procedimentos quando a tabela pop_procedure_version existir no banco operacional
-            await conn.ExecuteAsync(@"
-insert into ged.pop_procedure_version
-(id, tenant_id, version_id, title, content, reg_date, reg_status)
-select
-  gen_random_uuid(), p.tenant_id, @versionId, p.title, p.content, now(), 'A'
-from ged.pop_procedure p
-where p.tenant_id=@tenantId and p.reg_status='A';",
-            new { versionId, tenantId }, tx);
-        }
+        tx.Commit();
+        return versionId;
+    }
 
+    public async Task<Guid> PublishPlanSnapshotAsync(Guid tenantId, Guid publishedBy, string title, string notes, CancellationToken ct)
+    {
+        using var conn = await _db.OpenAsync(ct);
+        using var tx = conn.BeginTransaction();
+        var nextNo = await conn.ExecuteScalarAsync<int>(
+            "select coalesce(max(version_no), 0) + 1 from ged.classification_plan_version where tenant_id=@tenantId;",
+            new { tenantId }, tx);
+        var versionId = Guid.NewGuid();
+        await conn.ExecuteAsync(@"
+insert into ged.classification_plan_version(id, tenant_id, version_no, title, notes, published_at, published_by)
+values (@id, @tenantId, @versionNo, @title, nullif(@notes,''), now(), @publishedBy);",
+            new
+            {
+                id = versionId,
+                tenantId,
+                versionNo = nextNo,
+                title,
+                notes,
+                publishedBy = publishedBy == Guid.Empty ? (Guid?)null : publishedBy
+            }, tx);
+        await conn.ExecuteAsync(@"
+insert into ged.classification_plan_version_item(
+    tenant_id, version_id, classification_id,
+    code, name, description, parent_code,
+    retention_start_event,
+    retention_active_days, retention_active_months, retention_active_years,
+    retention_archive_days, retention_archive_months, retention_archive_years,
+    final_destination, requires_digital_signature,
+    is_confidential, is_active, retention_notes)
+select
+    cp.tenant_id, @versionId, cp.id,
+    cp.code, cp.name, cp.description, parent.code,
+    cp.retention_start_event,
+    cp.retention_active_days, cp.retention_active_months, cp.retention_active_years,
+    cp.retention_archive_days, cp.retention_archive_months, cp.retention_archive_years,
+    cp.final_destination,
+    cp.requires_digital_signature,
+    cp.is_confidential, cp.is_active, cp.retention_notes
+from ged.classification_plan cp
+left join ged.classification_plan parent
+  on parent.tenant_id = cp.tenant_id and parent.id = cp.parent_id
+where cp.tenant_id = @tenantId;",
+            new { tenantId, versionId }, tx);
         tx.Commit();
         return versionId;
     }
@@ -112,67 +129,36 @@ where p.tenant_id=@tenantId and p.reg_status='A';",
     public async Task<InstrumentDiffResult> DiffAsync(Guid tenantId, Guid fromVersionId, Guid toVersionId, CancellationToken ct)
     {
         using var conn = await _db.OpenAsync(ct);
+        var columns = (await conn.QueryAsync<string>(new CommandDefinition(
+            "select column_name from information_schema.columns where table_schema='ged' and table_name='classification_plan_version_item'",
+            cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!columns.Contains("code") || !columns.Contains("version_id"))
+            return new InstrumentDiffResult(Array.Empty<InstrumentDiffRow>());
 
-        // Fluxo focado em classificação (PCD/TTD):
-        const string sql = """
+        var title = columns.Contains("name") ? "name" : columns.Contains("title") ? "title" : "code";
+        var parent = columns.Contains("parent_code") ? "parent_code" : "null::text";
+        var sort = columns.Contains("sort_order") ? "sort_order" : columns.Contains("display_order") ? "display_order" : "0";
+        var reg = columns.Contains("reg_status") ? "and reg_status = 'A'" : string.Empty;
+        var sql = $"""
 with a as (
-    select
-        code,
-        title,
-        parent_code,
-        sort_order
+    select code, {title} as title, {parent} as parent_code, {sort} as sort_order
     from ged.classification_plan_version_item
-    where tenant_id = @tenantId
-      and version_id = @fromVersionId
-      and reg_status = 'A'
+    where tenant_id = @tenantId and version_id = @fromVersionId {reg}
 ),
 b as (
-    select
-        code,
-        title,
-        parent_code,
-        sort_order
+    select code, {title} as title, {parent} as parent_code, {sort} as sort_order
     from ged.classification_plan_version_item
-    where tenant_id = @tenantId
-      and version_id = @toVersionId
-      and reg_status = 'A'
+    where tenant_id = @tenantId and version_id = @toVersionId {reg}
 )
-select
-    'ADDED' as "Change",
-    b.code as "Code",
-    b.title as "Title",
-    b.parent_code as "ParentCode",
-    b.sort_order as "SortOrder"
-from b
-left join a on a.code = b.code
-where a.code is null
-
+select 'ADDED' as "Change", b.code as "Code", b.title as "Title", b.parent_code as "ParentCode", b.sort_order as "SortOrder"
+from b left join a on a.code = b.code where a.code is null
 union all
-
-select
-    'REMOVED' as "Change",
-    a.code as "Code",
-    a.title as "Title",
-    a.parent_code as "ParentCode",
-    a.sort_order as "SortOrder"
-from a
-left join b on b.code = a.code
-where b.code is null
-
+select 'REMOVED' as "Change", a.code as "Code", a.title as "Title", a.parent_code as "ParentCode", a.sort_order as "SortOrder"
+from a left join b on b.code = a.code where b.code is null
 union all
-
-select
-    'UPDATED' as "Change",
-    b.code as "Code",
-    b.title as "Title",
-    b.parent_code as "ParentCode",
-    b.sort_order as "SortOrder"
-from b
-join a on a.code = b.code
-where (a.title, a.parent_code, a.sort_order)
-      is distinct from
-      (b.title, b.parent_code, b.sort_order)
-
+select 'UPDATED' as "Change", b.code as "Code", b.title as "Title", b.parent_code as "ParentCode", b.sort_order as "SortOrder"
+from b join a on a.code = b.code
+where (a.title, a.parent_code, a.sort_order) is distinct from (b.title, b.parent_code, b.sort_order)
 order by "Change", "Code"
 """;
 

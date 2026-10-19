@@ -1,6 +1,119 @@
+@using InovaGed.Application.ClassificationPlans
+@using InovaGed.Web.Models.Atlas
 @model InovaGed.Application.Classification.ClassificationPlanDashboard
-@{ViewData["Title"]="Plano de Classificação e Temporalidade";ViewData["WorkspaceVariant"]="wide";}
-@section Styles{<link rel="stylesheet" href="~/css/classification-plan.css" asp-append-version="true"/>}
-<div class="classification-page"><section class="classification-hero atlas-page-hero"><div><span>Arquivística · Instrumentos 2.0</span><h1>Plano de Classificação e Temporalidade</h1><p>Organize classes documentais, regras de guarda, fases, eventos e destinação final dos documentos.</p></div><nav class="classification-hero-actions" aria-label="Ações do plano"><a class="btn btn-light" asp-action="Create">Nova classe</a><a class="btn btn-outline-light" asp-action="Import">Importar plano</a><a class="btn btn-outline-light" asp-action="ReviewQueue">Fila de revisão</a></nav></section>
-<div class="classification-kpis"><article><b>@Model.Classes</b><span>Classes ativas</span></article><article><b>@Model.ClassesWithoutRule</b><span>Classes sem prazo</span></article><article><b>@Model.RulesInReview</b><span>Pendências de revisão</span></article><article><b>v@Model.PublishedVersion</b><span>Versões do plano</span></article><article><b>@Model.PendingChanges</b><span>Itens importados</span></article><article><b>@Model.PermanentDestinations</b><span>Regras de temporalidade</span></article></div>
-<section class="classification-guidance"><div><strong>Comece pela árvore</strong><span>Localize uma classe ou consulte os atalhos para temporalidade, versões e revisão.</span></div><form method="get" asp-action="Tree"><label class="visually-hidden" for="classification-search">Buscar classe</label><input id="classification-search" name="q" type="search" placeholder="Código ou título da classe" /><button type="submit" class="btn btn-primary">Buscar</button></form></section><section class="classification-action-section"><header><span>Atalhos de gestão</span><h2>Operações do plano</h2><p>Acesse a árvore, regras, versões e relatórios sem perder o contexto.</p></header><div class="classification-actions"><a asp-action="Tree"><app-icon name="folder"/> <b>Árvore de classificação</b><span>Organize funções e atividades.</span></a><a asp-action="RetentionRules"><app-icon name="retention"/><b>Tabela de temporalidade</b><span>Defina fases, eventos e destino.</span></a><a asp-action="ReviewQueue"><app-icon name="clipboard-check"/><b>Revisão arquivística</b><span>Trate pendências sem publicar.</span></a><a asp-action="Import"><app-icon name="upload"/><b>Importação assistida</b><span>Valide CSV antes de confirmar.</span></a><a asp-action="Versions"><app-icon name="history"/><b>Versões publicadas</b><span>Snapshots imutáveis do plano.</span></a><a asp-action="Compare"><app-icon name="git-branch"/><b>Comparar versões</b><span>Veja inclusões, remoções e alterações.</span></a><a asp-action="PrintCurrent"><app-icon name="report"/><b>Relatórios</b><span>Consulte e imprima o plano vigente.</span></a></div></section>@if (Model.Classes == 0) { <section class="classification-empty" role="status"><app-icon name="folder" size="32" decorative="true" /><h2>O plano ainda não possui classes</h2><p>Crie a primeira classe ou importe um plano validado para começar.</p><a class="btn btn-primary" asp-action="Create">Criar primeira classe</a></section> }</div>
+@{
+    ViewData["Title"] = "Plano de Classificação e Temporalidade";
+    ViewData["WorkspaceVariant"] = "wide";
+    var live = ViewBag.LiveClasses as IReadOnlyList<ClassificationNodeRow> ?? Array.Empty<ClassificationNodeRow>();
+    var liveCount = ViewBag.LiveCount is int count ? count : live.Count;
+    var liveVersion = ViewBag.LiveVersion as int?;
+    var header = new AtlasPageHeaderVm(
+        "Plano de Classificação e Temporalidade",
+        "O plano vigente define o código e o nome da classe usados na classificação. A temporalidade guarda o prazo e o destino. Publicar uma versão não elimina nem transfere documento.",
+        "folder",
+        "Gestão documental",
+        [
+            new AtlasPageAction("Nova classe", Url.Action("Create")!, "document-add", true),
+            new AtlasPageAction("Árvore", Url.Action("Tree")!, "folder"),
+            new AtlasPageAction("Pré-visualizar plano", Url.Action("PrintCurrent")!, "print")
+        ]);
+}
+@section Styles { <link rel="stylesheet" href="~/css/classification-plan.css" asp-append-version="true" /> }
+<div class="classification-page">
+    <section class="classification-hero atlas-page-hero">
+        <partial name="Atlas/_PageHeader" model="header" />
+    </section>
+    @if (TempData["Error"] is string error)
+    {
+        <div class="alert alert-warning" role="status">@error</div>
+    }
+    @if (TempData["Success"] is string success)
+    {
+        <div class="alert alert-success" role="status">@success</div>
+    }
+    <div class="classification-kpis">
+        <article class="classification-kpi"><b>@liveCount</b><span>Classes do plano vigente</span></article>
+        <article class="classification-kpi"><b>@(liveVersion is null ? "—" : $"v{liveVersion}")</b><span>Última versão publicada</span></article>
+        <article class="classification-kpi"><b>@Model.Classes</b><span>Classes da estrutura 2.0</span></article>
+        <article class="classification-kpi"><b>@Model.ClassesWithoutRule</b><span>Classes 2.0 sem prazo</span></article>
+        <article class="classification-kpi"><b>@Model.RulesInReview</b><span>Regras 2.0 em rascunho</span></article>
+        <article class="classification-kpi"><b>@Model.PermanentDestinations</b><span>Destino guarda permanente</span></article>
+    </div>
+    <section class="classification-guidance">
+        <div>
+            <strong>Busque pelo código ou pelo nome da classe</strong>
+            <span>A busca abre a árvore já filtrada. O nome exibido é o da classe, não o título da versão do plano.</span>
+        </div>
+        <form method="get" asp-action="Tree">
+            <label class="visually-hidden" for="classification-search">Buscar classe</label>
+            <input id="classification-search" name="q" type="search" placeholder="Código ou nome da classe" />
+            <button type="submit" class="btn btn-primary">Buscar</button>
+        </form>
+    </section>
+    <section class="classification-action-section">
+        <header>
+            <span>Contexto</span>
+            <h2>O que esta tela controla</h2>
+            <p>Uma classe identifica o documento. A regra de temporalidade diz por quanto tempo ele fica na fase corrente e na intermediária, e qual é o destino final. Alterações em rascunho não entram na versão publicada.</p>
+        </header>
+        <div class="classification-actions">
+            <a asp-action="Tree"><app-icon name="folder" /> <b>Árvore de classificação</b><span>Consulte e edite funções, atividades e subclasses.</span></a>
+            <a asp-action="RetentionRules"><app-icon name="retention" /><b>Tabela de temporalidade</b><span>Prazos e destino vinculados à classe.</span></a>
+            <a asp-action="ReviewQueue"><app-icon name="list" /><b>Revisão arquivística</b><span>Classes e regras ainda em rascunho.</span></a>
+            <a asp-action="Import"><app-icon name="upload" /><b>Importação assistida</b><span>A prévia valida o CSV antes de gravar.</span></a>
+            <a asp-action="Versions"><app-icon name="history" /><b>Versões da estrutura 2.0</b><span>Snapshots separados do plano vigente.</span></a>
+            <a href="/Instruments/Versions/PCD"><app-icon name="print" /><b>Versões do PCD</b><span>Publica e pré-visualiza o plano usado na classificação.</span></a>
+        </div>
+    </section>
+    <section class="classification-import-preview">
+        <header class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <h2 class="h5 mb-1">Classes vigentes</h2>
+                <p class="text-muted mb-0">@liveCount classe(s) no plano que a classificação dos documentos consulta. @if (liveCount > live.Count) { <span>Exibindo as primeiras @live.Count.</span> }</p>
+            </div>
+            <a class="btn btn-outline-primary" asp-action="PrintCurrent">Abrir pré-visualização</a>
+        </header>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 atlas-table">
+                <thead>
+                    <tr><th>Código</th><th>Classe</th><th>Destino</th><th>Prazo corrente</th></tr>
+                </thead>
+                <tbody>
+                @if (live.Count == 0)
+                {
+                    <tr><td colspan="4" class="text-center py-4">Nenhuma classe vigente foi lida. Crie a primeira classe ou importe um CSV validado.</td></tr>
+                }
+                @foreach (var item in live)
+                {
+                    <tr>
+                        <td class="fw-semibold">@item.Code</td>
+                        <td>@item.Name</td>
+                        <td>@item.FinalDestination</td>
+                        <td>@Term(item.RetActiveYears, item.RetActiveMonths, item.RetActiveDays)</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </section>
+    @if (Model.Classes == 0 && liveCount == 0)
+    {
+        <section class="classification-empty" role="status">
+            <app-icon name="folder" size="32" decorative="true" />
+            <h2>O plano ainda não possui classes</h2>
+            <p>Crie a primeira classe ou importe um plano validado para começar.</p>
+            <a class="btn btn-primary" asp-action="Create">Criar primeira classe</a>
+        </section>
+    }
+</div>
+@functions {
+    private static string Term(int years, int months, int days)
+    {
+        if (years == 0 && months == 0 && days == 0) return "Não informado";
+        var parts = new List<string>();
+        if (years > 0) parts.Add($"{years} ano(s)");
+        if (months > 0) parts.Add($"{months} mês(es)");
+        if (days > 0) parts.Add($"{days} dia(s)");
+        return string.Join(", ", parts);
+    }
+}

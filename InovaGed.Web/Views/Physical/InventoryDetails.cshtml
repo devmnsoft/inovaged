@@ -1,3 +1,96 @@
+@using InovaGed.Web.Models.Atlas
 @model InovaGed.Application.PhysicalArchive2.PhysicalInventoryDetails
-@{ViewData["Title"]=$"Inventário {Model.Number}";var locations=(IReadOnlyList<InovaGed.Application.PhysicalArchive2.PhysicalOption>)ViewBag.Locations;}
-<link rel="stylesheet" href="~/css/physical-archive.css"/><main class="physical-page"><header class="physical-hero"><div><span>@Model.Status</span><h1>@Model.Title</h1><p>@Model.Number · @(Model.Location??"Todo o acervo")</p></div></header>@if(Model.Status=="OPEN"){<form method="post" action="/Physical/Inventory/@Model.Id/Scan" class="physical-form">@Html.AntiForgeryToken()<label>Código da caixa ou QR<input name="code" required autofocus autocomplete="off"/></label><label>Local encontrado<select name="foundLocationId"><option value="">Sem localização</option>@foreach(var x in locations){<option value="@x.Id" selected="@(x.Id==Model.LocationId)">@x.Code — @x.Name</option>}</select></label><button class="btn btn-primary">Conferir</button></form><form method="post" action="/Physical/Inventory/@Model.Id/Close" class="physical-close">@Html.AntiForgeryToken()<input name="notes" placeholder="Observações de fechamento"/><button class="btn btn-outline-danger">Fechar inventário</button></form>}<section class="physical-inventory-board">@foreach(var x in Model.Items){<article><b>@x.Code</b><span>@x.Location</span><em>@x.Status</em></article>}@if(Model.Items.Count==0){<p class="physical-empty">Aguardando a primeira leitura.</p>}</section></main>
+@{
+    ViewData["Title"] = Model.Title;
+    var locations = ViewBag.Locations as IReadOnlyList<InovaGed.Application.PhysicalArchive2.PhysicalOption> ?? Array.Empty<InovaGed.Application.PhysicalArchive2.PhysicalOption>();
+    var open = string.Equals(Model.Status, "OPEN", StringComparison.OrdinalIgnoreCase);
+    var header = new AtlasPageHeaderVm(
+        Model.Title,
+        $"{Model.Number} · {(Model.Location ?? "Todo o acervo")}. Cada leitura registra se a caixa foi encontrada, se o local diverge ou se o código não pertence ao acervo.",
+        "box",
+        open ? "Conferência aberta" : "Conferência encerrada",
+        [new AtlasPageAction("Voltar ao inventário", Url.Action("Inventory")!, "arrow-left")]);
+    string ResultLabel(string status) => status.ToUpperInvariant() switch
+    {
+        "FOUND" => "Encontrada",
+        "WRONG_LOCATION" => "Local divergente",
+        "UNEXPECTED" => "Não esperada",
+        "PENDING" => "Pendente",
+        "MISSING" => "Não encontrada",
+        _ => status
+    };
+}
+<partial name="Atlas/_PageHeader" model="header" />
+@if (TempData["Err"] is string err)
+{
+    <div class="alert alert-warning" role="status">@err</div>
+}
+@if (open)
+{
+    <section class="card border-0 shadow-sm atlas-card mb-3">
+        <div class="card-body">
+            <h2 class="h5">Leitura</h2>
+            <form method="post" action="/Physical/Inventory/@Model.Id/Scan" class="row g-2 align-items-end">
+                @Html.AntiForgeryToken()
+                <div class="col-md-5">
+                    <label class="form-label" for="scan-code">Código da caixa ou QR</label>
+                    <input id="scan-code" name="code" class="form-control" required autofocus autocomplete="off" />
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label" for="found-location">Local encontrado</label>
+                    <select id="found-location" name="foundLocationId" class="form-select">
+                        <option value="">Sem localização</option>
+                        @foreach (var location in locations)
+                        {
+                            <option value="@location.Id" selected="@(location.Id == Model.LocationId)">@location.Code — @location.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-primary" type="submit">Conferir</button>
+                </div>
+            </form>
+        </div>
+    </section>
+    <section class="card border-0 shadow-sm atlas-card mb-3">
+        <div class="card-body">
+            <h2 class="h6">Encerrar conferência</h2>
+            <p class="text-muted">O encerramento impede novas leituras. As caixas permanecem onde já estavam.</p>
+            <form method="post" action="/Physical/Inventory/@Model.Id/Close" class="row g-2 align-items-end">
+                @Html.AntiForgeryToken()
+                <div class="col-md-10">
+                    <label class="form-label" for="close-notes">Observações</label>
+                    <input id="close-notes" name="notes" class="form-control" maxlength="500" />
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-outline-danger" type="submit">Encerrar</button>
+                </div>
+            </form>
+        </div>
+    </section>
+}
+<section class="card border-0 shadow-sm atlas-card">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 atlas-table">
+            <thead>
+                <tr><th>Código</th><th>Caixa</th><th>Local encontrado</th><th>Resultado</th><th>Quando</th></tr>
+            </thead>
+            <tbody>
+            @if (Model.Items.Count == 0)
+            {
+                <tr><td colspan="5" class="text-center py-5">Aguardando a primeira leitura.</td></tr>
+            }
+            @foreach (var item in Model.Items)
+            {
+                <tr>
+                    <td class="fw-semibold">@item.Code</td>
+                    <td>@item.Title</td>
+                    <td>@(item.Location ?? "—")</td>
+                    <td>@ResultLabel(item.Status)</td>
+                    <td>@item.OccurredAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</section>

@@ -1,70 +1,75 @@
-﻿@model IReadOnlyList<InovaGed.Application.ClassificationPlans.ClassificationNodeRow>
+@model IReadOnlyList<InovaGed.Application.ClassificationPlans.ClassificationNodeRow>
 @{
     Layout = null;
-    string Indent(int level) => new string('—', Math.Max(0, level));
+    var children = Model.GroupBy(item => item.ParentId).ToDictionary(group => group.Key, group => group.OrderBy(item => item.Code).ToList());
+    var rows = new List<(int Level, InovaGed.Application.ClassificationPlans.ClassificationNodeRow Node)>();
+    void Walk(Guid? parentId, int level)
+    {
+        if (!children.TryGetValue(parentId, out var list)) return;
+        foreach (var node in list)
+        {
+            rows.Add((level, node));
+            Walk(node.Id, level + 1);
+        }
+    }
+    Walk(null, 0);
+    if (rows.Count == 0)
+    {
+        foreach (var node in Model.OrderBy(item => item.Code)) rows.Add((0, node));
+    }
 }
-
 <!doctype html>
-<html>
+<html lang="pt-BR">
 <head>
     <meta charset="utf-8" />
-    <title>PCD/TTD - Plano Atual</title>
-    <link href="/lib/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        media print {
-            .no-print
-
-        {
-            display: none;
-        }
-
-        }
-
-        .mono {
-            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
-        }
-    </style>
+    <title>Pré-visualização do plano vigente</title>
+    <link rel="stylesheet" href="/css/classification-plan.css" />
 </head>
-<body class="p-4">
-    <div class="no-print d-flex justify-content-between align-items-center mb-3">
-        <div class="text-muted">Impressão do plano atual</div>
-        <button class="btn btn-primary" onclick="window.print()">Imprimir</button>
-    </div>
-
-    <h3 class="mb-1">PCD/TTD (Plano Atual)</h3>
-    <div class="text-muted mb-3">Gerado em @DateTime.Now.ToString("dd/MM/yyyy HH:mm")</div>
-
-    @{
-        var children = Model.GroupBy(x => x.ParentId)
-        .ToDictionary(g => g.Key, g => g.OrderBy(x => x.Code).ToList());
-
-        void Render(Guid? parentId, int level)
-        {
-            if (!children.TryGetValue(parentId, out var list)) return;
-
-            foreach (var n in list)
+<body>
+    <main class="plan-print">
+        <header>
+            <div>
+                <p class="plan-print-kicker">Plano de classificação e temporalidade</p>
+                <h1>Plano vigente</h1>
+                <p>Gerado em @DateTime.Now.ToString("dd/MM/yyyy HH:mm"). O nome é o da classe. Esta folha não executa eliminação nem transferência.</p>
+            </div>
+            <div class="plan-print-toolbar">
+                <button class="btn btn-primary" type="button" onclick="window.print()">Imprimir</button>
+                <a class="btn btn-outline-secondary" href="/ClassificationPlan">Voltar</a>
+            </div>
+        </header>
+        <table class="atlas-table">
+            <thead>
+                <tr><th>Código</th><th>Classe</th><th>Fase corrente</th><th>Fase intermediária</th><th>Destino</th></tr>
+            </thead>
+            <tbody>
+            @if (rows.Count == 0)
             {
-                <div class="border-bottom py-2">
-                    <div class="d-flex justify-content-between">
-                        <div>
-                            <span class="mono text-secondary">@Indent(level)</span>
-                            <span class="mono fw-semibold">@n.Code</span>
-                            <span class="ms-2">@n.Name</span>
-                        </div>
-                        <div class="text-muted">
-                            <small>@n.RetentionStartEvent • Destino: @n.FinalDestination</small>
-                        </div>
-                    </div>
-                    @if (!string.IsNullOrWhiteSpace(n.RetentionNotes))
-                    {
-                        <div class="text-muted"><small><strong>Obs:</strong> @n.RetentionNotes</small></div>
-                    }
-                </div>
-                Render(n.Id, level + 1);
+                <tr><td colspan="5">Nenhuma classe vigente para pré-visualizar.</td></tr>
             }
-        }
-
-        Render(null, 0);
-    }
+            @foreach (var row in rows)
+            {
+                <tr>
+                    <td class="code">@row.Node.Code</td>
+                    <td style="padding-left:@(1 + row.Level)rem">@row.Node.Name</td>
+                    <td>@Term(row.Node.RetActiveYears, row.Node.RetActiveMonths, row.Node.RetActiveDays)</td>
+                    <td>@Term(row.Node.RetArchiveYears, row.Node.RetArchiveMonths, row.Node.RetArchiveDays)</td>
+                    <td>@row.Node.FinalDestination</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </main>
 </body>
 </html>
+@functions {
+    private static string Term(int years, int months, int days)
+    {
+        if (years == 0 && months == 0 && days == 0) return "Não informado";
+        var parts = new List<string>();
+        if (years > 0) parts.Add($"{years} ano(s)");
+        if (months > 0) parts.Add($"{months} mês(es)");
+        if (days > 0) parts.Add($"{days} dia(s)");
+        return string.Join(", ", parts);
+    }
+}

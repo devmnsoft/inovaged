@@ -1,3 +1,87 @@
+@using InovaGed.Web.Models.Atlas
 @model IReadOnlyList<InovaGed.Application.PhysicalArchive2.PhysicalActivity>
-@{ViewData["Title"]="Inventário físico";var locations=(IReadOnlyList<InovaGed.Application.PhysicalArchive2.PhysicalOption>)ViewBag.Locations;}
-<link rel="stylesheet" href="~/css/physical-archive.css"/><main class="physical-page"><header class="physical-hero"><div><h1>Inventário físico</h1><p>Compare o acervo esperado com caixas encontradas por leitura ou seleção.</p></div></header><form method="post" action="/Physical/Inventory/Start" class="physical-form">@Html.AntiForgeryToken()<label>Título<input name="title" required maxlength="200"/></label><label>Localização<select name="locationId"><option value="">Todo o acervo</option>@foreach(var x in locations){<option value="@x.Id">@x.Code — @x.Name</option>}</select></label><button class="btn btn-primary">Iniciar inventário</button></form><section class="physical-inventory-board">@foreach(var x in Model){<a href="/Physical/Inventory/@x.Id"><b>@x.Code</b><span>@x.Title</span><em>@x.Status</em></a>}@if(Model.Count==0){<p class="physical-empty">Nenhuma sessão. Inicie a primeira conferência.</p>}</section></main>
+@{
+    ViewData["Title"] = "Inventário físico";
+    var locations = ViewBag.Locations as IReadOnlyList<InovaGed.Application.PhysicalArchive2.PhysicalOption> ?? Array.Empty<InovaGed.Application.PhysicalArchive2.PhysicalOption>();
+    var open = Model.Count(item => string.Equals(item.Status, "OPEN", StringComparison.OrdinalIgnoreCase));
+    var header = new AtlasPageHeaderVm(
+        "Inventário físico",
+        "Abra uma conferência, leia o código da caixa e compare o local encontrado com o local esperado. Encerrar a sessão não move o acervo.",
+        "box",
+        "Arquivo físico",
+        [new AtlasPageAction("Mapa físico", Url.Action("PhysicalMap")!, "arrow-left")]);
+    var metrics = new[]
+    {
+        new AtlasMetricVm("Sessões", Model.Count.ToString(), "conferências deste arquivo", "info", "list"),
+        new AtlasMetricVm("Abertas", open.ToString(), "ainda aceitam leitura", "warning", "box"),
+        new AtlasMetricVm("Locais", locations.Count.ToString(), "endereços disponíveis", "neutral", "folder")
+    };
+    string StatusLabel(string status) => status.ToUpperInvariant() switch
+    {
+        "OPEN" => "Aberta",
+        "CLOSED" => "Encerrada",
+        _ => status
+    };
+}
+<partial name="Atlas/_PageHeader" model="header" />
+<partial name="Atlas/_PageMetrics" model="metrics" />
+@if (TempData["Err"] is string err)
+{
+    <div class="alert alert-warning" role="status">@err</div>
+}
+@if (TempData["Ok"] is string ok)
+{
+    <div class="alert alert-success" role="status">@ok</div>
+}
+<section class="card border-0 shadow-sm atlas-card mb-3">
+    <div class="card-body">
+        <h2 class="h5">Nova conferência</h2>
+        <p class="text-muted">Informe um título que identifique a sessão, como o depósito ou a data. O local limita a expectativa; em branco, a conferência vale para todo o acervo.</p>
+        <form method="post" action="/Physical/Inventory/Start" class="row g-2 align-items-end">
+            @Html.AntiForgeryToken()
+            <div class="col-md-5">
+                <label class="form-label" for="inventory-title">Título</label>
+                <input id="inventory-title" name="title" class="form-control" required maxlength="200" />
+            </div>
+            <div class="col-md-5">
+                <label class="form-label" for="inventory-location">Localização</label>
+                <select id="inventory-location" name="locationId" class="form-select">
+                    <option value="">Todo o acervo</option>
+                    @foreach (var location in locations)
+                    {
+                        <option value="@location.Id">@location.Code — @location.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-primary" type="submit">Iniciar</button>
+            </div>
+        </form>
+    </div>
+</section>
+<section class="card border-0 shadow-sm atlas-card">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 atlas-table">
+            <thead>
+                <tr><th>Sessão</th><th>Título</th><th>Local</th><th>Situação</th><th>Início</th><th></th></tr>
+            </thead>
+            <tbody>
+            @if (Model.Count == 0)
+            {
+                <tr><td colspan="6" class="text-center py-5">Nenhuma conferência. Inicie a primeira para comparar o acervo esperado com as caixas encontradas.</td></tr>
+            }
+            @foreach (var session in Model)
+            {
+                <tr>
+                    <td class="fw-semibold">@session.Code</td>
+                    <td>@session.Title</td>
+                    <td>@(session.Location ?? "Todo o acervo")</td>
+                    <td>@StatusLabel(session.Status)</td>
+                    <td>@session.OccurredAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                    <td><a class="btn btn-sm btn-primary" href="/Physical/Inventory/@session.Id">Abrir</a></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</section>
