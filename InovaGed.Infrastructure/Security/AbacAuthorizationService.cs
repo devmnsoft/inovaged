@@ -69,5 +69,5 @@ where d.tenant_id=@tenantId and d.id=any(@ids)
 """, new { tenantId, userId, ids = documentIds.ToArray(), permissionCode, write = permissionCode != "Documents.View", hour = DateTime.UtcNow.Hour }, cancellationToken: ct))).ToList();
     }
 
-    private sealed class DocumentAccess { public Guid Id { get; set; } public bool Confidential { get; set; } }
+    private sealed class DocumentAccess { public Guid Id { get; set; } public bool Confidential { get; set; } };
 }

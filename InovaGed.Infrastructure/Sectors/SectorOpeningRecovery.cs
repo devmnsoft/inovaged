@@ -226,8 +226,8 @@ from ged.sector_integration i where i.id=@id and i.active
             || (row.Origin.Length>0 && !OriginAllowed(current.Origins,row.Origin,out _)) ? null : ConfigurationFingerprint(current);
     }
 
-    private sealed class RequestIdentity { public string? Fingerprint { get; set; } public string CorrelationId { get; set; }=""; public DateTime? RevokedAt { get; set; } }
-    private sealed class RequestState { public string CorrelationId { get; set; }=""; public string State { get; set; }=""; public int Recoveries { get; set; } public DateTimeOffset ExpiresAt { get; set; } }
+    private sealed class RequestIdentity { public string? Fingerprint { get; set; } public string CorrelationId { get; set; }=""; public DateTime? RevokedAt { get; set; } };
+    private sealed class RequestState { public string CorrelationId { get; set; }=""; public string State { get; set; }=""; public int Recoveries { get; set; } public DateTimeOffset ExpiresAt { get; set; } };
     private sealed class RecoveryGrant
     {
         public Guid RequestId { get; set; } public string CorrelationId { get; set; }=""; public int Recoveries { get; set; }

@@ -53,10 +53,10 @@ public sealed class GedDashboardVm
     public List<DashboardMetricSlice> DocumentBySituation { get; set; } = new();
 }
 
-public sealed class DashboardMetricSlice { public string Label { get; set; } = string.Empty; public int Value { get; set; } }
+public sealed class DashboardMetricSlice { public string Label { get; set; } = string.Empty; public int Value { get; set; } };
 public sealed record DashboardLinkVm(string Title, int? Value, string Icon, string CssClass, string Url);
-public sealed class RecentDocumentMoveDto { public DateTime? MovedAt { get; set; } public string Document { get; set; } = "-"; public string OriginFolder { get; set; } = "-"; public string DestinationFolder { get; set; } = "-"; public string MovedBy { get; set; } = "-"; public string Justification { get; set; } = "-"; }
-public sealed class RecentLoanRequestDto { public DateTime? RequestedAt { get; set; } public string Requester { get; set; } = "-"; public string Document { get; set; } = "-"; public string Status { get; set; } = "-"; }
-public sealed class OverdueLoanDto { public string ProtocolNo { get; set; } = "-"; public string Borrower { get; set; } = "-"; public string Document { get; set; } = "-"; public DateTime? DueDate { get; set; } }
-public sealed class RecentAccessDeniedDto { public DateTime? EventTime { get; set; } public string UserName { get; set; } = "-"; public string Path { get; set; } = "-"; public string IpAddress { get; set; } = "-"; }
-public sealed class RecentAuditEventDto { public DateTime? EventTime { get; set; } public string Action { get; set; } = "-"; public string EntityName { get; set; } = "-"; public string Summary { get; set; } = "-"; public string UserName { get; set; } = "-"; }
+public sealed class RecentDocumentMoveDto { public DateTime? MovedAt { get; set; } public string Document { get; set; } = "-"; public string OriginFolder { get; set; } = "-"; public string DestinationFolder { get; set; } = "-"; public string MovedBy { get; set; } = "-"; public string Justification { get; set; } = "-"; };
+public sealed class RecentLoanRequestDto { public DateTime? RequestedAt { get; set; } public string Requester { get; set; } = "-"; public string Document { get; set; } = "-"; public string Status { get; set; } = "-"; };
+public sealed class OverdueLoanDto { public string ProtocolNo { get; set; } = "-"; public string Borrower { get; set; } = "-"; public string Document { get; set; } = "-"; public DateTime? DueDate { get; set; } };
+public sealed class RecentAccessDeniedDto { public DateTime? EventTime { get; set; } public string UserName { get; set; } = "-"; public string Path { get; set; } = "-"; public string IpAddress { get; set; } = "-"; };
+public sealed class RecentAuditEventDto { public DateTime? EventTime { get; set; } public string Action { get; set; } = "-"; public string EntityName { get; set; } = "-"; public string Summary { get; set; } = "-"; public string UserName { get; set; } = "-"; };

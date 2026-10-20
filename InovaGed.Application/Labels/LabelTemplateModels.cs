@@ -2,7 +2,43 @@ using System.ComponentModel.DataAnnotations;
 
 namespace InovaGed.Application.Labels;
 
-public sealed record LabelTemplateListItem(Guid Id,string Code,string Name,string? Description,string PrintMode,string SubjectType,string ViewName,int Version,bool IsSystemTemplate,bool IsCustomTemplate,bool IsActive,bool IsDefault,bool SupportsBatch,bool AllowsManualFields,int DisplayOrder);
+public sealed class LabelTemplateListItem
+{
+    public LabelTemplateListItem() { }
+    public LabelTemplateListItem(Guid Id, string Code, string Name, string? Description, string PrintMode, string SubjectType, string ViewName, int Version, bool IsSystemTemplate, bool IsCustomTemplate, bool IsActive, bool IsDefault, bool SupportsBatch, bool AllowsManualFields, int DisplayOrder)
+    {
+        this.Id = Id;
+        this.Code = Code;
+        this.Name = Name;
+        this.Description = Description;
+        this.PrintMode = PrintMode;
+        this.SubjectType = SubjectType;
+        this.ViewName = ViewName;
+        this.Version = Version;
+        this.IsSystemTemplate = IsSystemTemplate;
+        this.IsCustomTemplate = IsCustomTemplate;
+        this.IsActive = IsActive;
+        this.IsDefault = IsDefault;
+        this.SupportsBatch = SupportsBatch;
+        this.AllowsManualFields = AllowsManualFields;
+        this.DisplayOrder = DisplayOrder;
+    }
+    public Guid Id { get; set; }
+    public string Code { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string? Description { get; set; }
+    public string PrintMode { get; set; } = "";
+    public string SubjectType { get; set; } = "";
+    public string ViewName { get; set; } = "";
+    public int Version { get; set; }
+    public bool IsSystemTemplate { get; set; }
+    public bool IsCustomTemplate { get; set; }
+    public bool IsActive { get; set; }
+    public bool IsDefault { get; set; }
+    public bool SupportsBatch { get; set; }
+    public bool AllowsManualFields { get; set; }
+    public int DisplayOrder { get; set; }
+}
 public sealed class LabelTemplateFieldItem { public Guid? Id {get;set;} public string FieldKey {get;set;}=""; public string FieldLabel {get;set;}=""; public string FieldType {get;set;}="TEXT"; public bool IsVisible {get;set;}=true; public bool IsRequired {get;set;} public bool IsEditable {get;set;}=true; public string? DefaultValue {get;set;} public int DisplayOrder {get;set;} public string? CssClass {get;set;} }
 public sealed class LabelTemplateConfigDetails { public string? HeaderText {get;set;} public string? LogoSvg {get;set;} public string? PrimaryColor {get;set;}="#008a9a"; public string? SecondaryColor {get;set;}="#6fc7c8"; public string? BorderColor {get;set;}="#111111"; public string? TextColor {get;set;}="#111111"; public string? AccentColor {get;set;}="#d60000"; public string PageSize {get;set;}="A4"; public decimal? LabelWidthMm {get;set;}=190; public decimal? LabelHeightMm {get;set;}=130; public int LabelsPerPage {get;set;}=1; public string Orientation {get;set;}="PORTRAIT"; public string? CustomCss {get;set;} public decimal MarginTopMm {get;set;} public decimal MarginRightMm {get;set;} public decimal MarginBottomMm {get;set;} public decimal MarginLeftMm {get;set;} }
 public sealed record LabelTemplateDetails(LabelTemplateListItem Template,LabelTemplateConfigDetails Config,IReadOnlyList<LabelTemplateFieldItem> Fields);
@@ -13,6 +49,42 @@ public sealed class LabelTemplateEditCommand {
  public LabelTemplateConfigDetails Config {get;set;}=new();
  public List<LabelTemplateFieldItem> Fields {get;set;}=[];
 }
-public sealed record LabelTemplateVersionItem(Guid Id,int VersionNumber,Guid? PublishedBy,DateTimeOffset PublishedAt,string? ChangeNotes);
-public sealed record LabelTemplateVersionDetails(Guid Id,Guid TemplateId,int VersionNumber,string SnapshotJson,Guid? PublishedBy,DateTimeOffset PublishedAt,string? ChangeNotes);
+public sealed class LabelTemplateVersionItem
+{
+    public LabelTemplateVersionItem() { }
+    public LabelTemplateVersionItem(Guid Id, int VersionNumber, Guid? PublishedBy, DateTimeOffset PublishedAt, string? ChangeNotes)
+    {
+        this.Id = Id;
+        this.VersionNumber = VersionNumber;
+        this.PublishedBy = PublishedBy;
+        this.PublishedAt = PublishedAt;
+        this.ChangeNotes = ChangeNotes;
+    }
+    public Guid Id { get; set; }
+    public int VersionNumber { get; set; }
+    public Guid? PublishedBy { get; set; }
+    public DateTimeOffset PublishedAt { get; set; }
+    public string? ChangeNotes { get; set; }
+}
+public sealed class LabelTemplateVersionDetails
+{
+    public LabelTemplateVersionDetails() { }
+    public LabelTemplateVersionDetails(Guid Id, Guid TemplateId, int VersionNumber, string SnapshotJson, Guid? PublishedBy, DateTimeOffset PublishedAt, string? ChangeNotes)
+    {
+        this.Id = Id;
+        this.TemplateId = TemplateId;
+        this.VersionNumber = VersionNumber;
+        this.SnapshotJson = SnapshotJson;
+        this.PublishedBy = PublishedBy;
+        this.PublishedAt = PublishedAt;
+        this.ChangeNotes = ChangeNotes;
+    }
+    public Guid Id { get; set; }
+    public Guid TemplateId { get; set; }
+    public int VersionNumber { get; set; }
+    public string SnapshotJson { get; set; } = "";
+    public Guid? PublishedBy { get; set; }
+    public DateTimeOffset PublishedAt { get; set; }
+    public string? ChangeNotes { get; set; }
+}
 public sealed record LabelRenderDefinition(LabelTemplateDetails Template,IReadOnlyDictionary<string,string?> Values);

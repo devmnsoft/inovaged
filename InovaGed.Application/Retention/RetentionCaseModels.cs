@@ -43,6 +43,6 @@ public sealed class CreateRetentionCaseRequest
 public sealed class DecideItemRequest
 {
     public long ItemId { get; set; }
-    public string Decision { get; set; } = "APPROVE"; // APPROVE | REJECT
+    public string Decision { get; set; } = "APPROVE"; // APPROVE | REJECT;
     public string? Notes { get; set; }
 }

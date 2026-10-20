@@ -9,6 +9,7 @@ SELECT
   j.document_id AS DocumentId,
   j.document_version_id AS VersionId,
   coalesce(d.title, 'Documento sem título') AS DocumentTitle,
+  coalesce(dv.file_name, '') AS FileName,
   j.job_type AS Lane,
   j.status AS Status,
   j.attempt_count AS Attempts,
@@ -21,6 +22,9 @@ FROM ged.processing_job j
 LEFT JOIN ged.document d
   ON d.tenant_id = j.tenant_id
  AND d.id = j.document_id
+LEFT JOIN ged.document_version dv
+  ON dv.tenant_id = j.tenant_id
+ AND dv.id = j.document_version_id
 WHERE j.tenant_id = @tenantId
   AND j.reg_status = 'A'
   AND j.created_at >= @from
@@ -41,6 +45,7 @@ SELECT
   j.document_id AS DocumentId,
   j.document_version_id AS VersionId,
   coalesce(d.title, 'Documento sem título') AS DocumentTitle,
+  coalesce(dv.file_name, '') AS FileName,
   j.job_type AS Lane,
   j.status AS Status,
   j.attempt_count AS Attempts,
@@ -53,6 +58,9 @@ FROM ged.processing_job j
 LEFT JOIN ged.document d
   ON d.tenant_id = j.tenant_id
  AND d.id = j.document_id
+LEFT JOIN ged.document_version dv
+  ON dv.tenant_id = j.tenant_id
+ AND dv.id = j.document_version_id
 WHERE j.tenant_id = @tenantId
   AND j.reg_status = 'A'
   AND j.created_at >= @from
@@ -71,6 +79,7 @@ SELECT
   d.id AS DocumentId,
   j.document_version_id AS VersionId,
   coalesce(d.title, 'Documento sem título') AS DocumentTitle,
+  coalesce(dv.file_name, '') AS FileName,
   'OCR' AS Lane,
   j.status::text AS Status,
   coalesce(j.attempts, 0) AS Attempts,
@@ -104,6 +113,7 @@ SELECT
   d.id AS DocumentId,
   j.document_version_id AS VersionId,
   coalesce(d.title, 'Documento sem título') AS DocumentTitle,
+  coalesce(dv.file_name, '') AS FileName,
   'OCR' AS Lane,
   j.status::text AS Status,
   0 AS Attempts,
@@ -135,6 +145,7 @@ SELECT
   s.document_id AS DocumentId,
   s.version_id AS VersionId,
   coalesce(s.original_file_name, 'Upload') AS DocumentTitle,
+  coalesce(s.original_file_name, '') AS FileName,
   'UPLOAD' AS Lane,
   s.status AS Status,
   s.received_chunks AS Attempts,
@@ -219,5 +230,32 @@ WHERE tenant_id = @tenantId
   AND id = @jobId
   AND reg_status = 'A'
   AND status IN ('PENDING','PROCESSING');
+""";
+
+    public const string RetryJobs = """
+UPDATE ged.processing_job AS target
+SET status = 'PENDING',
+    attempt_count = 0,
+    next_attempt_at = now(),
+    locked_by = NULL,
+    locked_at = NULL,
+    finished_at = NULL,
+    updated_at = now(),
+    error_message = left(coalesce(target.error_message, '') || ' Reprocessado pela central.', 2000)
+WHERE target.tenant_id = @tenantId
+  AND target.id = ANY(@jobIds)
+  AND target.reg_status = 'A'
+  AND target.status IN ('FAILED','CANCELLED')
+  AND NOT EXISTS (
+    SELECT 1
+    FROM ged.processing_job other
+    WHERE other.tenant_id = target.tenant_id
+      AND other.job_type = target.job_type
+      AND other.reg_status = 'A'
+      AND other.status IN ('PENDING','PROCESSING')
+      AND other.id <> target.id
+      AND coalesce(other.document_version_id, '00000000-0000-0000-0000-000000000000'::uuid) = coalesce(target.document_version_id, '00000000-0000-0000-0000-000000000000'::uuid)
+      AND coalesce(other.upload_batch_item_id, '00000000-0000-0000-0000-000000000000'::uuid) = coalesce(target.upload_batch_item_id, '00000000-0000-0000-0000-000000000000'::uuid)
+  );
 """;
 }

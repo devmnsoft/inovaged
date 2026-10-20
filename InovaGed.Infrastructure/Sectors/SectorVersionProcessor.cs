@@ -108,7 +108,7 @@ from ged.processing_job j where j.tenant_id=@TenantId and j.id=@Id and j.status 
 """,job,cancellationToken:ct));
     }
 
-    private sealed class State { public string? InputHash { get; set; } }
+    private sealed class State { public string? InputHash { get; set; } };
     private sealed class Input
     {
         public Guid LinkId { get; set; }

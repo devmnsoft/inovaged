@@ -438,7 +438,7 @@ WHERE d.tenant_id=@tenantId AND d.id=@documentId;
         return await conn.QuerySingleOrDefaultAsync<VersionInfo>(new CommandDefinition(sql, new { tenantId, documentId }, cancellationToken: ct));
     }
 
-    private sealed class VersionInfo { public Guid VersionId { get; set; } public string FileName { get; set; } = string.Empty; public string StoragePath { get; set; } = string.Empty; public string? ChecksumSha256 { get; set; } public DateTime? UploadedAtUtc { get; set; } }
+    private sealed class VersionInfo { public Guid VersionId { get; set; } public string FileName { get; set; } = string.Empty; public string StoragePath { get; set; } = string.Empty; public string? ChecksumSha256 { get; set; } public DateTime? UploadedAtUtc { get; set; } };
 
     private async Task UpdateItemDocumentAsync(Guid tenantId, Guid itemId, Guid documentId, Guid? versionId, string? storedFileName, string? contentType, long sizeBytes, string? checksum, string status, long elapsedMs, CancellationToken ct)
     {
@@ -600,7 +600,7 @@ WHERE b.tenant_id=@tenantId AND b.id=@batchId;
         await conn.ExecuteAsync(new CommandDefinition(sql, new { tenantId, batchId, finished }, cancellationToken: ct));
     }
 
-    private sealed class BatchStatusRow { public Guid? RequestedFolderId { get; set; } public Guid? ResolvedFolderId { get; set; } public string? FolderName { get; set; } public string Status { get; set; } = "OPEN"; public int TotalFiles { get; set; } public int SuccessFiles { get; set; } public int FailedFiles { get; set; } public int SkippedFiles { get; set; } }
+    private sealed class BatchStatusRow { public Guid? RequestedFolderId { get; set; } public Guid? ResolvedFolderId { get; set; } public string? FolderName { get; set; } public string Status { get; set; } = "OPEN"; public int TotalFiles { get; set; } public int SuccessFiles { get; set; } public int FailedFiles { get; set; } public int SkippedFiles { get; set; } };
 
     private async Task<UploadBatchStatusDto> LoadStatusAsync(Guid tenantId, Guid batchId, bool includeAllItems, CancellationToken ct)
     {

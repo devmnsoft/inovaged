@@ -74,3 +74,13 @@ Situação: implementado, com teste parcial de regra. A tela não foi aberta.
 | Protocolo, temporalidade e assinatura | Não iniciado no módulo | Serviço sem essas ligações |
 | Dashboard | Não iniciado | Sem view |
 | MV SOUL real | Bloqueado por dependência | Sem endpoint inventado |
+
+## Evolução do prompt mestre — 2026-10-20
+
+A numeração acima é a do módulo Demais Setores até 2026-10-19. O prompt mestre usa outra lista, registrada em `docs/ROADMAP_INOVAGED_NEXT_EVOLUTION.md`.
+
+Nesta sessão o trabalho executado foi a Sprint 0 desse prompt (Quality Gate). Nenhuma funcionalidade nova de setor, template, dossiê ou indicador foi implementada. Os fluxos já existentes de cadastro, consulta, abertura integrada e conferência foram preservados.
+
+Ajuste pontual no módulo: `PesquisarIntegrado` e `TrocarAtendimento` passaram a validar o token de antiforgery que `demais-setores.js` já enviava. `SectorDocumentRow`, `SectorContextRow` e `SectorEncounterOption` deixaram de ser `record` público materializado pelo Dapper e continuam aceitando a data que o Npgsql entrega como `DateTime`.
+
+Teste desta sessão: filtro `DemaisSetoresRulesTests` incluído no conjunto de 26 testes aprovados em 2026-10-20. A tela não foi aberta. Nada desta tabela foi marcado como homologado.

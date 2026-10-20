@@ -24,20 +24,39 @@ public sealed class LoanRowDto
 }
 
 
-public sealed record LoanItemDto(
-    Guid? DocumentId,
-    bool IsPhysical,
-    string? DocumentCode,
-    string? DocumentTitle,
-    string? DocumentType,
-    bool IsManual,
-    string? ReferenceCode,
-    string? Description,
-    string? PatientName,
-    string? MedicalRecordNumber,
-    string? BoxCode,
-    string? PhysicalLocation,
-    string? Notes);
+public sealed class LoanItemDto
+{
+    public LoanItemDto() { }
+    public LoanItemDto(Guid? DocumentId, bool IsPhysical, string? DocumentCode, string? DocumentTitle, string? DocumentType, bool IsManual, string? ReferenceCode, string? Description, string? PatientName, string? MedicalRecordNumber, string? BoxCode, string? PhysicalLocation, string? Notes)
+    {
+        this.DocumentId = DocumentId;
+        this.IsPhysical = IsPhysical;
+        this.DocumentCode = DocumentCode;
+        this.DocumentTitle = DocumentTitle;
+        this.DocumentType = DocumentType;
+        this.IsManual = IsManual;
+        this.ReferenceCode = ReferenceCode;
+        this.Description = Description;
+        this.PatientName = PatientName;
+        this.MedicalRecordNumber = MedicalRecordNumber;
+        this.BoxCode = BoxCode;
+        this.PhysicalLocation = PhysicalLocation;
+        this.Notes = Notes;
+    }
+    public Guid? DocumentId { get; set; }
+    public bool IsPhysical { get; set; }
+    public string? DocumentCode { get; set; }
+    public string? DocumentTitle { get; set; }
+    public string? DocumentType { get; set; }
+    public bool IsManual { get; set; }
+    public string? ReferenceCode { get; set; }
+    public string? Description { get; set; }
+    public string? PatientName { get; set; }
+    public string? MedicalRecordNumber { get; set; }
+    public string? BoxCode { get; set; }
+    public string? PhysicalLocation { get; set; }
+    public string? Notes { get; set; }
+}
 
 public sealed class LoanCreateVM
 {

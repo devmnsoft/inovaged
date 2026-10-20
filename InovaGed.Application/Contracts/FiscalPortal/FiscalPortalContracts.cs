@@ -10,9 +10,87 @@ public static class FiscalPortalPermissions { public const string AdminView="fis
 
 public sealed record FiscalPortalPublicationCreateCommand(Guid TenantId,Guid FiscalizationPeriodId,string AccessMode,string? AccessToken,DateTimeOffset? ExpiresAt,Guid CreatedBy,string? FiscalName,string? FiscalEmail,string? Notes);
 public sealed record FiscalPortalPublicationFilter(Guid? FiscalizationPeriodId=null,string? Status=null);
-public sealed record FiscalPortalPublicationItem(Guid Id,Guid TenantId,Guid FiscalizationPeriodId,string PublicationNumber,string AccessMode,string Status,DateTimeOffset? PublishedAt,DateTimeOffset? ExpiresAt,string? FiscalName,string? FiscalEmail,DateTimeOffset? ViewedAt,DateTimeOffset? DecidedAt);
-public sealed record FiscalPortalEventItem(Guid Id,string EventType,string EventTitle,string? EventDescription,string? FromStatus,string? ToStatus,string? PerformedName,DateTimeOffset PerformedAt,string? IpAddress);
-public sealed record FiscalAcceptanceSignatureDetails(Guid Id,string SignatureType,string SignerName,string? SignerEmail,string? SignerDocument,DateTimeOffset SignedAt,string? IpAddress,string SignedHashSha256,string? ValidationStatus);
+public sealed class FiscalPortalPublicationItem
+{
+    public FiscalPortalPublicationItem() { }
+    public FiscalPortalPublicationItem(Guid Id, Guid TenantId, Guid FiscalizationPeriodId, string PublicationNumber, string AccessMode, string Status, DateTimeOffset? PublishedAt, DateTimeOffset? ExpiresAt, string? FiscalName, string? FiscalEmail, DateTimeOffset? ViewedAt, DateTimeOffset? DecidedAt)
+    {
+        this.Id = Id;
+        this.TenantId = TenantId;
+        this.FiscalizationPeriodId = FiscalizationPeriodId;
+        this.PublicationNumber = PublicationNumber;
+        this.AccessMode = AccessMode;
+        this.Status = Status;
+        this.PublishedAt = PublishedAt;
+        this.ExpiresAt = ExpiresAt;
+        this.FiscalName = FiscalName;
+        this.FiscalEmail = FiscalEmail;
+        this.ViewedAt = ViewedAt;
+        this.DecidedAt = DecidedAt;
+    }
+    public Guid Id { get; set; }
+    public Guid TenantId { get; set; }
+    public Guid FiscalizationPeriodId { get; set; }
+    public string PublicationNumber { get; set; } = "";
+    public string AccessMode { get; set; } = "";
+    public string Status { get; set; } = "";
+    public DateTimeOffset? PublishedAt { get; set; }
+    public DateTimeOffset? ExpiresAt { get; set; }
+    public string? FiscalName { get; set; }
+    public string? FiscalEmail { get; set; }
+    public DateTimeOffset? ViewedAt { get; set; }
+    public DateTimeOffset? DecidedAt { get; set; }
+}
+public sealed class FiscalPortalEventItem
+{
+    public FiscalPortalEventItem() { }
+    public FiscalPortalEventItem(Guid Id, string EventType, string EventTitle, string? EventDescription, string? FromStatus, string? ToStatus, string? PerformedName, DateTimeOffset PerformedAt, string? IpAddress)
+    {
+        this.Id = Id;
+        this.EventType = EventType;
+        this.EventTitle = EventTitle;
+        this.EventDescription = EventDescription;
+        this.FromStatus = FromStatus;
+        this.ToStatus = ToStatus;
+        this.PerformedName = PerformedName;
+        this.PerformedAt = PerformedAt;
+        this.IpAddress = IpAddress;
+    }
+    public Guid Id { get; set; }
+    public string EventType { get; set; } = "";
+    public string EventTitle { get; set; } = "";
+    public string? EventDescription { get; set; }
+    public string? FromStatus { get; set; }
+    public string? ToStatus { get; set; }
+    public string? PerformedName { get; set; }
+    public DateTimeOffset PerformedAt { get; set; }
+    public string? IpAddress { get; set; }
+}
+public sealed class FiscalAcceptanceSignatureDetails
+{
+    public FiscalAcceptanceSignatureDetails() { }
+    public FiscalAcceptanceSignatureDetails(Guid Id, string SignatureType, string SignerName, string? SignerEmail, string? SignerDocument, DateTimeOffset SignedAt, string? IpAddress, string SignedHashSha256, string? ValidationStatus)
+    {
+        this.Id = Id;
+        this.SignatureType = SignatureType;
+        this.SignerName = SignerName;
+        this.SignerEmail = SignerEmail;
+        this.SignerDocument = SignerDocument;
+        this.SignedAt = SignedAt;
+        this.IpAddress = IpAddress;
+        this.SignedHashSha256 = SignedHashSha256;
+        this.ValidationStatus = ValidationStatus;
+    }
+    public Guid Id { get; set; }
+    public string SignatureType { get; set; } = "";
+    public string SignerName { get; set; } = "";
+    public string? SignerEmail { get; set; }
+    public string? SignerDocument { get; set; }
+    public DateTimeOffset SignedAt { get; set; }
+    public string? IpAddress { get; set; }
+    public string SignedHashSha256 { get; set; } = "";
+    public string? ValidationStatus { get; set; }
+}
 public sealed record FiscalPortalPublicationDetails(FiscalPortalPublicationItem Publication,ContractFiscalizationPeriodDetails Fiscalization,IReadOnlyList<FiscalPortalEventItem> Events,FiscalAcceptanceSignatureDetails? Signature);
 
 public sealed record FiscalPortalManifestationCommand(Guid TenantId,Guid PublicationId,string ManifestationType,string Decision,string? Comments,Guid? SubmittedBy,string? SubmittedName,string? SubmittedEmail,string? IpAddress,string? UserAgent,string? RelatedItem=null);

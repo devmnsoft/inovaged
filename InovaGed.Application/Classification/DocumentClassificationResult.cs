@@ -18,7 +18,7 @@ public sealed class DocumentClassificationResult
     public Dictionary<string, (string Value, decimal? Confidence)> Metadata { get; set; } = new();
 
     // Sugestão (quando houver)
-    public Guid? SuggestedTypeId { get; set; } // ✅ deixe nullable (nem sempre tem)
+    public Guid? SuggestedTypeId { get; set; } // ✅ deixe nullable (nem sempre tem);
     public bool HasSuggestion { get; set; }
     public decimal? SuggestedConfidence { get; set; }
 

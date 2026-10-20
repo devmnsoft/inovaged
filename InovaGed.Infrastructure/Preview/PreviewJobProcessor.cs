@@ -1,3 +1,4 @@
+using InovaGed.Application.Common.Preview;
 using InovaGed.Application.Preview;
 using Microsoft.Extensions.Logging;
 
@@ -58,7 +59,9 @@ public sealed class PreviewJobProcessor
         catch (Exception ex)
         {
             var supportCode = PreviewSupportCode.Create();
-            var publicMessage = PreviewSupportCode.PublicMessage(supportCode);
+            var publicMessage = ex is DocumentConversionException conversion
+                ? $"{conversion.UserMessage} Informe o suporte {supportCode}."
+                : PreviewSupportCode.PublicMessage(supportCode);
             _logger.LogError(ex, "Falha de conversão do preview. SupportCode={SupportCode} Tenant={TenantId} Document={DocumentId} Version={VersionId} Job={JobId} Attempt={AttemptId} Stage={Stage} Cause={Cause}", supportCode, tenantId, documentId, versionId, jobId, attemptId, "CONVERSION", ex.GetType().Name);
             try
             {

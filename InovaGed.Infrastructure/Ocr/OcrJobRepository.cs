@@ -159,6 +159,7 @@ cte AS (
   WHERE
     lock_gate.ok = true
     AND capacity.running < @maxConcurrent
+    AND (next_attempt_at IS NULL OR next_attempt_at <= now())
     AND (
     status = 'PENDING'::ged.ocr_status_enum
     OR (
@@ -202,6 +203,21 @@ RETURNING
         await tx.CommitAsync(ct);
 
         return job;
+    }
+
+    public async Task<int> GetAttemptsAsync(long jobId, CancellationToken ct)
+    {
+        const string sql = "select coalesce(attempts, 0) from ged.ocr_job where id = @jobId;";
+        try
+        {
+            await using var conn = await _db.OpenAsync(ct);
+            return await conn.ExecuteScalarAsync<int>(new CommandDefinition(sql, new { jobId }, cancellationToken: ct));
+        }
+        catch (PostgresException ex) when (ex.SqlState == "42703")
+        {
+            _logger.LogWarning(ex, "Coluna ged.ocr_job.attempts ausente. A tentativa será contada como a primeira. JobId={JobId}", jobId);
+            return 0;
+        }
     }
 
     public async Task RenewLeaseAsync(long jobId, CancellationToken ct)

@@ -8,7 +8,7 @@ public sealed class DocumentClassificationDto
     public Guid? DocumentTypeId { get; set; }
     public string? DocumentTypeName { get; set; }
 
-    public string? Source { get; set; } // MANUAL / AUTO_FOLDER / AUTO_OCR
+    public string? Source { get; set; } // MANUAL / AUTO_FOLDER / AUTO_OCR;
 
     public Guid? SuggestedTypeId { get; set; }
     public string? SuggestedTypeName { get; set; }

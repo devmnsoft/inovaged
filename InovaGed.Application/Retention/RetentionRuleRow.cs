@@ -10,7 +10,7 @@ namespace InovaGed.Application.Retention
     {
         public Guid Id { get; set; }
         public string ClassCode { get; set; } = "";
-        public string StartEvent { get; set; } = "CREATED"; // CREATED|ARCHIVED|CLOSED
+        public string StartEvent { get; set; } = "CREATED"; // CREATED|ARCHIVED|CLOSED;
         public int CurrentDays { get; set; }
         public int IntermediateDays { get; set; }
         public string FinalDestination { get; set; } = "ELIMINAR";

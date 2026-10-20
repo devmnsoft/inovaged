@@ -44,7 +44,7 @@ public sealed class DocumentAiAssistService(
         if (!result.Success || result.ExecutionId is null) return ProviderFailure(result);
         if (result.StructuredData is null || !SummaryEvidenceIsLiteral(result.StructuredData.RootElement, document.Text)) return Fail(422, "O provedor retornou evidência que não pôde ser validada na versão consultada.", result.CorrelationId);
         var current = await CurrentAsync(connection, caller.TenantId, document.DocumentId, ct);
-        if (current is null || current.VersionId != document.VersionId || !await CanAsync(caller, document with { Confidential = current.Confidential }, "VIEW", ct))
+        if (current is null || current.VersionId != document.VersionId || !await CanAsync(caller, document.With(confidential: current.Confidential), "VIEW", ct))
             return await DenyAsync(caller, document, versionId, "authorization_or_state_changed", ct, 409, "O acesso, a situação ou a versão mudou durante o resumo; o resultado foi descartado.");
         await audit.WriteAsync(caller.TenantId, caller.UserId, "AI_SUMMARY", "DOCUMENT", document.DocumentId, "Resumo documental revisável gerado", caller.Ip, caller.UserAgent, new { document.VersionId, result.Provider, result.Model, result.CorrelationId, result.ExecutionId }, ct);
         return Ok(new { success = true, executionId = result.ExecutionId, state = "Completed", document.Title, document.VersionNumber, source = reference, sources = Sources(document), data = result.StructuredData.RootElement, correlationId = result.CorrelationId, reviewRequired = true });
@@ -182,7 +182,7 @@ where i.tenant_id=@tenantId and i.classification_id=@id and coalesce(i.is_active
         if (command.SelectedId is not null && command.SelectedId != Guid.Empty && string.IsNullOrWhiteSpace(selectedName)) return Fail(400, "O item escolhido não pertence ao catálogo autorizado vigente.");
         var currentId = task == AiTask.SuggestArchivalClassification ? document.ClassificationId : document.TypeId;
         var mutate = command.SelectedId is not null && command.SelectedId != Guid.Empty && command.SelectedId != currentId;
-        var record = Record(caller, command.ExecutionId, document with { VersionId = command.VersionId }, task, decisionJson, mutate ? "Applied" : "Recorded", mutate, auditAction, auditMessage, new { command.VersionId, selectedId = command.SelectedId, selectedName, reviewer = caller.UserId });
+        var record = Record(caller, command.ExecutionId, document.With(versionId: command.VersionId), task, decisionJson, mutate ? "Applied" : "Recorded", mutate, auditAction, auditMessage, new { command.VersionId, selectedId = command.SelectedId, selectedName, reviewer = caller.UserId });
         AssistedWriteResult written;
         try { written = await write(record, command.ConcurrencyToken, command.SelectedId ?? Guid.Empty, mutate, ct); }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable) { return Fail(422, "O catálogo do plano de classificação não está disponível neste ambiente."); }
@@ -216,9 +216,9 @@ where i.tenant_id=@tenantId and i.classification_id=@id and coalesce(i.is_active
         var result = await ai.ExecuteAsync(new(caller.TenantId, caller.UserId, task, instructions, [new(Reference(document), document.Text)], schema, idempotencyKey, Sources: [new AiExecutionSource(document.DocumentId, document.VersionId)]), ct);
         if (!result.Success || result.ExecutionId is null || result.StructuredData is null) return ProviderFailure(result);
         var current = await CurrentAsync(connection, caller.TenantId, document.DocumentId, ct);
-        if (current is null || current.VersionId != document.VersionId || !await CanAsync(caller, document with { Confidential = current.Confidential }, "VIEW", ct))
+        if (current is null || current.VersionId != document.VersionId || !await CanAsync(caller, document.With(confidential: current.Confidential), "VIEW", ct))
             return await DenyAsync(caller, document, versionId, "authorization_or_state_changed", ct, 409, "O acesso, a situação ou a versão mudou durante a sugestão; o resultado foi descartado.");
-        return await project(connection, document with { Token = current.Token }, result, current.Token);
+        return await project(connection, document.With(token: current.Token), result, current.Token);
     }
 
     private async Task<AssistResponse> SuggestCatalogAsync(Guid versionId, string idempotencyKey, AssistCaller caller, AiTask task, string schemaJson, IReadOnlyCollection<string> names, int available, string journey, string nameProperty, string instructions, Func<CatalogContext, CatalogSuggestion, AssistResponse> project, CancellationToken ct)
@@ -496,15 +496,62 @@ where d.tenant_id=@tenantId and d.id=@documentId and coalesce(d.reg_status,'A')=
     private static async Task<CurrentRow?> CurrentAsync(IDbConnection connection, Guid tenantId, Guid documentId, CancellationToken ct) =>
         await connection.QuerySingleOrDefaultAsync<CurrentRow>(new CommandDefinition("select current_version_id \"VersionId\", coalesce(is_confidential,false) \"Confidential\", xmin::text::bigint \"Token\" from ged.document where tenant_id=@tenantId and id=@documentId and coalesce(reg_status,'A')='A' and status<>'ARCHIVED'::ged.document_status_enum", new { tenantId, documentId }, cancellationToken: ct));
 
-    private sealed class SourceRow { public Guid VersionId { get; set; } public Guid DocumentId { get; set; } public string Title { get; set; } = ""; public int VersionNumber { get; set; } public bool Confidential { get; set; } }
-    private sealed class NamedOption { public Guid Id { get; set; } public string Name { get; set; } = ""; }
-    private sealed class ClassOption { public Guid Id { get; set; } public string Code { get; set; } = ""; public string Name { get; set; } = ""; }
+    private sealed class SourceRow { public Guid VersionId { get; set; } public Guid DocumentId { get; set; } public string Title { get; set; } = ""; public int VersionNumber { get; set; } public bool Confidential { get; set; } };
+    private sealed class NamedOption { public Guid Id { get; set; } public string Name { get; set; } = ""; };
+    private sealed class ClassOption { public Guid Id { get; set; } public string Code { get; set; } = ""; public string Name { get; set; } = ""; };
     private sealed record CurrentRow(Guid VersionId, bool Confidential, long Token);
     private sealed record CatalogContext(WorkDocument Document, Guid ExecutionId, string? CorrelationId, long Token, object Coverage) { public string Title => Document.Title; public int VersionNumber => Document.VersionNumber; }
 }
 
-public sealed record WorkDocument(Guid DocumentId, Guid VersionId, int VersionNumber, string Title, string Description, bool Confidential, Guid? TypeId, string? TypeName, Guid? ClassificationId, long Token)
+public sealed class WorkDocument
 {
+    public WorkDocument() { }
+    public WorkDocument(Guid DocumentId, Guid VersionId, int VersionNumber, string Title, string Description, bool Confidential, Guid? TypeId, string? TypeName, Guid? ClassificationId, long Token)
+    {
+        this.DocumentId = DocumentId;
+        this.VersionId = VersionId;
+        this.VersionNumber = VersionNumber;
+        this.Title = Title;
+        this.Description = Description;
+        this.Confidential = Confidential;
+        this.TypeId = TypeId;
+        this.TypeName = TypeName;
+        this.ClassificationId = ClassificationId;
+        this.Token = Token;
+    }
+    public Guid DocumentId { get; set; }
+    public Guid VersionId { get; set; }
+    public int VersionNumber { get; set; }
+    public string Title { get; set; } = "";
+    public string Description { get; set; } = "";
+    public bool Confidential { get; set; }
+    public Guid? TypeId { get; set; }
+    public string? TypeName { get; set; }
+    public Guid? ClassificationId { get; set; }
+    public long Token { get; set; }
     public string Text { get; set; } = "";
     public bool Truncated { get; set; }
+    public WorkDocument Copy() => new()
+    {
+        DocumentId = DocumentId,
+        VersionId = VersionId,
+        VersionNumber = VersionNumber,
+        Title = Title,
+        Description = Description,
+        Confidential = Confidential,
+        TypeId = TypeId,
+        TypeName = TypeName,
+        ClassificationId = ClassificationId,
+        Token = Token,
+        Text = Text,
+        Truncated = Truncated
+    };
+    public WorkDocument With(Guid? versionId = null, bool? confidential = null, long? token = null)
+    {
+        var copy = Copy();
+        if (versionId.HasValue) copy.VersionId = versionId.Value;
+        if (confidential.HasValue) copy.Confidential = confidential.Value;
+        if (token.HasValue) copy.Token = token.Value;
+        return copy;
+    }
 }

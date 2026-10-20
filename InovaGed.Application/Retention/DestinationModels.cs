@@ -2,7 +2,7 @@
 
 public sealed class DestinationCreateRequest
 {
-    public string Destination { get; set; } = "ELIMINAR"; // ELIMINAR | TRANSFERIR | RECOLHER
+    public string Destination { get; set; } = "ELIMINAR"; // ELIMINAR | TRANSFERIR | RECOLHER;
     public string? Notes { get; set; }
     public Guid[] DocumentIds { get; set; } = Array.Empty<Guid>();
 }

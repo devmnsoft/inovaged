@@ -10,7 +10,8 @@
 <form method="post" class="card border-0 shadow-sm">
 <div class="card-body row g-3">@Html.AntiForgeryToken()
 <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
-@foreach(var p in new[]{("SupplierName","Fornecedor"),("SupplierDocument","CPF / CNPJ"),("InvoiceNumber","Número da nota"),("InvoiceSeries","Série"),("CompetenceMonth","Competência (MM/AAAA)"),("ContractNumber","Contrato"),("PurchaseOrder","Ordem de serviço / compra"),("CostCenter","Centro de custo"),("ServiceDescription","Descrição do serviço")})
+@{ var gateList1 = new[]{("SupplierName","Fornecedor"),("SupplierDocument","CPF / CNPJ"),("InvoiceNumber","Número da nota"),("InvoiceSeries","Série"),("CompetenceMonth","Competência (MM/AAAA)"),("ContractNumber","Contrato"),("PurchaseOrder","Ordem de serviço / compra"),("CostCenter","Centro de custo"),("ServiceDescription","Descrição do serviço")}; }
+@foreach(var p in gateList1)
 {<div class="col-md-6"><label class="form-label" for="@p.Item1">@p.Item2</label>@Html.TextBox(p.Item1, null, new {@class="form-control"})@Html.ValidationMessage(p.Item1, null, new {@class="text-danger"})</div>}
 <div class="col-md-3"><label asp-for="IssueDate" class="form-label">Emissão</label><input asp-for="IssueDate" class="form-control" type="date" /><span asp-validation-for="IssueDate" class="text-danger"></span></div>
 <div class="col-md-3"><label asp-for="DueDate" class="form-label">Vencimento</label><input asp-for="DueDate" class="form-control" type="date" /><span asp-validation-for="DueDate" class="text-danger"></span></div>
@@ -20,5 +21,5 @@
 <div class="col-md-4"><label asp-for="UstQuantity" class="form-label">Quantidade UST</label><input asp-for="UstQuantity" class="form-control" type="number" step=".0001" /></div>
 <div class="col-md-4"><label asp-for="UstUnitValue" class="form-label">Valor unitário UST</label><input asp-for="UstUnitValue" class="form-control" type="number" step=".0001" /></div>
 <div class="col-12 form-check ms-2"><input asp-for="HasDivergence" class="form-check-input"><label asp-for="HasDivergence" class="form-check-label">Marcar divergência para tratamento (permite salvar campos fiscais incompletos)</label></div>
-</div><div class="card-footer d-flex justify-content-between align-items-center gap-3"><span class="small text-muted">Salvar a revisão registra a conferência. Não gera cobrança nem aprova pagamento.</span><button class="btn btn-primary">Salvar revisão</button></div></form>
+</div><div class="card-footer d-flex justify-content-between align-items-center gap-3"><span class="small text-muted">Salvar a revisão registra a conferência. Não gera cobrança nem aprova pagamento.</span><button class="btn btn-primary" type="submit">Salvar revisão</button></div></form>
 @section Scripts { <partial name="_ValidationScriptsPartial" /> }

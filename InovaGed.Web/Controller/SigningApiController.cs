@@ -17,6 +17,7 @@ public sealed class SigningApiController(
     IOptions<DigitalSignatureOptions> options) : ControllerBase
 {
     [HttpPost("/api/signing/sessions")]
+    [ValidateAntiForgeryToken]
     [Authorize(Policy = "SignatureCmsCreate")]
     public async Task<IActionResult> Create([FromBody] CreateSigningSessionRequest request, CancellationToken ct)
     {
@@ -54,6 +55,7 @@ public sealed class SigningApiController(
     }
 
     [HttpPost("/api/signing/sessions/{id:guid}/complete")]
+    [ValidateAntiForgeryToken]
     [Authorize(Policy = "SignatureCmsCreate")]
     public async Task<IActionResult> Complete(Guid id, [FromBody] CompleteSigningSessionRequest request, CancellationToken ct)
     {
@@ -66,6 +68,7 @@ public sealed class SigningApiController(
     }
 
     [HttpPost("/api/signing/sessions/{id:guid}/cancel")]
+    [ValidateAntiForgeryToken]
     [Authorize(Policy = "SignatureCmsCreate")]
     public async Task<IActionResult> Cancel(Guid id, CancellationToken ct) { Response.Headers.CacheControl = "no-store"; var tenantId=ReadGuidClaim("tenant_id"); var userId=ReadGuidClaim("sub") ?? ReadGuidClaim(System.Security.Claims.ClaimTypes.NameIdentifier); if(tenantId is null||userId is null) return Forbid(); return await sessions.CancelAsync(tenantId.Value,id,userId.Value,ct) ? NoContent() : NotFound(); }
     [HttpGet("/api/signatures/{id:guid}")][Authorize(Policy = "SignatureView")] public async Task<IActionResult> Signature(Guid id,CancellationToken ct){ var tenantId=ReadGuidClaim("tenant_id"); if(tenantId is null) return Forbid(); var s=await signatures.GetAsync(tenantId.Value,id,ct); return s is null?NotFound():Ok(s); }

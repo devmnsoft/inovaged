@@ -9,6 +9,6 @@ public sealed class ObservabilityOptions
     public TracingOptions Tracing { get; set; } = new();
     public MetricsOptions Metrics { get; set; } = new();
 }
-public sealed class OtlpOptions { public bool Enabled { get; set; } public string Endpoint { get; set; } = ""; public string Protocol { get; set; } = "Grpc"; public string Headers { get; set; } = ""; }
-public sealed class TracingOptions { public bool Enabled { get; set; } = true; public double SamplingRatio { get; set; } = .1; public bool RecordExceptions { get; set; } = true; }
-public sealed class MetricsOptions { public bool Enabled { get; set; } = true; public bool PrometheusEndpointEnabled { get; set; } }
+public sealed class OtlpOptions { public bool Enabled { get; set; } public string Endpoint { get; set; } = ""; public string Protocol { get; set; } = "Grpc"; public string Headers { get; set; } = ""; };
+public sealed class TracingOptions { public bool Enabled { get; set; } = true; public double SamplingRatio { get; set; } = .1; public bool RecordExceptions { get; set; } = true; };
+public sealed class MetricsOptions { public bool Enabled { get; set; } = true; public bool PrometheusEndpointEnabled { get; set; } };

@@ -69,7 +69,8 @@
     <div class="card-header bg-white fw-semibold"><i class="bi bi-funnel me-1"></i>Filtros</div>
     <div class="card-body">
         <form method="get" class="row g-3 align-items-end">
-            <div class="col-md-2"><label class="form-label">Status OCR</label><select class="form-select" name="Status"><option value="">Todos</option>@foreach (var s in new[] { "NONE", "PENDING", "PROCESSING", "COMPLETED", "COMPLETED_WITHOUT_TEXT", "ERROR", "CANCELLED", "PARTIAL" }) { <option value="@s" selected="@(string.Equals(filter.Status, s, StringComparison.OrdinalIgnoreCase))">@s</option> }</select></div>
+            @{ var gateList1 = new[] { "NONE", "PENDING", "PROCESSING", "COMPLETED", "COMPLETED_WITHOUT_TEXT", "ERROR", "CANCELLED", "PARTIAL" }; }
+            <div class="col-md-2"><label class="form-label">Status OCR</label><select class="form-select" name="Status"><option value="">Todos</option>@foreach (var s in gateList1) { <option value="@s" selected="@(string.Equals(filter.Status, s, StringComparison.OrdinalIgnoreCase))">@s</option> }</select></div>
             <div class="col-md-2"><label class="form-label">Pasta</label><input class="form-control" name="Folder" value="@filter.Folder" placeholder="Nome da pasta" /></div>
             <div class="col-md-2"><label class="form-label">Tipo documental</label><input class="form-control" name="DocumentType" value="@filter.DocumentType" placeholder="Tipo" /></div>
             <div class="col-md-2"><label class="form-label">Período de upload inicial</label><input class="form-control" type="date" name="From" value="@(filter.From?.ToString("yyyy-MM-dd"))" /></div>

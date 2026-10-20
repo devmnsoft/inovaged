@@ -40,7 +40,7 @@ public sealed class ProtocolAiCoverageDto
 public sealed class ProtocolAiPendingItemDto
 {
     public string Item { get; set; } = string.Empty;
-    public string Status { get; set; } = "CONFERENCIA_HUMANA"; // CONFIRMADO ou CONFERENCIA_HUMANA
+    public string Status { get; set; } = "CONFERENCIA_HUMANA"; // CONFIRMADO ou CONFERENCIA_HUMANA;
     public string? Evidence { get; set; }
     public string? EvidenceSource { get; set; }
     public bool RequiresHumanCheck { get; set; } = true;

@@ -132,7 +132,7 @@ where tenant_id=@tenantId and {predicate}
 order by created_at desc
 """, new { tenantId, id }, cancellationToken: ct))).AsList();
     }
-    private sealed class DocumentInfo { public string? Title { get; set; } }
+    private sealed class DocumentInfo { public string? Title { get; set; } };
     private string BuildPublicUrl(string token) { var baseUrl = _configuration["SecureDocumentLinks:PublicBaseUrl"]?.TrimEnd('/'); if (string.IsNullOrWhiteSpace(baseUrl)) { var r = _http.HttpContext?.Request; baseUrl = r is null ? string.Empty : $"{r.Scheme}://{r.Host}"; } return $"{baseUrl}/SharedDocument/{token}"; }
     private static string CreateToken() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).Replace('+', '-').Replace('/', '_').TrimEnd('=');
     private static string Sha256Token(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();

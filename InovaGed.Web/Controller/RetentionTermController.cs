@@ -85,6 +85,7 @@ public sealed class RetentionTermController : Controller
     }
 
     [HttpPost("Sign")]
+    [ValidateAntiForgeryToken]
     [Authorize(Policy = Policies.CanSignRetention)]
     public async Task<IActionResult> Sign([FromBody] SignTermRequest req, CancellationToken ct)
     {

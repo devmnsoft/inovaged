@@ -33,39 +33,86 @@ public interface IDocumentWorkflowCommands
          CancellationToken ct);
 }
 
-public sealed record WorkflowLogRow(
-  DateTimeOffset CreatedAt,
-  string FromStatus,
-  string ToStatus,
-  string? Reason,
-  Guid? CreatedBy,
-  string? UserName);
+public sealed class WorkflowLogRow
+{
+    public WorkflowLogRow() { }
+    public WorkflowLogRow(DateTimeOffset CreatedAt, string FromStatus, string ToStatus, string? Reason, Guid? CreatedBy, string? UserName)
+    {
+        this.CreatedAt = CreatedAt;
+        this.FromStatus = FromStatus;
+        this.ToStatus = ToStatus;
+        this.Reason = Reason;
+        this.CreatedBy = CreatedBy;
+        this.UserName = UserName;
+    }
+    public DateTimeOffset CreatedAt { get; set; }
+    public string FromStatus { get; set; } = "";
+    public string ToStatus { get; set; } = "";
+    public string? Reason { get; set; }
+    public Guid? CreatedBy { get; set; }
+    public string? UserName { get; set; }
+}
 
-public sealed record DocumentWorkflowStateDto(
-    Guid DocumentWorkflowId,
-    Guid WorkflowId,
-    string WorkflowName,
-    Guid CurrentStageId,
-    string CurrentStageName,
-    bool IsCompleted,
-    DateTime StartedAt,
-    Guid? StartedBy
-);
+public sealed class DocumentWorkflowStateDto
+{
+    public DocumentWorkflowStateDto() { }
+    public DocumentWorkflowStateDto(Guid DocumentWorkflowId, Guid WorkflowId, string WorkflowName, Guid CurrentStageId, string CurrentStageName, bool IsCompleted, DateTime StartedAt, Guid? StartedBy)
+    {
+        this.DocumentWorkflowId = DocumentWorkflowId;
+        this.WorkflowId = WorkflowId;
+        this.WorkflowName = WorkflowName;
+        this.CurrentStageId = CurrentStageId;
+        this.CurrentStageName = CurrentStageName;
+        this.IsCompleted = IsCompleted;
+        this.StartedAt = StartedAt;
+        this.StartedBy = StartedBy;
+    }
+    public Guid DocumentWorkflowId { get; set; }
+    public Guid WorkflowId { get; set; }
+    public string WorkflowName { get; set; } = "";
+    public Guid CurrentStageId { get; set; }
+    public string CurrentStageName { get; set; } = "";
+    public bool IsCompleted { get; set; }
+    public DateTime StartedAt { get; set; }
+    public Guid? StartedBy { get; set; }
+}
 
-public sealed record DocumentWorkflowTransitionDto(
-    Guid Id,
-    string Name,
-    Guid ToStageId,
-    string ToStageName,
-    bool RequiresReason
-);
+public sealed class DocumentWorkflowTransitionDto
+{
+    public DocumentWorkflowTransitionDto() { }
+    public DocumentWorkflowTransitionDto(Guid Id, string Name, Guid ToStageId, string ToStageName, bool RequiresReason)
+    {
+        this.Id = Id;
+        this.Name = Name;
+        this.ToStageId = ToStageId;
+        this.ToStageName = ToStageName;
+        this.RequiresReason = RequiresReason;
+    }
+    public Guid Id { get; set; }
+    public string Name { get; set; } = "";
+    public Guid ToStageId { get; set; }
+    public string ToStageName { get; set; } = "";
+    public bool RequiresReason { get; set; }
+}
 
-public sealed record DocumentWorkflowHistoryDto(
-    long Id,
-    string? FromStageName,
-    string ToStageName,
-    DateTime PerformedAt,
-    Guid? PerformedBy,
-    string? Reason,
-    string? Comments
-);
+public sealed class DocumentWorkflowHistoryDto
+{
+    public DocumentWorkflowHistoryDto() { }
+    public DocumentWorkflowHistoryDto(long Id, string? FromStageName, string ToStageName, DateTime PerformedAt, Guid? PerformedBy, string? Reason, string? Comments)
+    {
+        this.Id = Id;
+        this.FromStageName = FromStageName;
+        this.ToStageName = ToStageName;
+        this.PerformedAt = PerformedAt;
+        this.PerformedBy = PerformedBy;
+        this.Reason = Reason;
+        this.Comments = Comments;
+    }
+    public long Id { get; set; }
+    public string? FromStageName { get; set; }
+    public string ToStageName { get; set; } = "";
+    public DateTime PerformedAt { get; set; }
+    public Guid? PerformedBy { get; set; }
+    public string? Reason { get; set; }
+    public string? Comments { get; set; }
+}

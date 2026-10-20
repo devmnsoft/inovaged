@@ -38,7 +38,8 @@
             <label class="form-label" for="term-status">Situação</label>
             <select id="term-status" class="form-select" name="status">
                 <option value="">Todas</option>
-                @foreach (var option in new[] { "DRAFT", "SIGNED", "EXECUTED", "CANCELLED" })
+                @{ var gateList1 = new[] { "DRAFT", "SIGNED", "EXECUTED", "CANCELLED" }; }
+                @foreach (var option in gateList1)
                 {
                     if (status == option)
                     {

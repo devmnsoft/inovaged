@@ -10,7 +10,8 @@
     </nav>
     <div class="component-search" data-library-section="fields"><input type="search" placeholder="Buscar por nome, categoria ou exemplo" aria-label="Buscar campo" data-component-search /></div>
     <div class="component-list">
-        @foreach (var item in new[] { ("text", "edit", "Texto"), ("line", "columns", "Linha"), ("rect", "cards", "Forma"), ("image", "preview", "Imagem"), ("logo", "preview", "Logo"), ("qr", "label", "QR Code"), ("barcode", "metadata", "Código de barras") }) {
+        @{ var gateList1 = new[] { ("text", "edit", "Texto"), ("line", "columns", "Linha"), ("rect", "cards", "Forma"), ("image", "preview", "Imagem"), ("logo", "preview", "Logo"), ("qr", "label", "QR Code"), ("barcode", "metadata", "Código de barras") }; }
+        @foreach (var item in gateList1) {
             <button type="button" draggable="true" data-add="@item.Item1" data-label="@item.Item3" title="Adicionar @item.Item3" @(canEdit ? null : "disabled")><i><app-icon name="@item.Item2" size="18" decorative="true" /></i><span>@item.Item3</span></button>
         }
         <section class="field-favorites" data-field-favorites data-library-section="fields" hidden><h3>Favoritos</h3><div></div></section>
@@ -24,7 +25,8 @@
             }
         }
         <h3 id="library-panel-blocks" role="tabpanel" aria-labelledby="library-tab-blocks" data-library-section="blocks">Padrões</h3>
-        @foreach (var preset in new[] { "Cabeçalho institucional", "Identificação", "Classificação", "Temporalidade", "Localização", "Rastreabilidade", "Cliente/Contrato" }) { <button type="button" data-preset="@preset" @(canEdit ? null : "disabled")><i><app-icon name="cards" size="18" decorative="true" /></i><span>@preset</span></button> }
+        @{ var gateList2 = new[] { "Cabeçalho institucional", "Identificação", "Classificação", "Temporalidade", "Localização", "Rastreabilidade", "Cliente/Contrato" }; }
+        @foreach (var preset in gateList2) { <button type="button" data-preset="@preset" @(canEdit ? null : "disabled")><i><app-icon name="cards" size="18" decorative="true" /></i><span>@preset</span></button> }
         <section data-library-section="blocks" data-custom-blocks aria-live="polite"><h3>Meus blocos</h3><p data-custom-blocks-status>Carregando blocos…</p><div data-custom-blocks-list></div></section>
     </div>
     <partial name="~/Views/Labels/Designer/_DesignerLayers.cshtml" model="Model" />

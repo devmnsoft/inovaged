@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
- 
+[AllowAnonymous]
 public sealed class IcpController : Controller
 {
     public IActionResult Index()

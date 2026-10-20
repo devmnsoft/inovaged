@@ -27,7 +27,7 @@
                             <form method="post" action="/Protocolo/MarcarNotificacaoLida" class="d-inline">
                                 @Html.AntiForgeryToken()
                                 <input type="hidden" name="id" value="@n.Id" />
-                                <button class="btn btn-sm btn-outline-secondary">Marcar lida</button>
+                                <button class="btn btn-sm btn-outline-secondary" type="submit">Marcar lida</button>
                             </form>
                         }
                     </div>

@@ -195,7 +195,7 @@ where tenant_id=@tenantId and id=@pendingId
         return string.IsNullOrWhiteSpace(text) ? "temporalidade:falha" : text;
     }
 
-    private sealed class ReviewLookup { public Guid Id { get; set; } public string Fingerprint { get; set; } = ""; public string DecisionJson { get; set; } = ""; public string Outcome { get; set; } = ""; public bool Partial { get; set; } public bool RetentionPending { get; set; } public int RetentionAttempts { get; set; } public DateTimeOffset? RetentionResolvedAt { get; set; } }
-    private sealed class ClaimRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public Guid? ApplicationId { get; set; } public int Attempts { get; set; } }
-    private sealed class PendingItemRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public DateTimeOffset CreatedAt { get; set; } public int Attempts { get; set; } public string? LastError { get; set; } public DateTimeOffset? ResolvedAt { get; set; } public DateTimeOffset? ClaimedAt { get; set; } }
+    private sealed class ReviewLookup { public Guid Id { get; set; } public string Fingerprint { get; set; } = ""; public string DecisionJson { get; set; } = ""; public string Outcome { get; set; } = ""; public bool Partial { get; set; } public bool RetentionPending { get; set; } public int RetentionAttempts { get; set; } public DateTimeOffset? RetentionResolvedAt { get; set; } };
+    private sealed class ClaimRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public Guid? ApplicationId { get; set; } public int Attempts { get; set; } };
+    private sealed class PendingItemRow { public Guid Id { get; set; } public Guid DocumentId { get; set; } public DateTimeOffset CreatedAt { get; set; } public int Attempts { get; set; } public string? LastError { get; set; } public DateTimeOffset? ResolvedAt { get; set; } public DateTimeOffset? ClaimedAt { get; set; } };
 }

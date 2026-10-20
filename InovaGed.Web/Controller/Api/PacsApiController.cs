@@ -20,6 +20,7 @@ public sealed class PacsApiController : ControllerBase
     }
 
     [HttpPost("tickets")]
+    [ValidateAntiForgeryToken]
     [RequestSizeLimit(150_000_000)]
     public async Task<IActionResult> Create([FromForm] PacsTicketUploadRequest req, CancellationToken ct)
     {

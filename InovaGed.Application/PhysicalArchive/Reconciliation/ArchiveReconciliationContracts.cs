@@ -9,8 +9,70 @@ public static class ReconciliationSeverity { public const string Critical="CRITI
 public sealed record ArchiveReconciliationStartCommand(Guid TenantId,Guid UserId,string Source="MANUAL",Guid? InventorySessionId=null);
 public sealed record ArchiveReconciliationRunFilter(string? Status=null,string? Source=null);
 public sealed record ArchiveReconciliationIssueFilter(string? Status=null,string? Severity=null,string? IssueType=null,Guid? RunId=null,string? Search=null);
-public sealed record ArchiveReconciliationRunItem(Guid Id,string RunNumber,string Source,string Status,int TotalChecked,int TotalIssues,int TotalCritical,int TotalHigh,int TotalMedium,int TotalLow,DateTime StartedAt,DateTime? FinishedAt);
-public sealed record ArchiveReconciliationIssueItem(Guid Id,Guid RunId,string IssueType,string Severity,string? SubjectType,Guid? SubjectId,string? ControlNumber,string Title,string Description,string? Suggestion,string? ProposedAction,string Status,DateTime CreatedAt);
+public sealed class ArchiveReconciliationRunItem
+{
+    public ArchiveReconciliationRunItem() { }
+    public ArchiveReconciliationRunItem(Guid Id, string RunNumber, string Source, string Status, int TotalChecked, int TotalIssues, int TotalCritical, int TotalHigh, int TotalMedium, int TotalLow, DateTime StartedAt, DateTime? FinishedAt)
+    {
+        this.Id = Id;
+        this.RunNumber = RunNumber;
+        this.Source = Source;
+        this.Status = Status;
+        this.TotalChecked = TotalChecked;
+        this.TotalIssues = TotalIssues;
+        this.TotalCritical = TotalCritical;
+        this.TotalHigh = TotalHigh;
+        this.TotalMedium = TotalMedium;
+        this.TotalLow = TotalLow;
+        this.StartedAt = StartedAt;
+        this.FinishedAt = FinishedAt;
+    }
+    public Guid Id { get; set; }
+    public string RunNumber { get; set; } = "";
+    public string Source { get; set; } = "";
+    public string Status { get; set; } = "";
+    public int TotalChecked { get; set; }
+    public int TotalIssues { get; set; }
+    public int TotalCritical { get; set; }
+    public int TotalHigh { get; set; }
+    public int TotalMedium { get; set; }
+    public int TotalLow { get; set; }
+    public DateTime StartedAt { get; set; }
+    public DateTime? FinishedAt { get; set; }
+}
+public sealed class ArchiveReconciliationIssueItem
+{
+    public ArchiveReconciliationIssueItem() { }
+    public ArchiveReconciliationIssueItem(Guid Id, Guid RunId, string IssueType, string Severity, string? SubjectType, Guid? SubjectId, string? ControlNumber, string Title, string Description, string? Suggestion, string? ProposedAction, string Status, DateTime CreatedAt)
+    {
+        this.Id = Id;
+        this.RunId = RunId;
+        this.IssueType = IssueType;
+        this.Severity = Severity;
+        this.SubjectType = SubjectType;
+        this.SubjectId = SubjectId;
+        this.ControlNumber = ControlNumber;
+        this.Title = Title;
+        this.Description = Description;
+        this.Suggestion = Suggestion;
+        this.ProposedAction = ProposedAction;
+        this.Status = Status;
+        this.CreatedAt = CreatedAt;
+    }
+    public Guid Id { get; set; }
+    public Guid RunId { get; set; }
+    public string IssueType { get; set; } = "";
+    public string Severity { get; set; } = "";
+    public string? SubjectType { get; set; }
+    public Guid? SubjectId { get; set; }
+    public string? ControlNumber { get; set; }
+    public string Title { get; set; } = "";
+    public string Description { get; set; } = "";
+    public string? Suggestion { get; set; }
+    public string? ProposedAction { get; set; }
+    public string Status { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+}
 public sealed record ArchiveReconciliationRunDetails(ArchiveReconciliationRunItem Run,IReadOnlyList<ArchiveReconciliationIssueItem> Issues);
 public sealed record ArchiveReconciliationIssueDetails(ArchiveReconciliationIssueItem Issue,string? ExpectedValue,string? FoundValue,string? ProposedPayload,string? ResolutionNotes,DateTime? ResolvedAt);
 public sealed record ArchiveReconciliationResult(Guid RunId,int TotalChecked,int TotalIssues,int Critical,int High,int Medium,int Low);

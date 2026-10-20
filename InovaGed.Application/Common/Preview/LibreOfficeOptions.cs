@@ -25,6 +25,12 @@ public sealed class LibreOfficeOptions
     /// </summary>
     public int TimeoutSeconds { get; set; } = 120;
 
+    /// <summary>
+    /// Teto da conversão, em minutos. Arquivos maiores usam o intervalo entre o timeout base e este teto.
+    /// O código não aceita valor acima de 15 minutos.
+    /// </summary>
+    public int MaxTimeoutMinutes { get; set; } = 8;
+
     public string GetResolvedSofficePath()
     {
         if (!string.IsNullOrWhiteSpace(SofficePath))

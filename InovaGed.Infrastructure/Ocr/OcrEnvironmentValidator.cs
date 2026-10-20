@@ -1,5 +1,6 @@
 using System.Security.Principal;
 using System.Text;
+using InovaGed.Application.Common.Preview;
 using InovaGed.Application.Common.Storage;
 using InovaGed.Application.Ocr;
 using Microsoft.Extensions.Options;
@@ -9,12 +10,14 @@ namespace InovaGed.Infrastructure.Ocr;
 public sealed class OcrEnvironmentValidator : IOcrEnvironmentValidator
 {
     private readonly OcrOptions _options;
+    private readonly LibreOfficeOptions _libreOffice;
     private readonly IFileStorage _storage;
     private readonly IOcrProcessRunner _runner;
 
-    public OcrEnvironmentValidator(IOptions<OcrOptions> options, IFileStorage storage, IOcrProcessRunner runner)
+    public OcrEnvironmentValidator(IOptions<OcrOptions> options, IOptions<LibreOfficeOptions> libreOffice, IFileStorage storage, IOcrProcessRunner runner)
     {
         _options = options.Value;
+        _libreOffice = libreOffice.Value;
         _storage = storage;
         _runner = runner;
     }
@@ -50,6 +53,9 @@ public sealed class OcrEnvironmentValidator : IOcrEnvironmentValidator
         result.Checks.Add(await CheckExecutableAsync("Poppler pdftotext", "Ocr:PdfToTextPath", _options.PdfToTextPath, new[] { "-v" }, env, ct));
         result.Checks.Add(CheckDirectory("PopplerBinPath", "Ocr:PopplerBinPath", _options.PopplerBinPath, "Configure a pasta bin do Poppler."));
         result.Checks.Add(CheckStorage(result.StoragePath));
+        result.Checks.AddRange(await ConversionEnvironmentProbe.InspectAsync(_libreOffice, ct));
+        if (result.Checks.Any(check => check.Name == "LibreOffice" && !check.Success))
+            result.Warnings.Add(DocumentConversionException.UnavailableMessage);
 
         result.IsValid = result.Checks.Where(c => c.Required).All(c => c.Success);
         var failed = result.Checks.Where(c => c.Required && !c.Success).Select(c => $"{c.Name}: {c.Message ?? c.Suggestion ?? "falhou"}").ToList();

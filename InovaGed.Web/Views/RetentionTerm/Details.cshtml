@@ -63,9 +63,10 @@
             const signerRole = prompt("Cargo/Função (opcional):") || "";
             const signerDocument = prompt("Documento (CPF/ID) (opcional):") || "";
 
+            const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value || "";
             const res = await fetch("/RetentionTerms/Sign", {
               method: "POST",
-              headers: {"Content-Type":"application/json"},
+              headers: {"Content-Type":"application/json", "RequestVerificationToken": token},
               body: JSON.stringify({ termId: "@Model.Term.Id", signerName, signerRole, signerDocument })
             });
 

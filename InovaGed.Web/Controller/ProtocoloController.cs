@@ -1204,12 +1204,12 @@ insert into ged.protocolo_minuta_historico (
 
     private bool IsAdminOrGestor() => RolePolicyHelper.IsFullAdmin(User) || User.IsInNormalizedRole(AppRoles.AdministradorOphir);
     private static bool StatusEncerrado(string? s) => new[] { "FINALIZADO", "ARQUIVADO", "CANCELADO", "DEFERIDO", "INDEFERIDO" }.Contains((s ?? "").ToUpperInvariant());
-    private sealed class NumeroGerado { public int Sequencial { get; set; } public string Numero { get; set; } = ""; }
-    private sealed class Basico { public Guid Id { get; set; } public string Status { get; set; } = ""; public Guid? SetorAtualId { get; set; } }
-    private sealed class ProtocolDraftEditRow { public Guid Id { get; set; } public Guid SetorId { get; set; } public string Titulo { get; set; } = ""; public string Conteudo { get; set; } = ""; public string Status { get; set; } = ""; public int Versao { get; set; } }
-    private sealed class ProtocolPendingEditRow { public Guid Id { get; set; } public Guid SetorId { get; set; } public string Descricao { get; set; } = ""; public string Status { get; set; } = ""; public Guid? AtribuidaPara { get; set; } }
-    private sealed class DocumentoBasico { public Guid Id { get; set; } public Guid ProtocoloId { get; set; } public Guid? SetorId { get; set; } public string Status { get; set; } = ""; public Guid? SetorAtualId { get; set; } }
-    private sealed class DocumentoArquivo { public Guid Id { get; set; } public Guid ProtocoloId { get; set; } public string NomeArquivo { get; set; } = ""; public string? ContentType { get; set; } public byte[]? ArquivoBytes { get; set; } }
+    private sealed class NumeroGerado { public int Sequencial { get; set; } public string Numero { get; set; } = ""; };
+    private sealed class Basico { public Guid Id { get; set; } public string Status { get; set; } = ""; public Guid? SetorAtualId { get; set; } };
+    private sealed class ProtocolDraftEditRow { public Guid Id { get; set; } public Guid SetorId { get; set; } public string Titulo { get; set; } = ""; public string Conteudo { get; set; } = ""; public string Status { get; set; } = ""; public int Versao { get; set; } };
+    private sealed class ProtocolPendingEditRow { public Guid Id { get; set; } public Guid SetorId { get; set; } public string Descricao { get; set; } = ""; public string Status { get; set; } = ""; public Guid? AtribuidaPara { get; set; } };
+    private sealed class DocumentoBasico { public Guid Id { get; set; } public Guid ProtocoloId { get; set; } public Guid? SetorId { get; set; } public string Status { get; set; } = ""; public Guid? SetorAtualId { get; set; } };
+    private sealed class DocumentoArquivo { public Guid Id { get; set; } public Guid ProtocoloId { get; set; } public string NomeArquivo { get; set; } = ""; public string? ContentType { get; set; } public byte[]? ArquivoBytes { get; set; } };
 
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> AiAssist(Guid protocoloId, string? taskKind, string? idempotencyKey, CancellationToken ct)

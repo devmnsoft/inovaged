@@ -9,11 +9,179 @@ public enum SignatureProfile { AD_RB, AD_RT, AD_RV, AD_RC, AD_RA, UNKNOWN, NOT_A
 public sealed record CreateSigningSessionRequest(Guid DocumentId, Guid DocumentVersionId, string? Purpose);
 
 public sealed record CreateSigningSessionResponse(Guid SessionId, string Status, string ContentUrl, string ContentToken, string CompletionToken, string ExpectedSha256, long SizeBytes, string FileName, string DocumentCode, string VersionLabel, DateTimeOffset ExpiresAt, string CorrelationId);
-public sealed record SigningSessionRecord(Guid Id, Guid TenantId, Guid UserId, Guid DocumentId, Guid DocumentVersionId, string Status, string ContentHash, string ContentHashAlgorithm, long SizeBytes, string FileName, string DocumentCode, string VersionLabel, DateTimeOffset ExpiresAt, DateTimeOffset? FirstContentAccessedAt, DateTimeOffset? CompletedAt, DateTimeOffset? CancelledAt, int FailureCount, string CorrelationId, Guid? SignatureId = null, string? SafeError = null);
-public sealed record DocumentSignatureRecord(Guid Id, Guid TenantId, Guid SessionId, Guid DocumentId, Guid DocumentVersionId, string SignatureType, string SignatureFormat, string SignatureProfile, string SignatureSource, string CryptographicStatus, string ValidationStatus, string ConformityStatus, string CmsSha256, string ContentSha256, byte[] CmsBytes, byte[] CertificateDer, IReadOnlyList<byte[]> CertificateChainDer, string EngineVersion, string CorrelationId, DateTimeOffset CreatedAt, string CertificateStatus = "NOT_VERIFIABLE", string TrustStatus = "NOT_VERIFIABLE");
-public sealed record SignatureValidationRunRecord(Guid Id, Guid TenantId, Guid SignatureId, string CryptographicStatus, string ValidationStatus, string ConformityStatus, string EngineVersion, DateTimeOffset ValidatedAt, string CorrelationId, string CertificateStatus = "NOT_VERIFIABLE", string TrustStatus = "NOT_VERIFIABLE");
-public sealed record SignatureEventRecord(Guid Id, Guid TenantId, Guid? SessionId, Guid? SignatureId, string EventType, string SafeMessage, string CorrelationId, DateTimeOffset CreatedAt);
-public sealed record SigningContentMetadata(Guid TenantId, Guid DocumentId, Guid DocumentVersionId, string FileName, string DocumentCode, string VersionLabel, string ContentType, long SizeBytes);
+public sealed class SigningSessionRecord
+{
+    public SigningSessionRecord() { }
+    public SigningSessionRecord(Guid Id, Guid TenantId, Guid UserId, Guid DocumentId, Guid DocumentVersionId, string Status, string ContentHash, string ContentHashAlgorithm, long SizeBytes, string FileName, string DocumentCode, string VersionLabel, DateTimeOffset ExpiresAt, DateTimeOffset? FirstContentAccessedAt, DateTimeOffset? CompletedAt, DateTimeOffset? CancelledAt, int FailureCount, string CorrelationId, Guid? SignatureId = null, string? SafeError = null)
+    {
+        this.Id = Id;
+        this.TenantId = TenantId;
+        this.UserId = UserId;
+        this.DocumentId = DocumentId;
+        this.DocumentVersionId = DocumentVersionId;
+        this.Status = Status;
+        this.ContentHash = ContentHash;
+        this.ContentHashAlgorithm = ContentHashAlgorithm;
+        this.SizeBytes = SizeBytes;
+        this.FileName = FileName;
+        this.DocumentCode = DocumentCode;
+        this.VersionLabel = VersionLabel;
+        this.ExpiresAt = ExpiresAt;
+        this.FirstContentAccessedAt = FirstContentAccessedAt;
+        this.CompletedAt = CompletedAt;
+        this.CancelledAt = CancelledAt;
+        this.FailureCount = FailureCount;
+        this.CorrelationId = CorrelationId;
+        this.SignatureId = SignatureId;
+        this.SafeError = SafeError;
+    }
+    public Guid Id { get; set; }
+    public Guid TenantId { get; set; }
+    public Guid UserId { get; set; }
+    public Guid DocumentId { get; set; }
+    public Guid DocumentVersionId { get; set; }
+    public string Status { get; set; } = "";
+    public string ContentHash { get; set; } = "";
+    public string ContentHashAlgorithm { get; set; } = "";
+    public long SizeBytes { get; set; }
+    public string FileName { get; set; } = "";
+    public string DocumentCode { get; set; } = "";
+    public string VersionLabel { get; set; } = "";
+    public DateTimeOffset ExpiresAt { get; set; }
+    public DateTimeOffset? FirstContentAccessedAt { get; set; }
+    public DateTimeOffset? CompletedAt { get; set; }
+    public DateTimeOffset? CancelledAt { get; set; }
+    public int FailureCount { get; set; }
+    public string CorrelationId { get; set; } = "";
+    public Guid? SignatureId { get; set; } = null;
+    public string? SafeError { get; set; } = null;
+}
+public sealed class DocumentSignatureRecord
+{
+    public DocumentSignatureRecord() { }
+    public DocumentSignatureRecord(Guid Id, Guid TenantId, Guid SessionId, Guid DocumentId, Guid DocumentVersionId, string SignatureType, string SignatureFormat, string SignatureProfile, string SignatureSource, string CryptographicStatus, string ValidationStatus, string ConformityStatus, string CmsSha256, string ContentSha256, byte[] CmsBytes, byte[] CertificateDer, IReadOnlyList<byte[]> CertificateChainDer, string EngineVersion, string CorrelationId, DateTimeOffset CreatedAt, string CertificateStatus = "NOT_VERIFIABLE", string TrustStatus = "NOT_VERIFIABLE")
+    {
+        this.Id = Id;
+        this.TenantId = TenantId;
+        this.SessionId = SessionId;
+        this.DocumentId = DocumentId;
+        this.DocumentVersionId = DocumentVersionId;
+        this.SignatureType = SignatureType;
+        this.SignatureFormat = SignatureFormat;
+        this.SignatureProfile = SignatureProfile;
+        this.SignatureSource = SignatureSource;
+        this.CryptographicStatus = CryptographicStatus;
+        this.ValidationStatus = ValidationStatus;
+        this.ConformityStatus = ConformityStatus;
+        this.CmsSha256 = CmsSha256;
+        this.ContentSha256 = ContentSha256;
+        this.CmsBytes = CmsBytes;
+        this.CertificateDer = CertificateDer;
+        this.CertificateChainDer = CertificateChainDer;
+        this.EngineVersion = EngineVersion;
+        this.CorrelationId = CorrelationId;
+        this.CreatedAt = CreatedAt;
+        this.CertificateStatus = CertificateStatus;
+        this.TrustStatus = TrustStatus;
+    }
+    public Guid Id { get; set; }
+    public Guid TenantId { get; set; }
+    public Guid SessionId { get; set; }
+    public Guid DocumentId { get; set; }
+    public Guid DocumentVersionId { get; set; }
+    public string SignatureType { get; set; } = "";
+    public string SignatureFormat { get; set; } = "";
+    public string SignatureProfile { get; set; } = "";
+    public string SignatureSource { get; set; } = "";
+    public string CryptographicStatus { get; set; } = "";
+    public string ValidationStatus { get; set; } = "";
+    public string ConformityStatus { get; set; } = "";
+    public string CmsSha256 { get; set; } = "";
+    public string ContentSha256 { get; set; } = "";
+    public byte[] CmsBytes { get; set; } = null!;
+    public byte[] CertificateDer { get; set; } = null!;
+    public IReadOnlyList<byte[]> CertificateChainDer { get; set; } = null!;
+    public string EngineVersion { get; set; } = "";
+    public string CorrelationId { get; set; } = "";
+    public DateTimeOffset CreatedAt { get; set; }
+    public string CertificateStatus { get; set; } = "NOT_VERIFIABLE";
+    public string TrustStatus { get; set; } = "NOT_VERIFIABLE";
+}
+public sealed class SignatureValidationRunRecord
+{
+    public SignatureValidationRunRecord() { }
+    public SignatureValidationRunRecord(Guid Id, Guid TenantId, Guid SignatureId, string CryptographicStatus, string ValidationStatus, string ConformityStatus, string EngineVersion, DateTimeOffset ValidatedAt, string CorrelationId, string CertificateStatus = "NOT_VERIFIABLE", string TrustStatus = "NOT_VERIFIABLE")
+    {
+        this.Id = Id;
+        this.TenantId = TenantId;
+        this.SignatureId = SignatureId;
+        this.CryptographicStatus = CryptographicStatus;
+        this.ValidationStatus = ValidationStatus;
+        this.ConformityStatus = ConformityStatus;
+        this.EngineVersion = EngineVersion;
+        this.ValidatedAt = ValidatedAt;
+        this.CorrelationId = CorrelationId;
+        this.CertificateStatus = CertificateStatus;
+        this.TrustStatus = TrustStatus;
+    }
+    public Guid Id { get; set; }
+    public Guid TenantId { get; set; }
+    public Guid SignatureId { get; set; }
+    public string CryptographicStatus { get; set; } = "";
+    public string ValidationStatus { get; set; } = "";
+    public string ConformityStatus { get; set; } = "";
+    public string EngineVersion { get; set; } = "";
+    public DateTimeOffset ValidatedAt { get; set; }
+    public string CorrelationId { get; set; } = "";
+    public string CertificateStatus { get; set; } = "NOT_VERIFIABLE";
+    public string TrustStatus { get; set; } = "NOT_VERIFIABLE";
+}
+public sealed class SignatureEventRecord
+{
+    public SignatureEventRecord() { }
+    public SignatureEventRecord(Guid Id, Guid TenantId, Guid? SessionId, Guid? SignatureId, string EventType, string SafeMessage, string CorrelationId, DateTimeOffset CreatedAt)
+    {
+        this.Id = Id;
+        this.TenantId = TenantId;
+        this.SessionId = SessionId;
+        this.SignatureId = SignatureId;
+        this.EventType = EventType;
+        this.SafeMessage = SafeMessage;
+        this.CorrelationId = CorrelationId;
+        this.CreatedAt = CreatedAt;
+    }
+    public Guid Id { get; set; }
+    public Guid TenantId { get; set; }
+    public Guid? SessionId { get; set; }
+    public Guid? SignatureId { get; set; }
+    public string EventType { get; set; } = "";
+    public string SafeMessage { get; set; } = "";
+    public string CorrelationId { get; set; } = "";
+    public DateTimeOffset CreatedAt { get; set; }
+}
+public sealed class SigningContentMetadata
+{
+    public SigningContentMetadata() { }
+    public SigningContentMetadata(Guid TenantId, Guid DocumentId, Guid DocumentVersionId, string FileName, string DocumentCode, string VersionLabel, string ContentType, long SizeBytes)
+    {
+        this.TenantId = TenantId;
+        this.DocumentId = DocumentId;
+        this.DocumentVersionId = DocumentVersionId;
+        this.FileName = FileName;
+        this.DocumentCode = DocumentCode;
+        this.VersionLabel = VersionLabel;
+        this.ContentType = ContentType;
+        this.SizeBytes = SizeBytes;
+    }
+    public Guid TenantId { get; set; }
+    public Guid DocumentId { get; set; }
+    public Guid DocumentVersionId { get; set; }
+    public string FileName { get; set; } = "";
+    public string DocumentCode { get; set; } = "";
+    public string VersionLabel { get; set; } = "";
+    public string ContentType { get; set; } = "";
+    public long SizeBytes { get; set; }
+}
 public sealed record SignaturePackageFile(string FileName, string ContentType, Stream Content, string Sha256);
 public sealed record CompleteSigningSessionRequest(string CompletionToken, string IdempotencyKey, string SignatureCmsBase64, string CertificateDerBase64, IReadOnlyList<string> CertificateChainDerBase64, string AgentOperationId, string AgentVersion);
 public sealed record PrepareSignatureCommand(Guid TenantId, Guid UserId, Guid DocumentId, Guid DocumentVersionId, SignatureType Type, string Format, string? PolicyOid, string ContentHash, string ContentHashAlgorithm, string Nonce, DateTimeOffset ExpiresAt, string CorrelationId);

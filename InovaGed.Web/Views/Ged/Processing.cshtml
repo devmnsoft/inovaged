@@ -20,6 +20,12 @@
     .processing-center .processing-metric { background: #fff; border: 1px solid #dbe3ee; }
     .processing-center .form-label { color: #1e293b; }
     .processing-center .processing-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
+    .processing-center .processing-timeline { display: flex; flex-wrap: wrap; gap: .25rem; margin: 0; padding: 0; list-style: none; }
+    .processing-center .processing-stage { color: #0f172a; background: #e2e8f0; }
+    .processing-center .processing-stage-done { color: #fff; background: #166534; }
+    .processing-center .processing-stage-failed { color: #fff; background: #991b1b; }
+    .processing-center .processing-stage-active { color: #1c1917; background: #facc15; }
+    .processing-center .processing-stage-wait { color: #fff; background: #334155; }
 </style>
 <div class="processing-center">
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -118,6 +124,7 @@
                 <tr>
                     <th>Etapa</th>
                     <th>Documento</th>
+                    <th>Linha do tempo</th>
                     <th>Situação</th>
                     <th>Tentativas</th>
                     <th>Solicitado em</th>
@@ -128,7 +135,7 @@
             <tbody id="processingTbody">
                 @if (!Model.Any())
                 {
-                    <tr><td colspan="7" class="processing-empty">Nenhum processamento encontrado para este filtro.</td></tr>
+                    <tr><td colspan="8" class="processing-empty">Nenhum processamento encontrado para este filtro.</td></tr>
                 }
                 else
                 {
@@ -137,6 +144,7 @@
                         <tr>
                             <td>@item.LaneLabel</td>
                             <td>@item.DocumentTitle</td>
+                            <td>@Timeline(item.Timeline)</td>
                             <td><span class="badge @BadgeClass(item.Headline)">@item.Headline</span></td>
                             <td>@item.Attempts / @item.MaxAttempts</td>
                             <td>@item.RequestedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</td>
@@ -166,6 +174,7 @@
                                 }
                                 @if (isAdmin && item.CanReprocess && item.Source == "JOB" && Guid.TryParse(item.JobKey, out _))
                                 {
+                                    <input form="processingBatch" type="checkbox" name="jobIds" value="@item.JobKey" aria-label="Selecionar @item.DocumentTitle para reprocessamento" />
                                     <form asp-action="RetryProcessingJob" method="post" class="d-inline js-app-confirm-form" data-confirm-title="Reprocessar" data-confirm-message="Recolocar esta tarefa na fila?">
                                         @Html.AntiForgeryToken()
                                         <input type="hidden" name="jobId" value="@item.JobKey" />
@@ -190,6 +199,22 @@
         </table>
     </div>
 
+    @if (isAdmin)
+    {
+        <form id="processingBatch" asp-action="RetryProcessingJobs" method="post" class="mt-2 js-app-confirm-form" data-confirm-title="Reprocessar em lote" data-confirm-message="Reprocessar até 20 tarefas selecionadas? O arquivo original permanece armazenado e uma tarefa já ativa não é duplicada.">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="status" value="@criteria.StatusGroup" />
+            <input type="hidden" name="lane" value="@criteria.Lane" />
+            <input type="hidden" name="q" value="@(criteria.NameLike?.Trim('%'))" />
+            <input type="hidden" name="from" value="@fromDate" />
+            <input type="hidden" name="to" value="@toDate" />
+            <input type="hidden" name="userId" value="@criteria.UserId" />
+            <input type="hidden" name="documentTypeId" value="@criteria.DocumentTypeId" />
+            <button type="submit" class="btn btn-outline-secondary">Reprocessar selecionados</button>
+            <span class="processing-note ms-2">Máximo de @ProcessingCenterCatalog.MaxBatchReprocess tarefas por confirmação. OCR continua no botão de cada linha.</span>
+        </form>
+    }
+
     <div class="card mt-3">
         <div class="card-header"><strong>Falhas recentes de OCR</strong></div>
         <div class="card-body p-0">
@@ -206,6 +231,21 @@
 </div>
 
 @functions {
+    private static Microsoft.AspNetCore.Html.IHtmlContent Timeline(IReadOnlyList<ProcessingStage> stages)
+    {
+        var items = string.Join("", stages.Select(stage => $"<li><span class=\"badge {StageClass(stage.State)}\">{stage.Name}: {stage.State}</span></li>"));
+        return new Microsoft.AspNetCore.Html.HtmlString($"<ol class=\"processing-timeline\" aria-label=\"Linha do tempo do documento\">{items}</ol>");
+    }
+
+    private static string StageClass(string state) => state switch
+    {
+        "Concluída" => "processing-stage-done",
+        "Falhou" => "processing-stage-failed",
+        "Em andamento" => "processing-stage-active",
+        "Aguardando" => "processing-stage-wait",
+        _ => "processing-stage"
+    };
+
     private static string BadgeClass(string headline) => headline switch
     {
         "Concluído" => "bg-success",

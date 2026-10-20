@@ -645,6 +645,7 @@ where l.version_id=@askedVersion
 
     [HttpPost("/DemaisSetores/ConsultaIntegrada/{publicId:guid}/pesquisa")]
     [AllowAnonymous]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> PesquisarIntegrado(Guid publicId, string term, bool includeOtherEncounters, int page, CancellationToken ct)
     {
         var session = await ReadOpeningAsync(publicId, ct, includeOtherEncounters, command: true);
@@ -657,6 +658,7 @@ where l.version_id=@askedVersion
 
     [HttpPost("/DemaisSetores/ConsultaIntegrada/{publicId:guid}/atendimento")]
     [AllowAnonymous]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> TrocarAtendimento(Guid publicId, string encounterCode, CancellationToken ct)
     {
         var session = await ReadOpeningAsync(publicId, ct, command: true);
@@ -1188,27 +1190,177 @@ select l.document_id as DocumentId, l.version_id as VersionId, t.name as Name,
     private string Ua() => Request.Headers.UserAgent.ToString();
 }
 
-public sealed record SectorCatalogChoice(string Code, string Name, int Order, string Applicability = "", bool MultipleFiles = false, bool PhysicalOriginal = false);
-
-public sealed record SectorDocumentRow(Guid LinkId, Guid DocumentId, Guid VersionId, string Name, string CatalogCode, string Origin, string OriginalFileName, DateOnly? DocumentDate, string ReviewStatus, string PreviewStatus, string OcrStatus, string ExtractionStatus, string? IssuerName, string? InformationOwner, string? PhysicalEvidence, string? SectorCode, bool RequiresPhysical)
+public sealed class SectorCatalogChoice
 {
+    public SectorCatalogChoice() { }
+    public SectorCatalogChoice(string Code, string Name, int Order, string Applicability = "", bool MultipleFiles = false, bool PhysicalOriginal = false)
+    {
+        this.Code = Code;
+        this.Name = Name;
+        this.Order = Order;
+        this.Applicability = Applicability;
+        this.MultipleFiles = MultipleFiles;
+        this.PhysicalOriginal = PhysicalOriginal;
+    }
+    public string Code { get; set; } = "";
+    public string Name { get; set; } = "";
+    public int Order { get; set; }
+    public string Applicability { get; set; } = "";
+    public bool MultipleFiles { get; set; } = false;
+    public bool PhysicalOriginal { get; set; } = false;
+}
+
+public sealed class SectorDocumentRow
+{
+    public SectorDocumentRow() { }
+    public SectorDocumentRow(Guid LinkId, Guid DocumentId, Guid VersionId, string Name, string CatalogCode, string Origin, string OriginalFileName, DateOnly? DocumentDate, string ReviewStatus, string PreviewStatus, string OcrStatus, string ExtractionStatus, string? IssuerName, string? InformationOwner, string? PhysicalEvidence, string? SectorCode, bool RequiresPhysical)
+    {
+        this.LinkId = LinkId;
+        this.DocumentId = DocumentId;
+        this.VersionId = VersionId;
+        this.Name = Name;
+        this.CatalogCode = CatalogCode;
+        this.Origin = Origin;
+        this.OriginalFileName = OriginalFileName;
+        this.DocumentDate = DocumentDate;
+        this.ReviewStatus = ReviewStatus;
+        this.PreviewStatus = PreviewStatus;
+        this.OcrStatus = OcrStatus;
+        this.ExtractionStatus = ExtractionStatus;
+        this.IssuerName = IssuerName;
+        this.InformationOwner = InformationOwner;
+        this.PhysicalEvidence = PhysicalEvidence;
+        this.SectorCode = SectorCode;
+        this.RequiresPhysical = RequiresPhysical;
+    }
     // Npgsql exposes PostgreSQL date as DateTime to Dapper's constructor binder.
     // Keep the public clinical date contract as DateOnly without applying a timezone.
-    public SectorDocumentRow(Guid linkId,Guid documentId,Guid versionId,string name,string catalogCode,string origin,string originalFileName,DateTime? documentDate,string reviewStatus,string previewStatus,string ocrStatus,string extractionStatus,string? issuerName,string? informationOwner,string? physicalEvidence,string? sectorCode,bool requiresPhysical)
-        : this(linkId,documentId,versionId,name,catalogCode,origin,originalFileName,documentDate.HasValue?DateOnly.FromDateTime(documentDate.Value):null,reviewStatus,previewStatus,ocrStatus,extractionStatus,issuerName,informationOwner,physicalEvidence,sectorCode,requiresPhysical) { }
+    public SectorDocumentRow(Guid linkId, Guid documentId, Guid versionId, string name, string catalogCode, string origin, string originalFileName, DateTime? documentDate, string reviewStatus, string previewStatus, string ocrStatus, string extractionStatus, string? issuerName, string? informationOwner, string? physicalEvidence, string? sectorCode, bool requiresPhysical)
+        : this(linkId, documentId, versionId, name, catalogCode, origin, originalFileName, documentDate.HasValue ? DateOnly.FromDateTime(documentDate.Value) : null, reviewStatus, previewStatus, ocrStatus, extractionStatus, issuerName, informationOwner, physicalEvidence, sectorCode, requiresPhysical) { }
+    public Guid LinkId { get; set; }
+    public Guid DocumentId { get; set; }
+    public Guid VersionId { get; set; }
+    public string Name { get; set; } = "";
+    public string CatalogCode { get; set; } = "";
+    public string Origin { get; set; } = "";
+    public string OriginalFileName { get; set; } = "";
+    public DateOnly? DocumentDate { get; set; }
+    public string ReviewStatus { get; set; } = "";
+    public string PreviewStatus { get; set; } = "";
+    public string OcrStatus { get; set; } = "";
+    public string ExtractionStatus { get; set; } = "";
+    public string? IssuerName { get; set; }
+    public string? InformationOwner { get; set; }
+    public string? PhysicalEvidence { get; set; }
+    public string? SectorCode { get; set; }
+    public bool RequiresPhysical { get; set; }
 }
-public sealed record SectorFieldRow(Guid FieldId, Guid LinkId, Guid VersionId, string ContextCode, string SuggestedValue, string? ConfirmedValue, string Evidence, int? PageNumber, string Status, string? Mechanism, string? SourceKind,Guid? ReviewerId=null,string? ReviewerName=null,string? ReviewedAt=null);
-public sealed record SectorFindingRow(Guid FindingId, string Description, string Category, string? Evidence, int? PageNumber, string Status, Guid? VersionId);
+public sealed class SectorFieldRow
+{
+    public SectorFieldRow() { }
+    public SectorFieldRow(Guid FieldId, Guid LinkId, Guid VersionId, string ContextCode, string SuggestedValue, string? ConfirmedValue, string Evidence, int? PageNumber, string Status, string? Mechanism, string? SourceKind, Guid? ReviewerId = null, string? ReviewerName = null, string? ReviewedAt = null)
+    {
+        this.FieldId = FieldId;
+        this.LinkId = LinkId;
+        this.VersionId = VersionId;
+        this.ContextCode = ContextCode;
+        this.SuggestedValue = SuggestedValue;
+        this.ConfirmedValue = ConfirmedValue;
+        this.Evidence = Evidence;
+        this.PageNumber = PageNumber;
+        this.Status = Status;
+        this.Mechanism = Mechanism;
+        this.SourceKind = SourceKind;
+        this.ReviewerId = ReviewerId;
+        this.ReviewerName = ReviewerName;
+        this.ReviewedAt = ReviewedAt;
+    }
+    public Guid FieldId { get; set; }
+    public Guid LinkId { get; set; }
+    public Guid VersionId { get; set; }
+    public string ContextCode { get; set; } = "";
+    public string SuggestedValue { get; set; } = "";
+    public string? ConfirmedValue { get; set; }
+    public string Evidence { get; set; } = "";
+    public int? PageNumber { get; set; }
+    public string Status { get; set; } = "";
+    public string? Mechanism { get; set; }
+    public string? SourceKind { get; set; }
+    public Guid? ReviewerId { get; set; } = null;
+    public string? ReviewerName { get; set; } = null;
+    public string? ReviewedAt { get; set; } = null;
+}
+public sealed class SectorFindingRow
+{
+    public SectorFindingRow() { }
+    public SectorFindingRow(Guid FindingId, string Description, string Category, string? Evidence, int? PageNumber, string Status, Guid? VersionId)
+    {
+        this.FindingId = FindingId;
+        this.Description = Description;
+        this.Category = Category;
+        this.Evidence = Evidence;
+        this.PageNumber = PageNumber;
+        this.Status = Status;
+        this.VersionId = VersionId;
+    }
+    public Guid FindingId { get; set; }
+    public string Description { get; set; } = "";
+    public string Category { get; set; } = "";
+    public string? Evidence { get; set; }
+    public int? PageNumber { get; set; }
+    public string Status { get; set; } = "";
+    public Guid? VersionId { get; set; }
+}
 public sealed record SectorChecklistRow(int Order, string Name, string State, bool Required);
-public sealed record SectorContextRow(Guid PatientId, string PatientCode, string DisplayName, string EncounterCode, string? RawKind, string? Kind, DateTimeOffset? AdmittedAt, DateTimeOffset? DischargedAt, string? Status, DateTimeOffset? ConfirmedAt = null)
+public sealed class SectorContextRow
 {
-    public SectorContextRow(Guid patientId,string patientCode,string displayName,string encounterCode,string? rawKind,string? kind,DateTime? admittedAt,DateTime? dischargedAt,string? status,DateTime? confirmedAt)
-        : this(patientId,patientCode,displayName,encounterCode,rawKind,kind,SectorReadTime.Utc(admittedAt),SectorReadTime.Utc(dischargedAt),status,SectorReadTime.Utc(confirmedAt)) { }
+    public SectorContextRow() { }
+    public SectorContextRow(Guid PatientId, string PatientCode, string DisplayName, string EncounterCode, string? RawKind, string? Kind, DateTimeOffset? AdmittedAt, DateTimeOffset? DischargedAt, string? Status, DateTimeOffset? ConfirmedAt = null)
+    {
+        this.PatientId = PatientId;
+        this.PatientCode = PatientCode;
+        this.DisplayName = DisplayName;
+        this.EncounterCode = EncounterCode;
+        this.RawKind = RawKind;
+        this.Kind = Kind;
+        this.AdmittedAt = AdmittedAt;
+        this.DischargedAt = DischargedAt;
+        this.Status = Status;
+        this.ConfirmedAt = ConfirmedAt;
+    }
+    public SectorContextRow(Guid patientId, string patientCode, string displayName, string encounterCode, string? rawKind, string? kind, DateTime? admittedAt, DateTime? dischargedAt, string? status, DateTime? confirmedAt)
+        : this(patientId, patientCode, displayName, encounterCode, rawKind, kind, SectorReadTime.Utc(admittedAt), SectorReadTime.Utc(dischargedAt), status, SectorReadTime.Utc(confirmedAt)) { }
+    public Guid PatientId { get; set; }
+    public string PatientCode { get; set; } = "";
+    public string DisplayName { get; set; } = "";
+    public string EncounterCode { get; set; } = "";
+    public string? RawKind { get; set; }
+    public string? Kind { get; set; }
+    public DateTimeOffset? AdmittedAt { get; set; }
+    public DateTimeOffset? DischargedAt { get; set; }
+    public string? Status { get; set; }
+    public DateTimeOffset? ConfirmedAt { get; set; }
 }
-public sealed record SectorEncounterOption(Guid Id, string Code, string? Kind, string? Status, DateTimeOffset? AdmittedAt = null, DateTimeOffset? DischargedAt = null)
+public sealed class SectorEncounterOption
 {
-    public SectorEncounterOption(Guid id,string code,string? kind,string? status,DateTime? admittedAt,DateTime? dischargedAt)
-        : this(id,code,kind,status,SectorReadTime.Utc(admittedAt),SectorReadTime.Utc(dischargedAt)) { }
+    public SectorEncounterOption() { }
+    public SectorEncounterOption(Guid Id, string Code, string? Kind, string? Status, DateTimeOffset? AdmittedAt = null, DateTimeOffset? DischargedAt = null)
+    {
+        this.Id = Id;
+        this.Code = Code;
+        this.Kind = Kind;
+        this.Status = Status;
+        this.AdmittedAt = AdmittedAt;
+        this.DischargedAt = DischargedAt;
+    }
+    public SectorEncounterOption(Guid id, string code, string? kind, string? status, DateTime? admittedAt, DateTime? dischargedAt)
+        : this(id, code, kind, status, SectorReadTime.Utc(admittedAt), SectorReadTime.Utc(dischargedAt)) { }
+    public Guid Id { get; set; }
+    public string Code { get; set; } = "";
+    public string? Kind { get; set; }
+    public string? Status { get; set; }
+    public DateTimeOffset? AdmittedAt { get; set; }
+    public DateTimeOffset? DischargedAt { get; set; }
 }
 internal static class SectorReadTime
 {

@@ -3,10 +3,12 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Dapper;
 using InovaGed.Application.Common.Database;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace InovaGed.Web.Controllers;
 
+[AllowAnonymous]
 [Route("SharedDocument")]
 public sealed class SharedDocumentController : Controller
 {

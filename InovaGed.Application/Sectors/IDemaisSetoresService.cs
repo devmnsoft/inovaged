@@ -69,5 +69,21 @@ public sealed record SectorDeliveryItemDetails(
     string? PendingReason = null, Guid? DocumentId = null);
 public sealed record SectorEmbedRequest(Guid TenantId, Guid UserId, bool IsFullAdmin, Guid VersionId, string? Origin, string Ip, string UserAgent);
 public sealed record SectorEmbedResult(bool Created, string Message, string? Path);
-public sealed record SectorGrantView(Guid TenantId, Guid DocumentId, Guid VersionId, string? Origin, bool Active);
+public sealed class SectorGrantView
+{
+    public SectorGrantView() { }
+    public SectorGrantView(Guid TenantId, Guid DocumentId, Guid VersionId, string? Origin, bool Active)
+    {
+        this.TenantId = TenantId;
+        this.DocumentId = DocumentId;
+        this.VersionId = VersionId;
+        this.Origin = Origin;
+        this.Active = Active;
+    }
+    public Guid TenantId { get; set; }
+    public Guid DocumentId { get; set; }
+    public Guid VersionId { get; set; }
+    public string? Origin { get; set; }
+    public bool Active { get; set; }
+}
 public sealed record SectorUploadTicket(bool Allowed, string Message, Guid? FolderId, long? MaxBytes);

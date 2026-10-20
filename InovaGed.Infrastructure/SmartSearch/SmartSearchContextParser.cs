@@ -93,5 +93,5 @@ where tenant_id=@tenantId and coalesce(reg_status,'A')='A'
         return m.Success ? m.Groups[1].Value.Trim() : null;
     }
     private static string Normalize(string value) { var formD = (value ?? string.Empty).Normalize(NormalizationForm.FormD); return new string(formD.Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark).ToArray()).Normalize(NormalizationForm.FormC).ToLowerInvariant(); }
-    private sealed class Row { public string Term { get; set; } = ""; public string Category { get; set; } = ""; public string[]? Synonyms { get; set; } public string[]? RelatedTerms { get; set; } public bool IsSensitive { get; set; } }
+    private sealed class Row { public string Term { get; set; } = ""; public string Category { get; set; } = ""; public string[]? Synonyms { get; set; } public string[]? RelatedTerms { get; set; } public bool IsSensitive { get; set; } };
 }

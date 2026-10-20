@@ -466,8 +466,8 @@ where table_schema = 'ged'
         };
     }
 
-    private sealed class SchemaColumn { public string TableName { get; set; } = string.Empty; public string ColumnName { get; set; } = string.Empty; }
-    private sealed class AutoRunInfo { public DateTimeOffset? StartedAtUtc { get; set; } public int EnqueuedCount { get; set; } public string? SchemaWarning { get; set; } }
+    private sealed class SchemaColumn { public string TableName { get; set; } = string.Empty; public string ColumnName { get; set; } = string.Empty; };
+    private sealed class AutoRunInfo { public DateTimeOffset? StartedAtUtc { get; set; } public int EnqueuedCount { get; set; } public string? SchemaWarning { get; set; } };
 
     private sealed class OcrSchema
     {

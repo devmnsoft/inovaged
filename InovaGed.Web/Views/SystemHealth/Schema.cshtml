@@ -89,7 +89,8 @@
             <table class="table table-sm align-middle mb-0">
                 <thead><tr><th>Grupo</th><th>Status</th><th>Mensagem</th><th>Impacto</th><th>Ação recomendada</th><th>Script recomendado</th></tr></thead>
                 <tbody>
-                @foreach (var group in new[] { "Banco de dados", "Migrations", "DI", "Razor", "Ícones", "Rotas", "Administração", "Etiquetas", "Retenção" })
+                @{ var gateList1 = new[] { "Banco de dados", "Migrations", "DI", "Razor", "Ícones", "Rotas", "Administração", "Etiquetas", "Retenção" }; }
+                @foreach (var group in gateList1)
                 {
                     var matches = Model.Checks.Where(c => c.Area.Contains(group, StringComparison.OrdinalIgnoreCase) || c.ObjectName.Contains(group, StringComparison.OrdinalIgnoreCase)).ToList();
                     var failed = matches.Any(c => !c.Success);

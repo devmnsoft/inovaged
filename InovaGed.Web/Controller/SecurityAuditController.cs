@@ -49,7 +49,7 @@ limit 500;
     public sealed class AccessFailureRow
     {
         public DateTime OccurredAtUtc { get; set; }
-        public Guid TenantId { get; set; }          // ✅ Guid (não TenantId value object)
+        public Guid TenantId { get; set; }          // ✅ Guid (não TenantId value object);
         public string? UserId { get; set; }
         public string? UserName { get; set; }
         public string Path { get; set; } = "";

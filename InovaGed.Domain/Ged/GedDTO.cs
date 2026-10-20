@@ -19,7 +19,7 @@ namespace InovaGed.Domain.Ged
         public DateTime CreatedAt { get; init; }
         public DateTime UploadedAtUtc { get; init; }
         public string UploadedAtLocalFormatted { get; set; } = "";
-        public Guid CreatedBy { get; set; }   // ou Guid?
+        public Guid CreatedBy { get; set; }   // ou Guid?;
         public string OcrStatus { get; init; } = "NONE";
         public DateTime? OcrFinishedAt { get; init; }
         public bool HasOcrText { get; init; }

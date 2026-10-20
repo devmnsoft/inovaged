@@ -27,6 +27,8 @@ public interface IOcrJobRepository
 
     Task RenewLeaseAsync(long id, CancellationToken stoppingToken);
 
+    Task<int> GetAttemptsAsync(long jobId, CancellationToken ct);
+
     Task<OcrJobStatusDto?> GetLatestByVersionIdAsync(Guid tenantId, Guid documentVersionId, CancellationToken ct);
 
     Task<bool> HasCompletedAsync(Guid tenantId, Guid documentVersionId, CancellationToken ct);

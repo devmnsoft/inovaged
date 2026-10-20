@@ -382,6 +382,8 @@ builder.Services.AddScoped<IGedAccessPolicyService, GedAccessPolicyService>();
 builder.Services.AddScoped<IGedSearchService, GedSearchService>();
 builder.Services.AddScoped<IGedSmartSearchService, GedSmartSearchService>();
 builder.Services.AddScoped<ISmartSearchContextParser, SmartSearchContextParser>();
+builder.Services.Configure<InovaGed.Application.ArtificialIntelligence.FreeAssistOptions>(builder.Configuration.GetSection(InovaGed.Application.ArtificialIntelligence.FreeAssistOptions.SectionName));
+builder.Services.AddHttpClient<InovaGed.Application.ArtificialIntelligence.IFreeAssist, InovaGed.Infrastructure.ArtificialIntelligence.GroqFreeAssist>();
 builder.Services.AddScoped<ISmartQueryParser, SmartQueryParser>();
 builder.Services.AddScoped<IGedSmartQueryParser, SmartQueryParser>();
 builder.Services.AddScoped<IDocumentOcrMetadataExtractor, DocumentOcrMetadataExtractor>();

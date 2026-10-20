@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using Dapper;
 using InovaGed.Application.Common.Database;
 using DbDateTime = InovaGed.Application.Common.Database.PostgresDateTimeHelper;
+using InovaGed.Application.ArtificialIntelligence;
 using InovaGed.Application.SmartSearch;
 
 namespace InovaGed.Infrastructure.SmartSearch;
@@ -30,11 +31,13 @@ public sealed class SmartQueryParser : ISmartQueryParser, InovaGed.Application.G
 
     private readonly IDbConnectionFactory _db;
     private readonly ISmartSearchContextParser _contextParser;
-    
-    public SmartQueryParser(IDbConnectionFactory db, ISmartSearchContextParser contextParser)
+    private readonly IFreeAssist? _assist;
+
+    public SmartQueryParser(IDbConnectionFactory db, ISmartSearchContextParser contextParser, IFreeAssist? assist = null)
     {
         _db = db;
         _contextParser = contextParser;
+        _assist = assist;
     }
 
    
@@ -177,6 +180,20 @@ public sealed class SmartQueryParser : ISmartQueryParser, InovaGed.Application.G
         intent.Explanation = contextIntent.ClinicalTerms.Count > 0 ? contextIntent.Explanation : BuildExplanation(intent);
         if (intent.Kind != SmartSearchIntentKind.FindDocument)
             intent.Explanation = $"Intenção local: {IntentLabel(intent.Kind)}. " + intent.Explanation;
+        if (_assist is { CanAssistSearch: true } && intent.Kind == SmartSearchIntentKind.FindDocument)
+        {
+            var extra = await _assist.ExpandSearchTermsAsync(query, ct);
+            foreach (var term in extra)
+            {
+                if (!intent.ClinicalTerms.Contains(term, StringComparer.OrdinalIgnoreCase)) intent.ClinicalTerms.Add(term);
+                if (!intent.Keywords.Contains(term, StringComparer.OrdinalIgnoreCase)) intent.Keywords.Add(term);
+            }
+            if (extra.Count > 0)
+            {
+                intent.ExpandedTerms = intent.ClinicalTerms.ToList();
+                intent.Explanation = "A consulta foi ampliada por uma IA gratuita, sem enviar o documento. " + intent.Explanation;
+            }
+        }
         return intent;
     }
 

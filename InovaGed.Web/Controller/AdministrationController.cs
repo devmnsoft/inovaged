@@ -35,7 +35,7 @@ public sealed class AdministrationController : Controller
             new AdministrationActionVM("Calibração", "Ajuste margens, escala e deslocamento físico.", "bi-sliders", "Labels", "Calibration", AppPolicies.Administracao, "Etiquetas e Impressão", true, null),
             new AdministrationActionVM("Documentos", "Acesse a operação documental do GED.", "bi-file-earmark-text", "Ged", "Index", AppPolicies.Administracao, "GED e Operação", true, null),
             new AdministrationActionVM("Plano de Classificação", "Organize classes e temporalidade documental.", "bi-diagram-3", "ClassificationPlan", "Index", AppPolicies.Administracao, "GED e Operação", true, null),
-            new AdministrationActionVM("Acervo Físico", "Gerencie caixas, localizações e movimentações.", "bi-box-seam", "Physical", "Dashboard", AppPolicies.Administracao, "GED e Operação", true, null),
+            new AdministrationActionVM("Acervo Físico", "Gerencie caixas, localizações e movimentações.", "bi-box-seam", "Physical", "Index", AppPolicies.Administracao, "GED e Operação", true, null),
             new AdministrationActionVM("Usuários e Perfis", "Gerencie acessos, papéis e vínculos de usuários.", "bi-people", "Administration", "Users", AppPolicies.Administracao, "Segurança e Acesso", true, null),
             new AdministrationActionVM("Permissões e Segurança", "Revise políticas e o catálogo de permissões do ambiente.", "bi-shield-lock", "Administration", "Security", AppPolicies.Administracao, "Segurança e Acesso", true, null),
             new AdministrationActionVM("Tenants", "Acompanhe organizações, escopos e isolamento operacional.", "bi-buildings", "Administration", "Tenants", AppPolicies.Administracao, "Segurança e Acesso", true, null),

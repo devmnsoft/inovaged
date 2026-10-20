@@ -1713,6 +1713,7 @@ LIMIT 20;";
         public Guid? VersionId { get; set; }
         public Guid? DocumentId { get; set; }
         public string DocumentTitle { get; set; } = "";
+        public string? FileName { get; set; }
         public string Lane { get; set; } = "";
         public string LaneLabel { get; set; } = "";
         public string Status { get; set; } = "";
@@ -1725,6 +1726,7 @@ LIMIT 20;";
         public DateTime? FinishedAt { get; set; }
         public bool CanReprocess { get; set; }
         public bool CanCancel { get; set; }
+        public IReadOnlyList<ProcessingStage> Timeline => ProcessingCenterCatalog.Timeline(Lane, Status, FileName, ErrorMessage);
     }
 
     public sealed class ProcessingMetricsVm
@@ -4198,6 +4200,41 @@ VALUES
         {
             _logger.LogError(ex, "Falha ao reprocessar job {JobId}. SqlState={SqlState}", jobId, ex.SqlState);
             TempData["erro"] = "Não foi possível reprocessar. O documento armazenado não foi alterado.";
+        }
+
+        return RedirectToAction(nameof(Processing), new { status, lane, q, from = from?.ToString("yyyy-MM-dd"), to = to?.ToString("yyyy-MM-dd"), userId, documentTypeId });
+    }
+
+    [Authorize(Policy = AppPolicies.FullAdminOnly)]
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RetryProcessingJobs(Guid[]? jobIds, string? status, string? lane, string? q, DateTime? from, DateTime? to, string? userId, string? documentTypeId, CancellationToken ct)
+    {
+        var ids = (jobIds ?? [])
+            .Where(id => id != Guid.Empty)
+            .Distinct()
+            .Take(ProcessingCenterCatalog.MaxBatchReprocess)
+            .ToArray();
+        if (ids.Length == 0)
+        {
+            TempData["erro"] = "Selecione ao menos uma tarefa com falha. O lote aceita no máximo 20 itens.";
+            return RedirectToAction(nameof(Processing), new { status, lane, q, from = from?.ToString("yyyy-MM-dd"), to = to?.ToString("yyyy-MM-dd"), userId, documentTypeId });
+        }
+
+        try
+        {
+            using var conn = await _db.OpenAsync(ct);
+            var affected = await conn.ExecuteAsync(new CommandDefinition(ProcessingCenterSql.RetryJobs, new { tenantId = _currentUser.TenantId, jobIds = ids }, cancellationToken: ct));
+            TempData[affected > 0 ? "ok" : "erro"] = affected > 0
+                ? $"{affected} tarefa(s) recolocada(s) na fila. O arquivo original permanece armazenado."
+                : "Nenhuma tarefa selecionada pôde ser reprocessada. Uma execução ativa para o mesmo documento impede a duplicação.";
+            if (affected > 0)
+                await TryAuditProcessingAsync("UPDATE", ids[0], $"Reprocessamento em lote de {affected} tarefa(s), limitado a {ProcessingCenterCatalog.MaxBatchReprocess}.", ct);
+        }
+        catch (PostgresException ex)
+        {
+            _logger.LogError(ex, "Falha ao reprocessar lote. SqlState={SqlState} Count={Count}", ex.SqlState, ids.Length);
+            TempData["erro"] = "Não foi possível reprocessar o lote. Os documentos armazenados não foram alterados.";
         }
 
         return RedirectToAction(nameof(Processing), new { status, lane, q, from = from?.ToString("yyyy-MM-dd"), to = to?.ToString("yyyy-MM-dd"), userId, documentTypeId });

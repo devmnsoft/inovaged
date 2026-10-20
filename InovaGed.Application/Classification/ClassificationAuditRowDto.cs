@@ -10,7 +10,7 @@ public sealed class ClassificationAuditRowDto
     public string Action { get; set; } = "";
     public string? Method { get; set; }
 
-    public string? BeforeJson { get; set; }  // jsonb -> string (ou JsonDocument)
+    public string? BeforeJson { get; set; }  // jsonb -> string (ou JsonDocument);
     public string? AfterJson { get; set; }
 
     public string? Source { get; set; }

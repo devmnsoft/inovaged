@@ -192,10 +192,10 @@ public sealed class ReportsController : Controller
                    exists(select 1 from information_schema.columns where table_schema='ged' and table_name='document_search' and column_name='ocr_text') as "HasOcrText"
             """, cancellationToken: ct));
 
-    private sealed class ReportSchemaDbRow { public bool HasDocuments { get; set; } public bool HasFolders { get; set; } public bool HasDocumentSearch { get; set; } public bool HasDocumentClassification { get; set; } public bool HasFolderId { get; set; } public bool HasDocumentRegStatus { get; set; } public bool HasDocumentTitle { get; set; } public bool HasDocumentStatus { get; set; } public bool HasDocumentCreatedAt { get; set; } public bool HasFolderName { get; set; } public bool HasOcrText { get; set; } }
-    private sealed class ReportSummaryDbRow { public long TotalDocuments { get; set; } public long WithOcr { get; set; } public long WithoutClassification { get; set; } }
-    private sealed class ReportBreakdownDbRow { public string Label { get; set; } = string.Empty; public long Total { get; set; } }
-    private sealed class DocumentExportRow { public Guid Id { get; set; } public string Title { get; set; } = string.Empty; public string Status { get; set; } = string.Empty; public string Area { get; set; } = string.Empty; public DateTime? CreatedAt { get; set; } }
+    private sealed class ReportSchemaDbRow { public bool HasDocuments { get; set; } public bool HasFolders { get; set; } public bool HasDocumentSearch { get; set; } public bool HasDocumentClassification { get; set; } public bool HasFolderId { get; set; } public bool HasDocumentRegStatus { get; set; } public bool HasDocumentTitle { get; set; } public bool HasDocumentStatus { get; set; } public bool HasDocumentCreatedAt { get; set; } public bool HasFolderName { get; set; } public bool HasOcrText { get; set; } };
+    private sealed class ReportSummaryDbRow { public long TotalDocuments { get; set; } public long WithOcr { get; set; } public long WithoutClassification { get; set; } };
+    private sealed class ReportBreakdownDbRow { public string Label { get; set; } = string.Empty; public long Total { get; set; } };
+    private sealed class DocumentExportRow { public Guid Id { get; set; } public string Title { get; set; } = string.Empty; public string Status { get; set; } = string.Empty; public string Area { get; set; } = string.Empty; public DateTime? CreatedAt { get; set; } };
 
     // =========================================================
     // PLC/PCD — GET /Reports/PcdFull

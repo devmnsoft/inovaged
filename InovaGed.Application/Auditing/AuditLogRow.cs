@@ -4,7 +4,7 @@
     {
         public Guid TenantId { get; set; }
         public Guid? UserId { get; set; }
-        public string Action { get; set; } = "CREATE"; // audit_action_enum
+        public string Action { get; set; } = "CREATE"; // audit_action_enum;
         public string EntityName { get; set; } = "";
         public Guid? EntityId { get; set; }
         public string? Summary { get; set; }

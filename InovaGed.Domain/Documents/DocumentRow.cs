@@ -12,8 +12,8 @@
         public Guid? DepartmentId { get; set; }
         public Guid? TypeId { get; set; }
         public Guid? ClassificationId { get; set; }
-        public string Status { get; set; } = "DRAFT";      // document_status_enum
-        public string Visibility { get; set; } = "INTERNAL"; // document_visibility_enum
+        public string Status { get; set; } = "DRAFT";      // document_status_enum;
+        public string Visibility { get; set; } = "INTERNAL"; // document_visibility_enum;
         public Guid? CurrentVersionId { get; set; }
         public Guid? CreatedBy { get; set; }
         public bool IsConfidential { get; set; }

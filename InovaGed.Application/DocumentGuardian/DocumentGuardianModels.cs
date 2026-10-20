@@ -43,7 +43,7 @@ public class DocumentGuardianEvidenceDto
     public decimal Confidence { get; set; }
 }
 
-public sealed class DocumentGuardianRelationshipDto { public Guid RelatedDocumentId { get; set; } public string RelationshipType { get; set; } = string.Empty; public string? RelatedTitle { get; set; } public decimal Confidence { get; set; } }
-public sealed class DocumentGuardianTimelineEventDto { public DateTime EventAtUtc { get; set; } public string EventType { get; set; } = string.Empty; public string Source { get; set; } = string.Empty; public string? Summary { get; set; } }
-public sealed class DocumentGuardianObligationDto { public Guid Id { get; set; } public string ObligationType { get; set; } = string.Empty; public DateTime? DueAtUtc { get; set; } public string Status { get; set; } = string.Empty; public string? Description { get; set; } }
-public sealed class DocumentGuardianDecisionDto { public Guid Id { get; set; } public Guid FindingId { get; set; } public string Decision { get; set; } = string.Empty; public string Justification { get; set; } = string.Empty; public DateTime DecidedAtUtc { get; set; } public string? DecidedByName { get; set; } }
+public sealed class DocumentGuardianRelationshipDto { public Guid RelatedDocumentId { get; set; } public string RelationshipType { get; set; } = string.Empty; public string? RelatedTitle { get; set; } public decimal Confidence { get; set; } };
+public sealed class DocumentGuardianTimelineEventDto { public DateTime EventAtUtc { get; set; } public string EventType { get; set; } = string.Empty; public string Source { get; set; } = string.Empty; public string? Summary { get; set; } };
+public sealed class DocumentGuardianObligationDto { public Guid Id { get; set; } public string ObligationType { get; set; } = string.Empty; public DateTime? DueAtUtc { get; set; } public string Status { get; set; } = string.Empty; public string? Description { get; set; } };
+public sealed class DocumentGuardianDecisionDto { public Guid Id { get; set; } public Guid FindingId { get; set; } public string Decision { get; set; } = string.Empty; public string Justification { get; set; } = string.Empty; public DateTime DecidedAtUtc { get; set; } public string? DecidedByName { get; set; } };

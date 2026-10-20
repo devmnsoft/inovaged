@@ -17,7 +17,7 @@
         <form method="post" action="/Solicitacoes/ExcluirAntigas" class="d-flex gap-2">
             @Html.AntiForgeryToken()
             <input type="number" min="1" max="3650" class="form-control form-control-sm" name="dias" value="90" style="width:110px" />
-            <button class="btn btn-outline-danger btn-sm">Excluir antigas</button>
+            <button class="btn btn-outline-danger btn-sm" type="submit">Excluir antigas</button>
         </form>
     }
 
@@ -31,7 +31,7 @@
             <div id="arquivoSugestoes" class="list-group position-absolute w-100 shadow-sm" style="z-index:10;"></div>
         </div>
         <div class="col-md-6"><textarea class="form-control" name="Descricao" rows="2" placeholder="Descrição detalhada"></textarea></div>
-        <div class="col-md-2 d-grid"><button class="btn btn-primary">Solicitar</button></div>
+        <div class="col-md-2 d-grid"><button class="btn btn-primary" type="submit">Solicitar</button></div>
     </div>
 </form>
 <table class="table table-striped table-sm align-middle"><thead><tr><th>Data</th><th>Solicitante</th><th>Setor</th><th>Arquivo</th><th>Descrição</th><th>Status</th><th>Feedback</th></tr></thead><tbody>
@@ -40,7 +40,7 @@
 <tr><td>@item.DataSolicitacao.ToString("dd/MM/yyyy HH:mm")</td><td>@item.UsuarioNome</td><td>@item.SetorNome</td><td>@item.ArquivoCodigo - @item.ArquivoTitulo</td><td>@item.Descricao</td><td><span class="badge text-bg-secondary">@item.StatusLabel</span></td><td>
 @if (isAdmin)
 {
-<form method="post" action="/Solicitacoes/@item.Id/Status" class="d-flex gap-1">@Html.AntiForgeryToken()<input class="form-control form-control-sm" name="Comentario" placeholder="Comentário" /><button class="btn btn-success btn-sm" name="Status" value="DEFERIDO">Deferir</button><button class="btn btn-danger btn-sm" name="Status" value="INDEFERIDO">Indeferir</button><button class="btn btn-warning btn-sm" name="Status" value="AGUARDAR">Aguardar</button></form>
+<form method="post" action="/Solicitacoes/@item.Id/Status" class="d-flex gap-1">@Html.AntiForgeryToken()<input class="form-control form-control-sm" name="Comentario" placeholder="Comentário" /><button class="btn btn-success btn-sm" name="Status" value="DEFERIDO" type="submit">Deferir</button><button class="btn btn-danger btn-sm" name="Status" value="INDEFERIDO" type="submit">Indeferir</button><button class="btn btn-warning btn-sm" name="Status" value="AGUARDAR" type="submit">Aguardar</button></form>
 }
 else
 {

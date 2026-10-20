@@ -17,3 +17,5 @@ Impedir regressões conhecidas de Razor, materialização Dapper, migrations, au
 
 ## CI e relatórios
 O workflow `.github/workflows/dotnet-quality-gate.yml` restaura, compila, testa e roda offline. Evidências JSON/Markdown são gravadas em `artifacts/quality-gate/` e exibidas em `/Administration/Quality`. Checks dependentes de banco produzem warning controlado no modo offline, nunca sucesso fictício.
+
+O Doctor encerra com 2 quando o relatório está FAIL, com 1 quando está WARNING e com 0 quando está PASS. No GitHub Actions, somente a saída 2 reprova o job. A saída 1 publica o relatório e o job segue, sem reescrever o status geral para PASS. WARNING continua exigindo triagem no relatório.

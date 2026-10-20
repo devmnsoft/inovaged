@@ -3,8 +3,8 @@ using System.Diagnostics.Metrics;
 using InovaGed.Application.Observability;
 
 namespace InovaGed.Web.Observability;
-public interface ICorrelationContext { string? CorrelationId { get; set; } }
-public sealed class CorrelationContext : ICorrelationContext { public string? CorrelationId { get; set; } }
+public interface ICorrelationContext { string? CorrelationId { get; set; } };
+public sealed class CorrelationContext : ICorrelationContext { public string? CorrelationId { get; set; } };
 public sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<CorrelationIdMiddleware> logger)
 {
     public const string HeaderName = "X-Correlation-ID";

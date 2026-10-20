@@ -28,8 +28,29 @@ public interface ILabelTraceTokenService
     bool IsValid(string token);
 }
 
-public sealed record LabelTracePublicInfo(Guid Id, string TraceCode, string SubjectType, string TemplateCode,
-    int? TemplateVersion, string Status, DateTime IssuedAt, Guid TenantId);
+public sealed class LabelTracePublicInfo
+{
+    public LabelTracePublicInfo() { }
+    public LabelTracePublicInfo(Guid Id, string TraceCode, string SubjectType, string TemplateCode, int? TemplateVersion, string Status, DateTime IssuedAt, Guid TenantId)
+    {
+        this.Id = Id;
+        this.TraceCode = TraceCode;
+        this.SubjectType = SubjectType;
+        this.TemplateCode = TemplateCode;
+        this.TemplateVersion = TemplateVersion;
+        this.Status = Status;
+        this.IssuedAt = IssuedAt;
+        this.TenantId = TenantId;
+    }
+    public Guid Id { get; set; }
+    public string TraceCode { get; set; } = "";
+    public string SubjectType { get; set; } = "";
+    public string TemplateCode { get; set; } = "";
+    public int? TemplateVersion { get; set; }
+    public string Status { get; set; } = "";
+    public DateTime IssuedAt { get; set; }
+    public Guid TenantId { get; set; }
+}
 
 public sealed record LabelTraceIssueCommand(Guid TenantId, Guid? LabelPrintId, string SubjectType, Guid? SubjectId,
     string TemplateCode, int? TemplateVersion, Guid? IssuedBy, string? IssuedByName, string? PayloadHash);

@@ -802,40 +802,91 @@ public sealed class ImportExportController : Controller
         List<ImportLogRow> RecentImports,
         List<FolderRow> Folders);
 
-    public sealed record ImportLogRow(
-        Guid Id,
-        string FileName,
-        DateTime ImportedAt,
-        string Status,
-        bool SigDetected,
-        string SigStatus,
-        string? SigDetails,
-        Guid? DocumentId,
-        string? DocumentCode,
-        string? DocumentTitle);
+    public sealed class ImportLogRow
+    {
+        public ImportLogRow() { }
+        public ImportLogRow(Guid Id, string FileName, DateTime ImportedAt, string Status, bool SigDetected, string SigStatus, string? SigDetails, Guid? DocumentId, string? DocumentCode, string? DocumentTitle)
+        {
+            this.Id = Id;
+            this.FileName = FileName;
+            this.ImportedAt = ImportedAt;
+            this.Status = Status;
+            this.SigDetected = SigDetected;
+            this.SigStatus = SigStatus;
+            this.SigDetails = SigDetails;
+            this.DocumentId = DocumentId;
+            this.DocumentCode = DocumentCode;
+            this.DocumentTitle = DocumentTitle;
+        }
+        public Guid Id { get; set; }
+        public string FileName { get; set; } = "";
+        public DateTime ImportedAt { get; set; }
+        public string Status { get; set; } = "";
+        public bool SigDetected { get; set; }
+        public string SigStatus { get; set; } = "";
+        public string? SigDetails { get; set; }
+        public Guid? DocumentId { get; set; }
+        public string? DocumentCode { get; set; }
+        public string? DocumentTitle { get; set; }
+    }
 
-    public sealed record FolderRow(
-        Guid Id,
-        string Name);
+    public sealed class FolderRow
+    {
+        public FolderRow() { }
+        public FolderRow(Guid Id, string Name)
+        {
+            this.Id = Id;
+            this.Name = Name;
+        }
+        public Guid Id { get; set; }
+        public string Name { get; set; } = "";
+    }
 
-    public sealed record ExportDocRow(
-        Guid Id,
-        Guid DocumentId,
-        string Code,
-        string Title,
-        string FileName,
-        string? ContentType,
-        long SizeBytes,
-        string? SigStatus,
-        DateTime CreatedAt);
+    public sealed class ExportDocRow
+    {
+        public ExportDocRow() { }
+        public ExportDocRow(Guid Id, Guid DocumentId, string Code, string Title, string FileName, string? ContentType, long SizeBytes, string? SigStatus, DateTime CreatedAt)
+        {
+            this.Id = Id;
+            this.DocumentId = DocumentId;
+            this.Code = Code;
+            this.Title = Title;
+            this.FileName = FileName;
+            this.ContentType = ContentType;
+            this.SizeBytes = SizeBytes;
+            this.SigStatus = SigStatus;
+            this.CreatedAt = CreatedAt;
+        }
+        public Guid Id { get; set; }
+        public Guid DocumentId { get; set; }
+        public string Code { get; set; } = "";
+        public string Title { get; set; } = "";
+        public string FileName { get; set; } = "";
+        public string? ContentType { get; set; }
+        public long SizeBytes { get; set; }
+        public string? SigStatus { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
 
-    public sealed record VersionDownloadRow(
-        string StoragePath,
-        string FileName,
-        string ContentType,
-        Guid DocumentId,
-        string DocumentCode,
-        string DocumentTitle);
+    public sealed class VersionDownloadRow
+    {
+        public VersionDownloadRow() { }
+        public VersionDownloadRow(string StoragePath, string FileName, string ContentType, Guid DocumentId, string DocumentCode, string DocumentTitle)
+        {
+            this.StoragePath = StoragePath;
+            this.FileName = FileName;
+            this.ContentType = ContentType;
+            this.DocumentId = DocumentId;
+            this.DocumentCode = DocumentCode;
+            this.DocumentTitle = DocumentTitle;
+        }
+        public string StoragePath { get; set; } = "";
+        public string FileName { get; set; } = "";
+        public string ContentType { get; set; } = "";
+        public Guid DocumentId { get; set; }
+        public string DocumentCode { get; set; } = "";
+        public string DocumentTitle { get; set; } = "";
+    }
 
     private sealed record ImportLogDeleteRow(
         Guid Id,

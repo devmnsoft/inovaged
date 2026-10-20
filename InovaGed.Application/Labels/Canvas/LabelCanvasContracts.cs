@@ -263,7 +263,21 @@ public sealed class LabelCanvasPreviewRequest
     public IReadOnlyDictionary<string, object?>? SampleData { get; init; }
 }
 
-public sealed record LabelCanvasPreviewSubjectDto(Guid Id, string Reference, string PrimaryText, string? SecondaryText);
+public sealed class LabelCanvasPreviewSubjectDto
+{
+    public LabelCanvasPreviewSubjectDto() { }
+    public LabelCanvasPreviewSubjectDto(Guid Id, string Reference, string PrimaryText, string? SecondaryText)
+    {
+        this.Id = Id;
+        this.Reference = Reference;
+        this.PrimaryText = PrimaryText;
+        this.SecondaryText = SecondaryText;
+    }
+    public Guid Id { get; set; }
+    public string Reference { get; set; } = "";
+    public string PrimaryText { get; set; } = "";
+    public string? SecondaryText { get; set; }
+}
 
 public sealed class LabelCanvasPreviewSubjectRequest
 {
@@ -311,7 +325,35 @@ public static class LabelPaperOptions
     public static readonly IReadOnlyList<string> Supported = new[] { "A4", "A5", "LETTER", "CUSTOM" };
     public static bool IsSupported(string? value) => Supported.Contains(value ?? "", StringComparer.OrdinalIgnoreCase);
 }
-public sealed record LabelCanvasVersionDto(Guid Id, int VersionNo, string Status, string? ChangeSummary, Guid? CreatedBy, DateTime CreatedAt, Guid? PublishedBy, DateTime? PublishedAt, string? SnapshotHash, string? CreatedByName = null, string? PublishedByName = null);
+public sealed class LabelCanvasVersionDto
+{
+    public LabelCanvasVersionDto() { }
+    public LabelCanvasVersionDto(Guid Id, int VersionNo, string Status, string? ChangeSummary, Guid? CreatedBy, DateTime CreatedAt, Guid? PublishedBy, DateTime? PublishedAt, string? SnapshotHash, string? CreatedByName = null, string? PublishedByName = null)
+    {
+        this.Id = Id;
+        this.VersionNo = VersionNo;
+        this.Status = Status;
+        this.ChangeSummary = ChangeSummary;
+        this.CreatedBy = CreatedBy;
+        this.CreatedAt = CreatedAt;
+        this.PublishedBy = PublishedBy;
+        this.PublishedAt = PublishedAt;
+        this.SnapshotHash = SnapshotHash;
+        this.CreatedByName = CreatedByName;
+        this.PublishedByName = PublishedByName;
+    }
+    public Guid Id { get; set; }
+    public int VersionNo { get; set; }
+    public string Status { get; set; } = "";
+    public string? ChangeSummary { get; set; }
+    public Guid? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public Guid? PublishedBy { get; set; }
+    public DateTime? PublishedAt { get; set; }
+    public string? SnapshotHash { get; set; }
+    public string? CreatedByName { get; set; } = null;
+    public string? PublishedByName { get; set; } = null;
+}
 public sealed record LabelCanvasRenderResult(string Html, string SnapshotHash, LabelCanvasValidationResult Validation);
 
 public interface ILabelCanvasDesignService
@@ -348,15 +390,29 @@ public static class LabelCanvasSubjectTypeMapper
     };
 }
 
-public sealed record LabelCanvasCalibration(
-    Guid? ProfileId,
-    decimal MarginTopMm,
-    decimal MarginLeftMm,
-    decimal OffsetXMm,
-    decimal OffsetYMm,
-    decimal ScalePercent,
-    decimal GapXMm,
-    decimal GapYMm);
+public sealed class LabelCanvasCalibration
+{
+    public LabelCanvasCalibration() { }
+    public LabelCanvasCalibration(Guid? ProfileId, decimal MarginTopMm, decimal MarginLeftMm, decimal OffsetXMm, decimal OffsetYMm, decimal ScalePercent, decimal GapXMm, decimal GapYMm)
+    {
+        this.ProfileId = ProfileId;
+        this.MarginTopMm = MarginTopMm;
+        this.MarginLeftMm = MarginLeftMm;
+        this.OffsetXMm = OffsetXMm;
+        this.OffsetYMm = OffsetYMm;
+        this.ScalePercent = ScalePercent;
+        this.GapXMm = GapXMm;
+        this.GapYMm = GapYMm;
+    }
+    public Guid? ProfileId { get; set; }
+    public decimal MarginTopMm { get; set; }
+    public decimal MarginLeftMm { get; set; }
+    public decimal OffsetXMm { get; set; }
+    public decimal OffsetYMm { get; set; }
+    public decimal ScalePercent { get; set; }
+    public decimal GapXMm { get; set; }
+    public decimal GapYMm { get; set; }
+}
 
 public sealed class LabelCanvasPrintContext
 {
@@ -431,21 +487,71 @@ public interface ILabelCanvasFieldCatalogService
     IReadOnlyDictionary<string, object?> GetSampleData(string profile);
 }
 
-public sealed record LabelCanvasSchemaCapabilitySnapshot(
-    bool HasLabelTemplateDesign,
-    bool HasLockVersion,
-    bool HasComponentPreset,
-    bool HasPrintSelection);
+public sealed class LabelCanvasSchemaCapabilitySnapshot
+{
+    public LabelCanvasSchemaCapabilitySnapshot() { }
+    public LabelCanvasSchemaCapabilitySnapshot(bool HasLabelTemplateDesign, bool HasLockVersion, bool HasComponentPreset, bool HasPrintSelection)
+    {
+        this.HasLabelTemplateDesign = HasLabelTemplateDesign;
+        this.HasLockVersion = HasLockVersion;
+        this.HasComponentPreset = HasComponentPreset;
+        this.HasPrintSelection = HasPrintSelection;
+    }
+    public bool HasLabelTemplateDesign { get; set; }
+    public bool HasLockVersion { get; set; }
+    public bool HasComponentPreset { get; set; }
+    public bool HasPrintSelection { get; set; }
+}
 
 public interface ILabelCanvasSchemaCapabilities
 {
     Task<LabelCanvasSchemaCapabilitySnapshot> GetAsync(CancellationToken cancellationToken = default);
 }
 
-public sealed record LabelCanvasComponentPresetDto(Guid Id, string Name, string Category, int SchemaVersion,
-    int ElementCount, DateTime CreatedAt, DateTime? UpdatedAt);
-public sealed record LabelCanvasComponentPresetDetailsDto(Guid Id, string Name, string Category, int SchemaVersion,
-    int ElementCount, DateTime CreatedAt, DateTime? UpdatedAt, string ElementsJson);
+public sealed class LabelCanvasComponentPresetDto
+{
+    public LabelCanvasComponentPresetDto() { }
+    public LabelCanvasComponentPresetDto(Guid Id, string Name, string Category, int SchemaVersion, int ElementCount, DateTime CreatedAt, DateTime? UpdatedAt)
+    {
+        this.Id = Id;
+        this.Name = Name;
+        this.Category = Category;
+        this.SchemaVersion = SchemaVersion;
+        this.ElementCount = ElementCount;
+        this.CreatedAt = CreatedAt;
+        this.UpdatedAt = UpdatedAt;
+    }
+    public Guid Id { get; set; }
+    public string Name { get; set; } = "";
+    public string Category { get; set; } = "";
+    public int SchemaVersion { get; set; }
+    public int ElementCount { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
+}
+public sealed class LabelCanvasComponentPresetDetailsDto
+{
+    public LabelCanvasComponentPresetDetailsDto() { }
+    public LabelCanvasComponentPresetDetailsDto(Guid Id, string Name, string Category, int SchemaVersion, int ElementCount, DateTime CreatedAt, DateTime? UpdatedAt, string ElementsJson)
+    {
+        this.Id = Id;
+        this.Name = Name;
+        this.Category = Category;
+        this.SchemaVersion = SchemaVersion;
+        this.ElementCount = ElementCount;
+        this.CreatedAt = CreatedAt;
+        this.UpdatedAt = UpdatedAt;
+        this.ElementsJson = ElementsJson;
+    }
+    public Guid Id { get; set; }
+    public string Name { get; set; } = "";
+    public string Category { get; set; } = "";
+    public int SchemaVersion { get; set; }
+    public int ElementCount { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
+    public string ElementsJson { get; set; } = "";
+}
 public sealed record LabelCanvasComponentPresetCreateRequest(string Name, string Category, string ElementsJson, int SchemaVersion = 2);
 
 public interface ILabelCanvasComponentPresetService

@@ -1,5 +1,11 @@
 namespace InovaGed.Application.Ged.Processing;
 
+public sealed class ProcessingStage
+{
+    public string Name { get; set; } = "";
+    public string State { get; set; } = "";
+}
+
 public sealed record ProcessingCenterCriteria(
     string StatusGroup,
     string? Lane,
@@ -15,6 +21,7 @@ public static class ProcessingCenterCatalog
     public const int MaxWindowDays = 90;
     public const int DefaultWindowDays = 7;
     public const int MaxRows = 200;
+    public const int MaxBatchReprocess = 20;
 
     public static ProcessingCenterCriteria Normalize(
         string? status,
@@ -116,6 +123,100 @@ public static class ProcessingCenterCatalog
 
     public static bool IncludesUploads(string? lane)
         => lane is null || string.Equals(lane, "UPLOAD", StringComparison.OrdinalIgnoreCase);
+
+    public static IReadOnlyList<ProcessingStage> Timeline(string? lane, string? status, string? fileName, string? errorMessage)
+    {
+        var kind = (lane ?? string.Empty).Trim().ToUpperInvariant();
+        var code = (status ?? string.Empty).Trim().ToUpperInvariant();
+        var failed = code is "FAILED" or "ERROR" or "FAILURE";
+        var done = code is "READY" or "COMPLETED";
+        var canceled = code is "CANCELED" or "CANCELLED";
+        var active = code is "PROCESSING" or "RECEIVING" or "COMPLETING";
+        var conversionFailed = failed && IsConversionMessage(errorMessage);
+        var needsConversion = NeedsConversion(fileName);
+
+        string At(int index)
+        {
+            if (canceled)
+                return index == 0 ? "Concluída" : "Dispensada";
+
+            if (kind is "UPLOAD")
+                return index == 0 ? JobState(done, failed, active) : "Dispensada";
+
+            if (kind is "PREVIEW")
+            {
+                if (index == 0) return "Concluída";
+                if (index == 1) return JobState(done, failed, active);
+                if (index == 4) return done ? "Concluída" : failed ? "Falhou" : "Aguardando";
+                return "Dispensada";
+            }
+
+            if (kind is "OCR")
+            {
+                if (index == 0) return "Concluída";
+                if (index == 1)
+                {
+                    if (conversionFailed) return "Falhou";
+                    if (!needsConversion) return "Dispensada";
+                    if (done || failed) return "Concluída";
+                    return active ? "Em andamento" : "Aguardando";
+                }
+                if (index == 2)
+                {
+                    if (conversionFailed) return "Aguardando";
+                    return JobState(done, failed, active);
+                }
+                if (index == 4) return done ? "Concluída" : "Aguardando";
+                return "Dispensada";
+            }
+
+            if (kind is "CLASSIFICATION" or "SMART_INDEX")
+            {
+                if (index == 0) return "Concluída";
+                if (index == 3) return JobState(done, failed, active);
+                if (index == 4) return done ? "Concluída" : "Aguardando";
+                return "Dispensada";
+            }
+
+            if (index == 0) return "Concluída";
+            if (index == 4) return done ? "Concluída" : failed ? "Falhou" : "Aguardando";
+            return "Dispensada";
+        }
+
+        string[] names = ["Recebimento", "Conversão", "OCR", "Indexação", "Disponível"];
+        return names
+            .Select((name, index) => new ProcessingStage { Name = name, State = At(index) })
+            .ToArray();
+    }
+
+    public static bool NeedsConversion(string? fileName)
+    {
+        var extension = Path.GetExtension(fileName ?? string.Empty).ToLowerInvariant();
+        return extension is ".doc" or ".docx" or ".docm" or ".odt" or ".rtf"
+            or ".xls" or ".xlsx" or ".xlsm" or ".ods" or ".csv"
+            or ".ppt" or ".pptx" or ".odp" or ".odg";
+    }
+
+    public static bool IsConversionMessage(string? errorMessage)
+    {
+        if (string.IsNullOrWhiteSpace(errorMessage))
+            return false;
+
+        return errorMessage.Contains("conversão", StringComparison.OrdinalIgnoreCase)
+            || errorMessage.Contains("tempo esperado", StringComparison.OrdinalIgnoreCase)
+            || errorMessage.Contains("protegido por senha", StringComparison.OrdinalIgnoreCase)
+            || errorMessage.Contains("não é compatível", StringComparison.OrdinalIgnoreCase)
+            || errorMessage.Contains("não pôde ser validado", StringComparison.OrdinalIgnoreCase)
+            || errorMessage.Contains("corrompido", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string JobState(bool done, bool failed, bool active)
+    {
+        if (done) return "Concluída";
+        if (failed) return "Falhou";
+        if (active) return "Em andamento";
+        return "Aguardando";
+    }
 
     private static IReadOnlyList<string> StatusesFor(string group) => group switch
     {

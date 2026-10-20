@@ -18,7 +18,8 @@
   <partial name="Atlas/_PageHeader" model="header" />
   <partial name="Atlas/_PageMetrics" model="metrics" />
   <nav class="smart-admin__tabs" aria-label="Configurações do SmartSearch">
-    @foreach (var item in new[] { ("Settings","Configurações"), ("Synonyms","Sinônimos"), ("Intents","Intenções"), ("Quality","Qualidade"), ("Feedback","Feedbacks") }) {
+    @{ var gateList1 = new[] { ("Settings","Configurações"), ("Synonyms","Sinônimos"), ("Intents","Intenções"), ("Quality","Qualidade"), ("Feedback","Feedbacks") }; }
+    @foreach (var item in gateList1) {
       <a class="@(Model.Section == item.Item1 ? "active" : null)" href="/SmartSearch/@item.Item1">@item.Item2</a>
     }
   </nav>
@@ -37,7 +38,11 @@
     <section class="atlas-prime-panel"><div class="atlas-prime-panel__header"><div><h2>Feedbacks negativos</h2><small>Fila de melhoria sem exibir a pergunta sensível do usuário.</small></div></div><div class="table-responsive"><table class="table"><thead><tr><th>Documento</th><th>Conversa mascarada</th><th>Registrado em</th><th>Ação</th></tr></thead><tbody>@foreach(var row in Model.NegativeFeedback){<tr><td><code>GED:@row.DocumentId.ToString()[..8]…</code></td><td>@(row.ConversationKey.Length > 8 ? row.ConversationKey[..8] + "…" : row.ConversationKey)</td><td>@row.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td><td><a class="btn btn-sm btn-outline-primary" href="/Ged/Details/@row.DocumentId">Revisar fonte</a></td></tr>}</tbody></table></div>@if(!Model.NegativeFeedback.Any()){<div class="smart-admin__empty"><strong>Nenhum feedback negativo pendente</strong><span>A fila de melhoria está em dia.</span></div>}</section>
   } else {
     <section class="atlas-prime-panel"><div class="atlas-prime-panel__header"><div><h2>@titles[Model.Section]</h2><small>Políticas vigentes do assistente documental.</small></div></div><div class="smart-admin__cards">
-      @foreach(var item in (Model.Section == "Intents" ? new[]{"Sem OCR e sem índice","Fornecedor, CNPJ e competência","Valor, vencimento e protocolo","Tramitação e classificação","Temporalidade e acervo físico","Faturamento, glosas e revisão"} : Model.Section == "Quality" ? new[]{"Respostas sempre com fontes","Consultas sem resultado monitoradas","Feedback negativo priorizado","OCR e índice acompanhados"} : new[]{"Escopo do usuário obrigatório","OCR sujeito à permissão","Dados pessoais mascarados","Auditoria de consultas sensíveis","Ranking por evidência","Filtros sugeridos automaticamente"})) { <article><app-icon name="check" size="18" decorative="true" /><strong>@item</strong><span>Ativo e aplicado por tenant.</span></article> }
+      @{ var gateList2 = new[]{"Sem OCR e sem índice","Fornecedor, CNPJ e competência","Valor, vencimento e protocolo","Tramitação e classificação","Temporalidade e acervo físico","Faturamento, glosas e revisão"};
+         var gateList3 = new[]{"Respostas sempre com fontes","Consultas sem resultado monitoradas","Feedback negativo priorizado","OCR e índice acompanhados"};
+         var gateList4 = new[]{"Escopo do usuário obrigatório","OCR sujeito à permissão","Dados pessoais mascarados","Auditoria de consultas sensíveis","Ranking por evidência","Filtros sugeridos automaticamente"};
+         var gateItems = Model.Section == "Intents" ? gateList2 : Model.Section == "Quality" ? gateList3 : gateList4; }
+      @foreach(var item in gateItems) { <article><app-icon name="check" size="18" decorative="true" /><strong>@item</strong><span>Ativo e aplicado por tenant.</span></article> }
     </div></section>
   }
 </div>

@@ -61,7 +61,8 @@
             <div class="col-md-2"><label class="form-label" for="status">Situação do processo</label>
                 <select id="status" name="status" class="form-select">
                     <option value="">Todas</option>
-                    @foreach (var s in new[] { "RASCUNHO", "ABERTO", "EM_TRAMITACAO", "DEFERIDO", "INDEFERIDO", "FINALIZADO", "ARQUIVADO", "CANCELADO" })
+                    @{ var gateList1 = new[] { "RASCUNHO", "ABERTO", "EM_TRAMITACAO", "DEFERIDO", "INDEFERIDO", "FINALIZADO", "ARQUIVADO", "CANCELADO" }; }
+                    @foreach (var s in gateList1)
                     {
                         <option value="@s" selected="@(Model.Query.Status == s)">@LabelProcesso(s)</option>
                     }
@@ -79,7 +80,7 @@
             <div class="col-md-2"><label class="form-label" for="de">De</label><input id="de" type="date" name="de" value="@Model.Query.De?.ToString("yyyy-MM-dd")" class="form-control" /></div>
             <div class="col-md-2"><label class="form-label" for="ate">Até</label><input id="ate" type="date" name="ate" value="@Model.Query.Ate?.ToString("yyyy-MM-dd")" class="form-control" /></div>
             <div class="col-md-3 form-check mt-4"><input class="form-check-input" type="checkbox" name="prazoVencido" value="true" id="prazo" checked="@Model.Query.PrazoVencido" /><label class="form-check-label" for="prazo">Somente prazo vencido</label></div>
-            <div class="col-md-2 mt-4"><button class="btn btn-outline-primary w-100">Filtrar</button></div>
+            <div class="col-md-2 mt-4"><button class="btn btn-outline-primary w-100" type="submit">Filtrar</button></div>
             <div class="col-md-2 mt-4"><a class="btn btn-outline-secondary w-100" asp-action="Exportar" asp-route-visao="@VisaoAtual" asp-route-q="@Model.Query.Q" asp-route-status="@Model.Query.Status" asp-route-tipo="@Model.Query.Tipo" asp-route-setorId="@Model.Query.SetorId" asp-route-page="@Model.Page">Exportar página</a></div>
         </form>
     </div>
@@ -166,10 +167,10 @@
             </dl>
             @if (sel.ExibirCamposHospitalares) { <p class="small">Interessado/paciente: @sel.Interessado. Este dado é apenas consulta.</p> }
             <div class="d-flex flex-wrap gap-2">
-                @if (sel.PodeReceber) { <form asp-action="Receber" method="post" id="acao-receber">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@sel.Id" /><input type="hidden" name="movimentoId" value="@sel.MovimentoId" /><button class="btn btn-success">Receber</button></form> }
-                @if (sel.PodeConfirmarRetorno) { <form asp-action="ConfirmarRetorno" method="post">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@sel.Id" /><input type="hidden" name="movimentoId" value="@sel.MovimentoId" /><button class="btn btn-success">Confirmar retorno</button></form> }
-                @if (sel.PodeDevolver) { <form asp-action="Devolver" method="post" id="acao-devolver" class="d-flex gap-2">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@sel.Id" /><input name="observacao" class="form-control" placeholder="Observação da devolução" /><button class="btn btn-warning">Devolver</button></form> }
-                @if (sel.PodeEstornar) { <form asp-action="Estornar" method="post" class="d-flex gap-2">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@sel.Id" /><input name="justificativa" class="form-control" placeholder="Justificativa do estorno" required /><button class="btn btn-outline-danger">Estornar última movimentação</button></form> }
+                @if (sel.PodeReceber) { <form asp-action="Receber" method="post" id="acao-receber">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@sel.Id" /><input type="hidden" name="movimentoId" value="@sel.MovimentoId" /><button class="btn btn-success" type="submit">Receber</button></form> }
+                @if (sel.PodeConfirmarRetorno) { <form asp-action="ConfirmarRetorno" method="post">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@sel.Id" /><input type="hidden" name="movimentoId" value="@sel.MovimentoId" /><button class="btn btn-success" type="submit">Confirmar retorno</button></form> }
+                @if (sel.PodeDevolver) { <form asp-action="Devolver" method="post" id="acao-devolver" class="d-flex gap-2">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@sel.Id" /><input name="observacao" class="form-control" placeholder="Observação da devolução" /><button class="btn btn-warning" type="submit">Devolver</button></form> }
+                @if (sel.PodeEstornar) { <form asp-action="Estornar" method="post" class="d-flex gap-2">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@sel.Id" /><input name="justificativa" class="form-control" placeholder="Justificativa do estorno" required /><button class="btn btn-outline-danger" type="submit">Estornar última movimentação</button></form> }
                 <a class="btn btn-outline-primary" id="acao-tramitar" asp-action="Details" asp-route-id="@sel.Id">Tramitar / histórico</a>
             </div>
             @if (sel.CustodiaFisica.Count > 0)

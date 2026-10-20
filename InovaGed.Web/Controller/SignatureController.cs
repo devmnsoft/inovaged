@@ -370,13 +370,25 @@ public sealed class SignatureController : Controller
     // =========================================================
     // ViewModels adicionais (adicione junto aos demais records)
     // =========================================================
-    public sealed record SignatureDetailRow(
-        string Status,
-        DateTime? SigningTime,
-        string? SignedByName,
-        string? Cpf,
-        string? CertSubject,
-        string? StatusDetails);
+    public sealed class SignatureDetailRow
+    {
+        public SignatureDetailRow() { }
+        public SignatureDetailRow(string Status, DateTime? SigningTime, string? SignedByName, string? Cpf, string? CertSubject, string? StatusDetails)
+        {
+            this.Status = Status;
+            this.SigningTime = SigningTime;
+            this.SignedByName = SignedByName;
+            this.Cpf = Cpf;
+            this.CertSubject = CertSubject;
+            this.StatusDetails = StatusDetails;
+        }
+        public string Status { get; set; } = "";
+        public DateTime? SigningTime { get; set; }
+        public string? SignedByName { get; set; }
+        public string? Cpf { get; set; }
+        public string? CertSubject { get; set; }
+        public string? StatusDetails { get; set; }
+    }
 
     public sealed record SignaturePanelVM(
         Guid DocumentId,
@@ -385,24 +397,53 @@ public sealed class SignatureController : Controller
     // =========================================================
     // ViewModels
     // =========================================================
-    public sealed record PendingDocRow(
-        Guid Id,
-        string Code,
-        string Title,
-        string DocStatus,
-        DateTime CreatedAt,
-        string? SignatureStatus,
-        DateTime? SigningTime,
-        string? SignedByName);
+    public sealed class PendingDocRow
+    {
+        public PendingDocRow() { }
+        public PendingDocRow(Guid Id, string Code, string Title, string DocStatus, DateTime CreatedAt, string? SignatureStatus, DateTime? SigningTime, string? SignedByName)
+        {
+            this.Id = Id;
+            this.Code = Code;
+            this.Title = Title;
+            this.DocStatus = DocStatus;
+            this.CreatedAt = CreatedAt;
+            this.SignatureStatus = SignatureStatus;
+            this.SigningTime = SigningTime;
+            this.SignedByName = SignedByName;
+        }
+        public Guid Id { get; set; }
+        public string Code { get; set; } = "";
+        public string Title { get; set; } = "";
+        public string DocStatus { get; set; } = "";
+        public DateTime CreatedAt { get; set; }
+        public string? SignatureStatus { get; set; }
+        public DateTime? SigningTime { get; set; }
+        public string? SignedByName { get; set; }
+    }
 
-    public sealed record SignDocumentVM(
-        Guid Id,
-        string Code,
-        string Title,
-        string DocStatus,
-        string? SignatureStatus,
-        DateTime? SigningTime,
-        string? SignedByName,
-        string? Cpf,
-        string? StatusDetails);
+    public sealed class SignDocumentVM
+    {
+        public SignDocumentVM() { }
+        public SignDocumentVM(Guid Id, string Code, string Title, string DocStatus, string? SignatureStatus, DateTime? SigningTime, string? SignedByName, string? Cpf, string? StatusDetails)
+        {
+            this.Id = Id;
+            this.Code = Code;
+            this.Title = Title;
+            this.DocStatus = DocStatus;
+            this.SignatureStatus = SignatureStatus;
+            this.SigningTime = SigningTime;
+            this.SignedByName = SignedByName;
+            this.Cpf = Cpf;
+            this.StatusDetails = StatusDetails;
+        }
+        public Guid Id { get; set; }
+        public string Code { get; set; } = "";
+        public string Title { get; set; } = "";
+        public string DocStatus { get; set; } = "";
+        public string? SignatureStatus { get; set; }
+        public DateTime? SigningTime { get; set; }
+        public string? SignedByName { get; set; }
+        public string? Cpf { get; set; }
+        public string? StatusDetails { get; set; }
+    }
 }

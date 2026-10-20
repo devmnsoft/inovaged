@@ -15,7 +15,7 @@ public sealed class RetentionTermRow
 public sealed class CreateTermRequest
 {
     public Guid CaseId { get; set; }
-    public string TermType { get; set; } = "ELIMINATION"; // ELIMINATION|TRANSFER|COLLECTION
+    public string TermType { get; set; } = "ELIMINATION"; // ELIMINATION|TRANSFER|COLLECTION;
     public string? Notes { get; set; }
 }
 

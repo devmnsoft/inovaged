@@ -184,7 +184,7 @@ public static class LocalHttpsCertificate
 }
 
 
-public sealed class AgentOptions { public string[] AllowedOrigins { get; set; } = []; public string[] AllowedServerHosts { get; set; } = []; public bool RequireHttps { get; set; } = true; public int MaxCmsMaterializationSizeMb { get; set; } = 64; }
+public sealed class AgentOptions { public string[] AllowedOrigins { get; set; } = []; public string[] AllowedServerHosts { get; set; } = []; public bool RequireHttps { get; set; } = true; public int MaxCmsMaterializationSizeMb { get; set; } = 64; };
 public sealed record PairingRequest(string Origin, string Code);
 public sealed record PairingChallengeRequest(string Origin);
 public sealed record PairingCompleteRequest(string Code);

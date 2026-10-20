@@ -8,6 +8,8 @@ using InovaGed.Application.Documents;
 using InovaGed.Application.Ocr;
 using InovaGed.Application.SystemHealth;
 using InovaGed.Domain.Ged;
+using InovaGed.Application.ArtificialIntelligence;
+using InovaGed.Application.Common.Preview;
 using InovaGed.Infrastructure.Preview;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -60,6 +62,8 @@ public sealed class OcrWorker : BackgroundService
                     continue;
                 }
 
+                try
+                {
                 if (job.RequestedBy is null || job.RequestedBy == Guid.Empty)
                 {
                     await jobs.MarkErrorAsync(job.Id, "OCR sem solicitante válido; reenvie o job com uma identidade tenant-aware.", stoppingToken);
@@ -146,19 +150,41 @@ public sealed class OcrWorker : BackgroundService
 
                 string pdfPath;
 
-                if (IsPdf(sourceVersion.ContentType, sourceVersion.FileName))
+                try
                 {
-                    pdfPath = sourceVersion.StoragePath;
+                    if (IsPdf(sourceVersion.ContentType, sourceVersion.FileName))
+                    {
+                        pdfPath = sourceVersion.StoragePath;
+                    }
+                    else
+                    {
+                        pdfPath = await WithLeaseRenewalAsync(
+                            jobs,
+                            job.Id,
+                            renewalToken => preview.GetOrCreatePreviewPdfAsync(
+                                job.TenantId,
+                                sourceVersion.DocumentId,
+                                sourceVersion.VersionId,
+                                sourceVersion.StoragePath,
+                                sourceVersion.FileName,
+                                renewalToken),
+                            stoppingToken);
+                    }
                 }
-                else
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
-                    pdfPath = await preview.GetOrCreatePreviewPdfAsync(
-                        job.TenantId,
-                        sourceVersion.DocumentId,
-                        sourceVersion.VersionId,
-                        sourceVersion.StoragePath,
-                        sourceVersion.FileName,
-                        stoppingToken);
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    var conversion = ex as DocumentConversionException ?? new DocumentConversionException(
+                        "CONVERSION_UNEXPECTED",
+                        DocumentConversionException.UnavailableMessage,
+                        true,
+                        ex.GetType().Name,
+                        ex);
+                    await RecordConversionFailureAsync(jobs, db, job, sourceVersion.DocumentId, actorId, conversion, stoppingToken);
+                    continue;
                 }
 
                 await jobs.RenewLeaseAsync(job.Id, stoppingToken);
@@ -166,12 +192,16 @@ public sealed class OcrWorker : BackgroundService
                 try
                 {
                     LogOcrInput(job, sourceVersion, pdfPath);
-                    var result = await ExecuteWithRetryAsync(
-                        async retryCt => await ocr.OcrizePdfAsync(
-                            pdfStoragePath: pdfPath,
-                            invalidateDigitalSignatures: job.InvalidateDigitalSignatures,
-                            ct: retryCt),
-                        job,
+                    var result = await WithLeaseRenewalAsync(
+                        jobs,
+                        job.Id,
+                        renewalToken => ExecuteWithRetryAsync(
+                            async retryCt => await ocr.OcrizePdfAsync(
+                                pdfStoragePath: pdfPath,
+                                invalidateDigitalSignatures: job.InvalidateDigitalSignatures,
+                                ct: retryCt),
+                            job,
+                            renewalToken),
                         stoppingToken);
 
                     if (result?.OcrPdfBytes is null || result.OcrPdfBytes.Length == 0)
@@ -209,6 +239,20 @@ public sealed class OcrWorker : BackgroundService
                     }
 
                     var extractedText = result.ExtractedText ?? "";
+                    var assist = scope.ServiceProvider.GetService<IFreeAssist>();
+                    if (assist is { CanAssistOcr: true } && extractedText.Length <= FreeAssistPolicy.MaxOcrCharacters)
+                    {
+                        try
+                        {
+                            var cleaned = await assist.CleanOcrTextAsync(extractedText, stoppingToken);
+                            if (!string.IsNullOrWhiteSpace(cleaned)) extractedText = cleaned;
+                        }
+                        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { throw; }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "A leitura assistida do OCR foi ignorada. O texto original da extração permanece. JobId={JobId}", job.Id);
+                        }
+                    }
                     var newFileName = BuildOcrFileName(sourceVersion.FileName);
 
                     await using var ms = new MemoryStream(result.OcrPdfBytes);
@@ -411,7 +455,10 @@ public sealed class OcrWorker : BackgroundService
                 }
                 catch (Exception ex)
                 {
-                    await jobs.MarkErrorAsync(job.Id, ex.Message, stoppingToken);
+                    var friendly = ex is TimeoutException
+                        ? DocumentConversionException.OcrTimeoutMessage
+                        : DocumentConversionException.InterruptedMessage;
+                    await jobs.MarkErrorAsync(job.Id, friendly, stoppingToken);
 
                     await SaveOcrDescriptionAndMetadataAsync(
                         db,
@@ -433,12 +480,36 @@ public sealed class OcrWorker : BackgroundService
                         new
                         {
                             jobId = job.Id,
-                            error = ex.Message
+                            cause = ex.GetType().Name
                         },
                         "OCR_WORKER",
                         stoppingToken);
 
                     _logger.LogError(ex, "Erro ao processar OCR. JobId={JobId}", job.Id);
+                }
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Falha isolada do job. O ciclo continua. JobId={JobId} Cause={Cause}", job.Id, ex.GetType().Name);
+                    try
+                    {
+                        await RecordConversionFailureAsync(
+                            jobs,
+                            db,
+                            job,
+                            Guid.Empty,
+                            job.RequestedBy ?? Guid.Empty,
+                            new DocumentConversionException("PROCESSING_INTERRUPTED", DocumentConversionException.InterruptedMessage, true, ex.GetType().Name, ex),
+                            stoppingToken);
+                    }
+                    catch (Exception persistEx)
+                    {
+                        _logger.LogError(persistEx, "Estado do job interrompido não foi gravado. JobId={JobId}", job.Id);
+                    }
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -459,6 +530,103 @@ public sealed class OcrWorker : BackgroundService
         }
 
         _logger.LogInformation("OCR Worker finalizado.");
+    }
+
+    private async Task RecordConversionFailureAsync(
+        IOcrJobRepository jobs,
+        IDbConnectionFactory db,
+        OcrJobDto job,
+        Guid documentId,
+        Guid actorId,
+        DocumentConversionException failure,
+        CancellationToken ct)
+    {
+        var recordedAttempts = 0;
+        try
+        {
+            recordedAttempts = await jobs.GetAttemptsAsync(job.Id, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Não foi possível ler as tentativas da conversão. JobId={JobId}", job.Id);
+        }
+
+        var decision = OcrConversionPolicy.Decide(failure, recordedAttempts);
+        var details = JsonSerializer.Serialize(new { code = failure.FailureCode, stage = "CONVERSION", attempts = decision.Attempts, retry = decision.Retry });
+        try
+        {
+            if (decision.Retry)
+                await jobs.MarkRetryAsync(job.Id, decision.Attempts, DateTimeOffset.UtcNow.Add(decision.Delay), decision.UserMessage, ct);
+            else
+                await jobs.MarkErrorAsync(job.Id, decision.UserMessage, details, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Falha ao persistir o estado da conversão. O lease permite a recuperação. JobId={JobId} Code={Code}", job.Id, failure.FailureCode);
+        }
+
+        try
+        {
+            await InsertDocumentAuditAsync(
+                db,
+                job.TenantId,
+                documentId,
+                actorId,
+                "CONVERSION_FAILED",
+                "CONVERSION",
+                null,
+                new { jobId = job.Id, code = failure.FailureCode, stage = "CONVERSION", retry = decision.Retry, attempts = decision.Attempts },
+                "OCR_WORKER",
+                ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Auditoria da conversão não foi gravada. JobId={JobId}", job.Id);
+        }
+
+        _logger.LogError(failure, "Conversão isolada. JobId={JobId} Code={Code} Retry={Retry} Attempts={Attempts}", job.Id, failure.FailureCode, decision.Retry, decision.Attempts);
+    }
+
+    private async Task<T> WithLeaseRenewalAsync<T>(IOcrJobRepository jobs, long jobId, Func<CancellationToken, Task<T>> work, CancellationToken ct)
+    {
+        using var renewal = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var loop = RenewLeaseLoopAsync(jobs, jobId, renewal.Token);
+        try
+        {
+            return await work(ct);
+        }
+        finally
+        {
+            renewal.Cancel();
+            try { await loop; }
+            catch (OperationCanceledException) { }
+        }
+    }
+
+    private async Task RenewLeaseLoopAsync(IOcrJobRepository jobs, long jobId, CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(2));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                try
+                {
+                    await jobs.RenewLeaseAsync(jobId, ct);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Renovação de lease não concluída. JobId={JobId}", jobId);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
     }
 
     private static bool IsDiagnosticSourceFailure(Exception ex) =>

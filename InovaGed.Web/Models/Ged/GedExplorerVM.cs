@@ -30,7 +30,7 @@ public sealed class GedExplorerVM
         public Guid? ParentId { get; set; }
         public string? Name { get; set; } = "";
         public string? Path { get; set; }
-        public int Level { get; set; } // pra indent no MVP
+        public int Level { get; set; } // pra indent no MVP;
         public Guid UploadFolderId { get; set; }
         public Guid ListingFolderId { get; set; }
         public bool IsVirtual { get; set; }
@@ -48,7 +48,7 @@ public sealed class GedExplorerVM
         public DateTime CreatedAt { get; set; }
         public DateTime UploadedAtUtc { get; set; }
         public string UploadedAtLocalFormatted { get; set; } = "";
-        public Guid CreatedBy { get; set; }   // ou Guid?
+        public Guid CreatedBy { get; set; }   // ou Guid?;
         public string? OcrStatus { get; set; }
         public DateTime? OcrFinishedAt { get; set; }
         public bool HasOcrText { get; set; }

@@ -105,7 +105,10 @@ LIMIT 1;
             await tx.CommitAsync(ct);
 
             await WriteAuditAsync(tenantId, userId, "DOCUMENT_MARK_INCOMPLETE", documentId, new { documentId, versionId = (Guid)row.id, partialGroupId = groupId, partNumber = (int)row.part_number, totalParts, userId, tenantId, correlationId, notes, timestampUtc = DateTime.UtcNow }, ct);
-            return Result<DocumentPartialSummaryDto>.Ok(summary with { PartialStatus = "INCOMPLETE", CanConsolidate = false });
+            var incomplete = summary.Copy();
+            incomplete.PartialStatus = "INCOMPLETE";
+            incomplete.CanConsolidate = false;
+            return Result<DocumentPartialSummaryDto>.Ok(incomplete);
         }
         catch (Exception ex)
         {
@@ -364,7 +367,11 @@ WHERE tenant_id=@tenantId AND id=@documentId;
             await _ocrJobs.EnqueueAsync(tenantId, consolidatedVersionId.Value, userId, invalidateDigitalSignatures: false, ct);
             await WriteAuditAsync(tenantId, userId, "DOCUMENT_PART_CONSOLIDATE", documentId, new { documentId, versionId = consolidatedVersionId, partialGroupId = groupId, userId, tenantId, correlationId, timestampUtc = DateTime.UtcNow, consolidationMode = "LOGICAL", technicalTodo = "Implementar mesclagem física de PDFs quando a biblioteca de merge for homologada." }, ct);
 
-            return Result<DocumentPartialSummaryDto>.Ok(summary with { PartialStatus = "CONSOLIDATED", ConsolidatedVersionId = consolidatedVersionId, CanConsolidate = false });
+            var consolidated = summary.Copy();
+            consolidated.PartialStatus = "CONSOLIDATED";
+            consolidated.ConsolidatedVersionId = consolidatedVersionId;
+            consolidated.CanConsolidate = false;
+            return Result<DocumentPartialSummaryDto>.Ok(consolidated);
         }
         catch (Exception ex)
         {
@@ -394,7 +401,10 @@ WHERE tenant_id=@tenantId AND partial_group_id=@groupId AND reg_status='A';
             var summary = await BuildSummaryAsync(conn, tx, tenantId, documentId, groupId.Value, ct);
             await tx.CommitAsync(ct);
             await WriteAuditAsync(tenantId, userId, auditAction, documentId, new { documentId, partialGroupId = groupId, userId, tenantId, reason, correlationId, timestampUtc = DateTime.UtcNow }, ct);
-            return Result<DocumentPartialSummaryDto>.Ok(summary with { PartialStatus = status, CanConsolidate = status == "COMPLETE" && summary.CanConsolidate });
+            var updated = summary.Copy();
+            updated.PartialStatus = status;
+            updated.CanConsolidate = status == "COMPLETE" && summary.CanConsolidate;
+            return Result<DocumentPartialSummaryDto>.Ok(updated);
         }
         catch (Exception ex)
         {
@@ -425,7 +435,10 @@ SET partial_status=@status,
     total_parts=COALESCE(total_parts, @totalParts)
 WHERE tenant_id=@tenantId AND partial_group_id=@groupId;
 """, new { tenantId, groupId, status, totalParts = summary.TotalParts }, tx, cancellationToken: ct));
-        return summary with { PartialStatus = status, CanConsolidate = status == "COMPLETE" && summary.PartsCount > 1 };
+        var projected = summary.Copy();
+        projected.PartialStatus = status;
+        projected.CanConsolidate = status == "COMPLETE" && summary.PartsCount > 1;
+        return projected;
     }
 
     private static async Task<DocumentPartialSummaryDto> BuildSummaryAsync(System.Data.IDbConnection conn, System.Data.IDbTransaction tx, Guid tenantId, Guid documentId, Guid groupId, CancellationToken ct)
@@ -443,7 +456,9 @@ WHERE pp.tenant_id=@tenantId AND pp.document_id=@documentId AND pp.partial_group
 """;
         var summary = await conn.QuerySingleAsync<DocumentPartialSummaryDto>(new CommandDefinition(sql, new { tenantId, documentId, groupId }, tx, cancellationToken: ct));
         var canConsolidate = summary.PartsCount > 1 && (!summary.TotalParts.HasValue || summary.PartsCount >= summary.TotalParts.Value);
-        return summary with { CanConsolidate = canConsolidate };
+        var flagged = summary.Copy();
+        flagged.CanConsolidate = canConsolidate;
+        return flagged;
     }
 
     private static async Task<DocumentSearchSchema> GetDocumentSearchSchemaAsync(System.Data.IDbConnection conn, CancellationToken ct)

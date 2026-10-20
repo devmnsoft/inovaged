@@ -14,7 +14,8 @@
   <div class="col-md-2">
     <select name="EventType" class="form-select">
       <option value="">Todos os tipos</option>
-      @foreach (var eventType in new[] { "INFO", "SECURITY", "ACCESS_DENIED", "ERROR", "AUDIT", "BUSINESS", "SYSTEM" })
+      @{ var gateList1 = new[] { "INFO", "SECURITY", "ACCESS_DENIED", "ERROR", "AUDIT", "BUSINESS", "SYSTEM" }; }
+      @foreach (var eventType in gateList1)
       {
         <option value="@eventType" selected="@(string.Equals(f.EventType, eventType, StringComparison.OrdinalIgnoreCase))">@eventType</option>
       }
@@ -28,7 +29,7 @@
   <div class="col-md-2"><input name="HttpStatus" value="@f.HttpStatus" class="form-control" placeholder="Status" type="number" /></div>
   <div class="col-md-2"><input name="PageSize" value="@f.PageSize" class="form-control" placeholder="Itens por página" type="number" min="1" max="200" /></div>
   <div class="col-md-4">
-    <button class="btn btn-primary">Filtrar</button>
+    <button class="btn btn-primary" type="submit">Filtrar</button>
     <a href="/SystemLogs?TenantId=@f.TenantId" class="btn btn-outline-secondary">Limpar</a>
   </div>
 </form>

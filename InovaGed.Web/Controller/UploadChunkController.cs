@@ -49,7 +49,7 @@ public sealed class UploadChunkController : Controller
         public DocumentBulkUploadMetadata Metadata { get; set; } = new();
     }
 
-    public sealed class CompleteRequest { public Guid UploadId { get; set; } }
+    public sealed class CompleteRequest { public Guid UploadId { get; set; } };
 
     [HttpPost("Start")]
     [ValidateAntiForgeryToken]

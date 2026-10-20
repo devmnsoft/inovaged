@@ -27,6 +27,24 @@ public sealed class PreviewJobProcessorTests
     }
 
     [Fact]
+    public async Task Conversion_timeout_stores_the_operational_message()
+    {
+        var writes = new List<PreviewStatusUpsert>();
+        var failure = new InovaGed.Application.Common.Preview.DocumentConversionException(
+            "CONVERSION_TIMEOUT",
+            InovaGed.Application.Common.Preview.DocumentConversionException.TimeoutMessage,
+            true,
+            "timeout");
+        var result = await ExecuteAsync(writes, _ => throw failure, static (_, _, _, _) => Task.CompletedTask, failReady: false);
+        var message = writes.Single(write => write.Status == PreviewProcessingStatus.Error).ErrorMessage ?? "";
+
+        Assert.Equal("ConversionFailed", result.Outcome);
+        Assert.Contains(InovaGed.Application.Common.Preview.DocumentConversionException.TimeoutMessage, message, StringComparison.Ordinal);
+        Assert.DoesNotContain("TimeoutException", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("System.", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Failed_status_persist_stays_recoverable_and_keeps_the_same_support_code()
     {
         var writes = new List<PreviewStatusUpsert>();

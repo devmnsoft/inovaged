@@ -146,7 +146,7 @@ limit 1
         return new("AlreadyApplied", null, token, existing.Id, open, open, pending?.Id, existing.Outcome, pending?.Attempts ?? 0);
     }
 
-    private sealed class LockRow { public Guid Id { get; set; } public long Token { get; set; } }
-    private sealed class ExistingRow { public Guid Id { get; set; } public string Fingerprint { get; set; } = ""; public string DecisionJson { get; set; } = ""; public string Outcome { get; set; } = ""; public bool Partial { get; set; } }
-    private sealed class PendingRow { public Guid Id { get; set; } public int Attempts { get; set; } public bool Open { get; set; } }
+    private sealed class LockRow { public Guid Id { get; set; } public long Token { get; set; } };
+    private sealed class ExistingRow { public Guid Id { get; set; } public string Fingerprint { get; set; } = ""; public string DecisionJson { get; set; } = ""; public string Outcome { get; set; } = ""; public bool Partial { get; set; } };
+    private sealed class PendingRow { public Guid Id { get; set; } public int Attempts { get; set; } public bool Open { get; set; } };
 }

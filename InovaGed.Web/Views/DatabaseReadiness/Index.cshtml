@@ -34,7 +34,7 @@
             <a class="btn btn-outline-secondary" href="/SchemaHealth">Abrir SchemaHealth</a>
             <form method="post" action="/DatabaseReadiness/ApplyRequired">
                 @Html.AntiForgeryToken()
-                <button class="btn btn-danger" disabled="@(Model.Pending == 0 ? "disabled" : null)">Aplicar pendentes</button>
+                <button class="btn btn-danger" disabled="@(Model.Pending == 0 ? "disabled" : null)" type="submit">Aplicar pendentes</button>
             </form>
         </div>
     </div>

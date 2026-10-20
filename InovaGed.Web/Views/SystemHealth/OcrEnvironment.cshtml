@@ -54,7 +54,7 @@
                     <div class="card-body">
                         <div class="d-flex justify-content-between gap-2"><h2 class="h6 mb-1">@dependency.Name</h2><span class="badge @(dependency.Success ? "text-bg-success" : "text-bg-danger")">@(dependency.Success ? "Disponível" : "Não encontrado")</span></div>
                         <div class="small text-muted mb-2"><code>@dependency.ConfigKey</code></div>
-                        <div class="small text-break mb-2"><strong>Caminho:</strong> <code>@(string.IsNullOrWhiteSpace(dependency.Path) ? "não configurado" : dependency.Path)</code></div>
+                        <div class="small text-break mb-2"><strong>Caminho:</strong> <code>@(dependency.Name is "LibreOffice" or "Conversão de teste" or "Espaço temporário" ? "oculto neste painel" : string.IsNullOrWhiteSpace(dependency.Path) ? "não configurado" : dependency.Path)</code></div>
                         @if (!string.IsNullOrWhiteSpace(dependency.Version)) { <div class="small text-success">@dependency.Version</div> }
                         @if (!dependency.Success) { <div class="alert alert-warning small mt-2 mb-0"><strong>Como corrigir:</strong> @dependency.Suggestion</div> }
                     </div>
@@ -70,7 +70,7 @@
             @foreach (var c in Model.Checks)
             {
                 <tr class="@(c.Success ? "" : "table-danger")">
-                    <td>@c.Name</td><td><code>@c.ConfigKey</code></td><td><code class="text-break">@c.Path</code></td>
+                    <td>@c.Name</td><td><code>@c.ConfigKey</code></td><td><code class="text-break">@(c.Name is "LibreOffice" or "Conversão de teste" or "Espaço temporário" ? "oculto neste painel" : c.Path)</code></td>
                     <td>@(c.Exists ? "Sim" : "Não")</td><td>@(c.CanExecute ? "Sim" : "Não")</td><td>@(c.ExitCode?.ToString() ?? "-")</td>
                     <td><code>@c.Version</code><details><summary>stdout</summary><pre class="small">@c.StdOut</pre></details></td>
                     <td>@c.Message<details><summary>stderr</summary><pre class="small">@c.StdErr</pre></details></td>

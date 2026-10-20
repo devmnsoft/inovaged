@@ -20,6 +20,7 @@ public sealed class BackupPolicyRepository(IDbConnectionFactory db) : IBackupPol
         var id = policy.Id == Guid.Empty ? Guid.NewGuid() : policy.Id;
         const string sql = "insert into ged.backup_policy(id,tenant_id,name,scope,enabled,backup_type,frequency,scheduled_at,timezone,retention_days,destination_kind,encryption_enabled,auto_verification_enabled,auto_restore_test_allowed,rpo_minutes,rto_minutes,status,created_by,change_justification) values (@id,@TenantId,@Name,@Scope,@Enabled,@BackupType,@Frequency,@ScheduledAt,@TimeZone,@RetentionDays,@DestinationKind,@EncryptionEnabled,@AutoVerificationEnabled,@AutoRestoreTestAllowed,@RpoMinutes,@RtoMinutes,@Status,@userName,@justification) on conflict(id) do update set name=excluded.name,enabled=excluded.enabled,frequency=excluded.frequency,retention_days=excluded.retention_days,updated_at_utc=now(),updated_by=@userName,change_justification=@justification";
         await connection.ExecuteAsync(new CommandDefinition(sql, new { id, policy.TenantId, policy.Name, policy.Scope, policy.Enabled, policy.BackupType, policy.Frequency, policy.ScheduledAt, policy.TimeZone, policy.RetentionDays, policy.DestinationKind, policy.EncryptionEnabled, policy.AutoVerificationEnabled, policy.AutoRestoreTestAllowed, policy.RpoMinutes, policy.RtoMinutes, policy.Status, userName, justification }, cancellationToken: ct));
-        return policy with { Id = id };
+        policy.Id = id;
+        return policy;
     }
 }

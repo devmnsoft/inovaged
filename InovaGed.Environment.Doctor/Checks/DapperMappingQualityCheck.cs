@@ -45,6 +45,7 @@ public sealed partial class DapperMappingQualityCheck : IQualityCheck
     private static bool IsGeneratedOrBuildOutput(string path) =>
         path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase) ||
         path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase) ||
+        path.Contains("Tests" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
         path.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase);
 
     [GeneratedRegex(@"\bpublic\s+(?:sealed\s+)?record(?:\s+class|\s+struct)?\s+([A-Za-z_][A-Za-z0-9_]*)", RegexOptions.CultureInvariant)]

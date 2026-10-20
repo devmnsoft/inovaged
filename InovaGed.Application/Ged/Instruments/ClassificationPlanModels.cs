@@ -68,7 +68,7 @@ public sealed class ClassificationPlanMoveVM
 {
     public Guid Id { get; set; }
     public Guid? NewParentId { get; set; }
-    public string? NewCode { get; set; } // se null -> só move de parent
+    public string? NewCode { get; set; } // se null -> só move de parent;
     public string? Reason { get; set; }
 }
 

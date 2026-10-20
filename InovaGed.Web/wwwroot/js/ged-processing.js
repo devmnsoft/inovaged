@@ -15,6 +15,21 @@
         return d.toLocaleString('pt-BR');
     }
 
+    function stageClass(state) {
+        if (state === 'Concluída') return 'processing-stage-done';
+        if (state === 'Falhou') return 'processing-stage-failed';
+        if (state === 'Em andamento') return 'processing-stage-active';
+        if (state === 'Aguardando') return 'processing-stage-wait';
+        return 'processing-stage';
+    }
+
+    function timeline(stages) {
+        const items = (stages || []).map(function (stage) {
+            return '<li><span class="badge ' + stageClass(stage.state) + '">' + esc(stage.name) + ': ' + esc(stage.state) + '</span></li>';
+        }).join('');
+        return '<ol class="processing-timeline" aria-label="Linha do tempo do documento">' + items + '</ol>';
+    }
+
     function badgeClass(headline) {
         if (headline === 'Concluído') return 'bg-success';
         if (headline === 'Falha definitiva' || headline === 'Falha recuperável') return 'bg-danger';
@@ -68,12 +83,15 @@
         if (!tbody || !count) return;
         count.textContent = items.length + ' na consulta';
         if (!items.length) {
-            tbody.innerHTML = '<tr><td colspan="7" class="processing-empty">Nenhum processamento encontrado para este filtro.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="processing-empty">Nenhum processamento encontrado para este filtro.</td></tr>';
             return;
         }
         tbody.innerHTML = items.map(function (item) {
             const headline = item.headline || 'Em andamento';
-            return '<tr><td>' + esc(item.laneLabel || item.lane) + '</td><td>' + esc(item.documentTitle) + '</td><td><span class="badge ' + badgeClass(headline) + '">' + esc(headline) + '</span></td><td>' + esc(item.attempts) + ' / ' + esc(item.maxAttempts) + '</td><td>' + esc(fmtDate(item.requestedAt)) + '</td><td>' + esc(item.errorMessage || '—') + '</td><td class="processing-actions">' + actions(item) + '</td></tr>';
+            const select = item.canReprocess && item.source === 'JOB' && item.jobKey
+                ? '<input form="processingBatch" type="checkbox" name="jobIds" value="' + esc(item.jobKey) + '" aria-label="Selecionar ' + esc(item.documentTitle) + ' para reprocessamento"> '
+                : '';
+            return '<tr><td>' + esc(item.laneLabel || item.lane) + '</td><td>' + esc(item.documentTitle) + '</td><td>' + timeline(item.timeline) + '</td><td><span class="badge ' + badgeClass(headline) + '">' + esc(headline) + '</span></td><td>' + esc(item.attempts) + ' / ' + esc(item.maxAttempts) + '</td><td>' + esc(fmtDate(item.requestedAt)) + '</td><td>' + esc(item.errorMessage || '—') + '</td><td class="processing-actions">' + select + actions(item) + '</td></tr>';
         }).join('');
     }
 
@@ -134,7 +152,8 @@
             applyMetrics(data.metrics);
             renderErrors(data.recentErrors || []);
         } catch {
-            // A próxima consulta tenta de novo.
+            const tbody = document.getElementById('errorsTbody');
+            if (tbody) tbody.innerHTML = '<tr><td colspan="3" class="processing-empty">Não foi possível atualizar as falhas recentes.</td></tr>';
         }
     }
 

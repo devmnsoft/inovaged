@@ -8,11 +8,167 @@ public static class ContractGlosaStatus { public const string Open="OPEN", Answe
 
 public sealed record ContractFiscalizationCreateCommand(Guid TenantId, DateOnly CompetenceMonth, string? ContractNumber, string? ContractorName, string? ContractingUnit, Guid? FiscalUserId, Guid? ManagerUserId, Guid OpenedBy, string? Notes);
 public sealed record ContractFiscalizationFilter(DateOnly? CompetenceMonth=null, string? Status=null);
-public sealed record ContractFiscalizationPeriodItem(Guid Id, DateOnly CompetenceMonth, string? ContractNumber, string? ContractorName, string? ContractingUnit, Guid? FiscalUserId, string Status, decimal TotalMeasuredAmount, decimal TotalApprovedAmount, decimal TotalGlossedAmount, decimal TotalUst, int TotalItems, DateTimeOffset OpenedAt);
-public sealed record ContractFiscalizationItemDto(Guid Id, Guid FiscalizationPeriodId, Guid? ProductivityEntryId, Guid? ServiceCatalogId, string? ServiceCode, string ServiceName, string Unit, decimal MeasuredQuantity, decimal MeasuredUst, decimal UnitPrice, decimal MeasuredAmount, decimal ApprovedQuantity, decimal ApprovedUst, decimal ApprovedAmount, decimal GlossedQuantity, decimal GlossedAmount, string Status, string? SourceType, Guid? SourceId, int EvidenceCount, string? FiscalNotes, string? ContractorNotes, DateTimeOffset? PerformedAt=null, Guid? PerformedBy=null);
-public sealed record ContractGlosaDto(Guid Id, Guid FiscalizationItemId, string GlosaType, string Reason, decimal GlossedQuantity, decimal GlossedAmount, string Status, string? ContractorResponse, DateTimeOffset CreatedAt, string? ResolutionNotes);
-public sealed record ContractEvidenceDto(Guid Id, Guid? FiscalizationItemId, string EvidenceType, string Title, string? Description, string? ExternalUrl, string? SourceType, Guid? SourceId, DateTimeOffset AttachedAt);
-public sealed record ContractEventDto(string EventType, string EventTitle, string? EventDescription, string? FromStatus, string? ToStatus, DateTimeOffset PerformedAt, Guid? PerformedBy);
+public sealed class ContractFiscalizationPeriodItem
+{
+    public ContractFiscalizationPeriodItem() { }
+    public ContractFiscalizationPeriodItem(Guid Id, DateOnly CompetenceMonth, string? ContractNumber, string? ContractorName, string? ContractingUnit, Guid? FiscalUserId, string Status, decimal TotalMeasuredAmount, decimal TotalApprovedAmount, decimal TotalGlossedAmount, decimal TotalUst, int TotalItems, DateTimeOffset OpenedAt)
+    {
+        this.Id = Id;
+        this.CompetenceMonth = CompetenceMonth;
+        this.ContractNumber = ContractNumber;
+        this.ContractorName = ContractorName;
+        this.ContractingUnit = ContractingUnit;
+        this.FiscalUserId = FiscalUserId;
+        this.Status = Status;
+        this.TotalMeasuredAmount = TotalMeasuredAmount;
+        this.TotalApprovedAmount = TotalApprovedAmount;
+        this.TotalGlossedAmount = TotalGlossedAmount;
+        this.TotalUst = TotalUst;
+        this.TotalItems = TotalItems;
+        this.OpenedAt = OpenedAt;
+    }
+    public Guid Id { get; set; }
+    public DateOnly CompetenceMonth { get; set; }
+    public string? ContractNumber { get; set; }
+    public string? ContractorName { get; set; }
+    public string? ContractingUnit { get; set; }
+    public Guid? FiscalUserId { get; set; }
+    public string Status { get; set; } = "";
+    public decimal TotalMeasuredAmount { get; set; }
+    public decimal TotalApprovedAmount { get; set; }
+    public decimal TotalGlossedAmount { get; set; }
+    public decimal TotalUst { get; set; }
+    public int TotalItems { get; set; }
+    public DateTimeOffset OpenedAt { get; set; }
+}
+public sealed class ContractFiscalizationItemDto
+{
+    public ContractFiscalizationItemDto() { }
+    public ContractFiscalizationItemDto(Guid Id, Guid FiscalizationPeriodId, Guid? ProductivityEntryId, Guid? ServiceCatalogId, string? ServiceCode, string ServiceName, string Unit, decimal MeasuredQuantity, decimal MeasuredUst, decimal UnitPrice, decimal MeasuredAmount, decimal ApprovedQuantity, decimal ApprovedUst, decimal ApprovedAmount, decimal GlossedQuantity, decimal GlossedAmount, string Status, string? SourceType, Guid? SourceId, int EvidenceCount, string? FiscalNotes, string? ContractorNotes, DateTimeOffset? PerformedAt = null, Guid? PerformedBy = null)
+    {
+        this.Id = Id;
+        this.FiscalizationPeriodId = FiscalizationPeriodId;
+        this.ProductivityEntryId = ProductivityEntryId;
+        this.ServiceCatalogId = ServiceCatalogId;
+        this.ServiceCode = ServiceCode;
+        this.ServiceName = ServiceName;
+        this.Unit = Unit;
+        this.MeasuredQuantity = MeasuredQuantity;
+        this.MeasuredUst = MeasuredUst;
+        this.UnitPrice = UnitPrice;
+        this.MeasuredAmount = MeasuredAmount;
+        this.ApprovedQuantity = ApprovedQuantity;
+        this.ApprovedUst = ApprovedUst;
+        this.ApprovedAmount = ApprovedAmount;
+        this.GlossedQuantity = GlossedQuantity;
+        this.GlossedAmount = GlossedAmount;
+        this.Status = Status;
+        this.SourceType = SourceType;
+        this.SourceId = SourceId;
+        this.EvidenceCount = EvidenceCount;
+        this.FiscalNotes = FiscalNotes;
+        this.ContractorNotes = ContractorNotes;
+        this.PerformedAt = PerformedAt;
+        this.PerformedBy = PerformedBy;
+    }
+    public Guid Id { get; set; }
+    public Guid FiscalizationPeriodId { get; set; }
+    public Guid? ProductivityEntryId { get; set; }
+    public Guid? ServiceCatalogId { get; set; }
+    public string? ServiceCode { get; set; }
+    public string ServiceName { get; set; } = "";
+    public string Unit { get; set; } = "";
+    public decimal MeasuredQuantity { get; set; }
+    public decimal MeasuredUst { get; set; }
+    public decimal UnitPrice { get; set; }
+    public decimal MeasuredAmount { get; set; }
+    public decimal ApprovedQuantity { get; set; }
+    public decimal ApprovedUst { get; set; }
+    public decimal ApprovedAmount { get; set; }
+    public decimal GlossedQuantity { get; set; }
+    public decimal GlossedAmount { get; set; }
+    public string Status { get; set; } = "";
+    public string? SourceType { get; set; }
+    public Guid? SourceId { get; set; }
+    public int EvidenceCount { get; set; }
+    public string? FiscalNotes { get; set; }
+    public string? ContractorNotes { get; set; }
+    public DateTimeOffset? PerformedAt { get; set; } = null;
+    public Guid? PerformedBy { get; set; } = null;
+}
+public sealed class ContractGlosaDto
+{
+    public ContractGlosaDto() { }
+    public ContractGlosaDto(Guid Id, Guid FiscalizationItemId, string GlosaType, string Reason, decimal GlossedQuantity, decimal GlossedAmount, string Status, string? ContractorResponse, DateTimeOffset CreatedAt, string? ResolutionNotes)
+    {
+        this.Id = Id;
+        this.FiscalizationItemId = FiscalizationItemId;
+        this.GlosaType = GlosaType;
+        this.Reason = Reason;
+        this.GlossedQuantity = GlossedQuantity;
+        this.GlossedAmount = GlossedAmount;
+        this.Status = Status;
+        this.ContractorResponse = ContractorResponse;
+        this.CreatedAt = CreatedAt;
+        this.ResolutionNotes = ResolutionNotes;
+    }
+    public Guid Id { get; set; }
+    public Guid FiscalizationItemId { get; set; }
+    public string GlosaType { get; set; } = "";
+    public string Reason { get; set; } = "";
+    public decimal GlossedQuantity { get; set; }
+    public decimal GlossedAmount { get; set; }
+    public string Status { get; set; } = "";
+    public string? ContractorResponse { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public string? ResolutionNotes { get; set; }
+}
+public sealed class ContractEvidenceDto
+{
+    public ContractEvidenceDto() { }
+    public ContractEvidenceDto(Guid Id, Guid? FiscalizationItemId, string EvidenceType, string Title, string? Description, string? ExternalUrl, string? SourceType, Guid? SourceId, DateTimeOffset AttachedAt)
+    {
+        this.Id = Id;
+        this.FiscalizationItemId = FiscalizationItemId;
+        this.EvidenceType = EvidenceType;
+        this.Title = Title;
+        this.Description = Description;
+        this.ExternalUrl = ExternalUrl;
+        this.SourceType = SourceType;
+        this.SourceId = SourceId;
+        this.AttachedAt = AttachedAt;
+    }
+    public Guid Id { get; set; }
+    public Guid? FiscalizationItemId { get; set; }
+    public string EvidenceType { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string? Description { get; set; }
+    public string? ExternalUrl { get; set; }
+    public string? SourceType { get; set; }
+    public Guid? SourceId { get; set; }
+    public DateTimeOffset AttachedAt { get; set; }
+}
+public sealed class ContractEventDto
+{
+    public ContractEventDto() { }
+    public ContractEventDto(string EventType, string EventTitle, string? EventDescription, string? FromStatus, string? ToStatus, DateTimeOffset PerformedAt, Guid? PerformedBy)
+    {
+        this.EventType = EventType;
+        this.EventTitle = EventTitle;
+        this.EventDescription = EventDescription;
+        this.FromStatus = FromStatus;
+        this.ToStatus = ToStatus;
+        this.PerformedAt = PerformedAt;
+        this.PerformedBy = PerformedBy;
+    }
+    public string EventType { get; set; } = "";
+    public string EventTitle { get; set; } = "";
+    public string? EventDescription { get; set; }
+    public string? FromStatus { get; set; }
+    public string? ToStatus { get; set; }
+    public DateTimeOffset PerformedAt { get; set; }
+    public Guid? PerformedBy { get; set; }
+}
 public sealed record ContractFiscalizationPeriodDetails(ContractFiscalizationPeriodItem Period, IReadOnlyList<ContractFiscalizationItemDto> Items, IReadOnlyList<ContractGlosaDto> Glosas, IReadOnlyList<ContractEvidenceDto> Evidences, IReadOnlyList<ContractEventDto> Events);
 public sealed record ContractGlosaCreateCommand(Guid TenantId, Guid FiscalizationItemId, Guid UserId, [Required] string GlosaType, [Required] string Reason, decimal GlossedQuantity, decimal GlossedAmount);
 public sealed record ContractEvidenceCreateCommand(Guid TenantId, Guid FiscalizationPeriodId, Guid? FiscalizationItemId, Guid UserId, [Required] string EvidenceType, [Required] string Title, string? Description, string? ExternalUrl, string? SourceType, Guid? SourceId);

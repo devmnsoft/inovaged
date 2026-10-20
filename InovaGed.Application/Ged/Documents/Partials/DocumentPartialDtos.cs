@@ -66,15 +66,26 @@ public sealed record PartialOcrSummaryDto
     public List<DocumentPartOcrDto> Parts { get; init; } = new();
 }
 
-public sealed record DocumentPartialSummaryDto
+public sealed class DocumentPartialSummaryDto
 {
-    public Guid DocumentId { get; init; }
-    public Guid PartialGroupId { get; init; }
-    public string PartialStatus { get; init; } = "NOT_PARTIAL";
-    public int PartsCount { get; init; }
-    public int? TotalParts { get; init; }
-    public Guid? ConsolidatedVersionId { get; init; }
-    public bool CanConsolidate { get; init; }
+    public Guid DocumentId { get; set; }
+    public Guid PartialGroupId { get; set; }
+    public string PartialStatus { get; set; } = "NOT_PARTIAL";
+    public int PartsCount { get; set; }
+    public int? TotalParts { get; set; }
+    public Guid? ConsolidatedVersionId { get; set; }
+    public bool CanConsolidate { get; set; }
+
+    public DocumentPartialSummaryDto Copy() => new()
+    {
+        DocumentId = DocumentId,
+        PartialGroupId = PartialGroupId,
+        PartialStatus = PartialStatus,
+        PartsCount = PartsCount,
+        TotalParts = TotalParts,
+        ConsolidatedVersionId = ConsolidatedVersionId,
+        CanConsolidate = CanConsolidate
+    };
 }
 
 public interface IDocumentPartialService

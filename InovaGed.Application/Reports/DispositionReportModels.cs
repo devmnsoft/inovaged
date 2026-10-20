@@ -21,7 +21,7 @@ public sealed class DispositionKpiVM
 
 public sealed class DispositionFilter
 {
-    public string? Status { get; set; } // ELIMINATION_READY|TRANSFER_READY|REVIEW_REQUIRED|DISPOSED
+    public string? Status { get; set; } // ELIMINATION_READY|TRANSFER_READY|REVIEW_REQUIRED|DISPOSED;
     public string? Q { get; set; }
     public DateTimeOffset? From { get; set; }
     public DateTimeOffset? To { get; set; }

@@ -70,7 +70,8 @@
             <label class="form-label">Categoria</label>
             <select class="form-select" name="Category">
                 <option value="">Todas</option>
-                @foreach (var category in new[] { "ONCOLOGIA", "URGÊNCIA / GRAVIDADE", "CARDIOVASCULAR", "CRÔNICAS", "FINANCEIRO / AUDITORIA", "JURÍDICO / COMPLIANCE", "OPERACIONAL" })
+                @{ var gateList1 = new[] { "ONCOLOGIA", "URGÊNCIA / GRAVIDADE", "CARDIOVASCULAR", "CRÔNICAS", "FINANCEIRO / AUDITORIA", "JURÍDICO / COMPLIANCE", "OPERACIONAL" }; }
+                @foreach (var category in gateList1)
                 {
                     <option value="@category" selected="@(filter.Category == category ? "selected" : null)">@category</option>
                 }

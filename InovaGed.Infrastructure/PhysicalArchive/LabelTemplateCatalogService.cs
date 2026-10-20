@@ -135,10 +135,11 @@ where (d.tenant_id=@tenantId or d.tenant_id is null) and d.reg_status in ('A','A
 order by d.template_key,d.tenant_id nulls last,d.updated_at desc nulls last
 """;
         return (await db.QueryAsync<LabelTemplateOption>(new CommandDefinition(sql,new{tenantId,mode},cancellationToken:ct)))
-            .Select(x => x with
+            .Select(x =>
             {
-                SubjectType = LabelCanvasSubjectTypeMapper.ToOperational(x.SubjectType),
-                SupportsBatch = true
+                x.SubjectType = LabelCanvasSubjectTypeMapper.ToOperational(x.SubjectType);
+                x.SupportsBatch = true;
+                return x;
             })
             .Where(x => subjectType is null || string.Equals(x.SubjectType, subjectType, StringComparison.OrdinalIgnoreCase))
             .ToList();

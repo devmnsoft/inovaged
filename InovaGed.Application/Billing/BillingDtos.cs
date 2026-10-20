@@ -4,7 +4,25 @@ using System.Text.RegularExpressions;
 namespace InovaGed.Application.Billing;
 
 public sealed record BillingFilter(string? Supplier = null, string? SupplierDocument = null, string? Competence = null, string? Status = null, decimal? MinimumAmount = null);
-public sealed record BillingKpis(int Extracted, int PendingReview, int Approved, int Divergent, decimal TotalAmount, int WithoutOcr);
+public sealed class BillingKpis
+{
+    public BillingKpis() { }
+    public BillingKpis(int Extracted, int PendingReview, int Approved, int Divergent, decimal TotalAmount, int WithoutOcr)
+    {
+        this.Extracted = Extracted;
+        this.PendingReview = PendingReview;
+        this.Approved = Approved;
+        this.Divergent = Divergent;
+        this.TotalAmount = TotalAmount;
+        this.WithoutOcr = WithoutOcr;
+    }
+    public int Extracted { get; set; }
+    public int PendingReview { get; set; }
+    public int Approved { get; set; }
+    public int Divergent { get; set; }
+    public decimal TotalAmount { get; set; }
+    public int WithoutOcr { get; set; }
+}
 public sealed class BillingExtractionDto
 {
     public Guid Id { get; set; }
@@ -114,7 +132,19 @@ public static class BrazilianTaxId
     }
 }
 
-public sealed record BillingExtractionCandidate(Guid DocumentId, Guid? DocumentVersionId, string Text);
+public sealed class BillingExtractionCandidate
+{
+    public BillingExtractionCandidate() { }
+    public BillingExtractionCandidate(Guid DocumentId, Guid? DocumentVersionId, string Text)
+    {
+        this.DocumentId = DocumentId;
+        this.DocumentVersionId = DocumentVersionId;
+        this.Text = Text;
+    }
+    public Guid DocumentId { get; set; }
+    public Guid? DocumentVersionId { get; set; }
+    public string Text { get; set; } = "";
+}
 
 public class BillingExtractionRuleInput : IValidatableObject
 {

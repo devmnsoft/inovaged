@@ -24,7 +24,7 @@
     <div class="col-md-2"><label class="form-label" for="interessado">Interessado</label><input id="interessado" name="Interessado" value="@Model.Filter.Interessado" class="form-control" /></div>
     <div class="col-md-2"><label class="form-label" for="status">Situação</label><select id="status" asp-for="Filter.Status" name="Status" class="form-select"><option value="">Status</option><option>REQUESTED</option><option>IN_REVIEW</option><option>RETURNED_FOR_ADJUSTMENT</option><option>ADJUSTMENT_ANSWERED</option><option>APPROVED</option><option>REJECTED</option><option>FINISHED</option></select></div>
     <div class="col-md-2 form-check pt-4"><input asp-for="Filter.Overdue" name="Overdue" class="form-check-input" /> <label class="form-check-label">Prazo vencido</label></div>
-    <div class="col-md-1"><button class="btn btn-primary">Filtrar</button></div>
+    <div class="col-md-1"><button class="btn btn-primary" type="submit">Filtrar</button></div>
 </form>
 <form method="post" asp-action="ReceiveMany">
 @Html.AntiForgeryToken()

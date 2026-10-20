@@ -71,11 +71,68 @@ public sealed class LabelPrintJobFilter
     public int PageSize { get; set; } = 50;
     public string Sort { get; set; } = "newest";
 }
-public sealed record LabelPrintJobListItem(Guid Id, string JobNumber, string PrintMode, string TemplateCode,
-    string? TemplateName, string SubjectType, string? ControlNumber, int Copies, string Status,
-    DateTime RequestedAt, DateTime? PrintedAt, string? RequestedByName, string? ReprintReason, int ItemCount);
-public sealed record LabelPrintJobItemDetails(Guid Id, Guid? SubjectId, string SubjectType, string? ControlNumber,
-    string? Location, string PayloadJson, string Status, int DisplayOrder, DateTime? PrintedAt, string? ErrorMessage);
+public sealed class LabelPrintJobListItem
+{
+    public LabelPrintJobListItem() { }
+    public LabelPrintJobListItem(Guid Id, string JobNumber, string PrintMode, string TemplateCode, string? TemplateName, string SubjectType, string? ControlNumber, int Copies, string Status, DateTime RequestedAt, DateTime? PrintedAt, string? RequestedByName, string? ReprintReason, int ItemCount)
+    {
+        this.Id = Id;
+        this.JobNumber = JobNumber;
+        this.PrintMode = PrintMode;
+        this.TemplateCode = TemplateCode;
+        this.TemplateName = TemplateName;
+        this.SubjectType = SubjectType;
+        this.ControlNumber = ControlNumber;
+        this.Copies = Copies;
+        this.Status = Status;
+        this.RequestedAt = RequestedAt;
+        this.PrintedAt = PrintedAt;
+        this.RequestedByName = RequestedByName;
+        this.ReprintReason = ReprintReason;
+        this.ItemCount = ItemCount;
+    }
+    public Guid Id { get; set; }
+    public string JobNumber { get; set; } = "";
+    public string PrintMode { get; set; } = "";
+    public string TemplateCode { get; set; } = "";
+    public string? TemplateName { get; set; }
+    public string SubjectType { get; set; } = "";
+    public string? ControlNumber { get; set; }
+    public int Copies { get; set; }
+    public string Status { get; set; } = "";
+    public DateTime RequestedAt { get; set; }
+    public DateTime? PrintedAt { get; set; }
+    public string? RequestedByName { get; set; }
+    public string? ReprintReason { get; set; }
+    public int ItemCount { get; set; }
+}
+public sealed class LabelPrintJobItemDetails
+{
+    public LabelPrintJobItemDetails() { }
+    public LabelPrintJobItemDetails(Guid Id, Guid? SubjectId, string SubjectType, string? ControlNumber, string? Location, string PayloadJson, string Status, int DisplayOrder, DateTime? PrintedAt, string? ErrorMessage)
+    {
+        this.Id = Id;
+        this.SubjectId = SubjectId;
+        this.SubjectType = SubjectType;
+        this.ControlNumber = ControlNumber;
+        this.Location = Location;
+        this.PayloadJson = PayloadJson;
+        this.Status = Status;
+        this.DisplayOrder = DisplayOrder;
+        this.PrintedAt = PrintedAt;
+        this.ErrorMessage = ErrorMessage;
+    }
+    public Guid Id { get; set; }
+    public Guid? SubjectId { get; set; }
+    public string SubjectType { get; set; } = "";
+    public string? ControlNumber { get; set; }
+    public string? Location { get; set; }
+    public string PayloadJson { get; set; } = "";
+    public string Status { get; set; } = "";
+    public int DisplayOrder { get; set; }
+    public DateTime? PrintedAt { get; set; }
+    public string? ErrorMessage { get; set; }
+}
 public sealed record LabelPrintJobDetails(Guid Id, Guid TenantId, string JobNumber, string PrintMode,
     string TemplateCode, string? TemplateName, string SubjectType, Guid? SubjectId, string? ControlNumber,
     string? Location, int Copies, string Status, string PayloadJson, string? PdfPath, string? ErrorMessage,
@@ -83,7 +140,25 @@ public sealed record LabelPrintJobDetails(Guid Id, Guid TenantId, string JobNumb
     string? ReprintReason, string? RequestedByName, IReadOnlyList<LabelPrintJobItemDetails> Items,
     string? ArtifactSha256 = null, string? ArtifactContentType = null, long? ArtifactSizeBytes = null,
     DateTime? ArtifactGeneratedAt = null, string? OperationType = null);
-public sealed record LabelPrintQueueMetrics(int Awaiting, int Ready, int PrintedToday, int Errors, int Reprints, int Total);
+public sealed class LabelPrintQueueMetrics
+{
+    public LabelPrintQueueMetrics() { }
+    public LabelPrintQueueMetrics(int Awaiting, int Ready, int PrintedToday, int Errors, int Reprints, int Total)
+    {
+        this.Awaiting = Awaiting;
+        this.Ready = Ready;
+        this.PrintedToday = PrintedToday;
+        this.Errors = Errors;
+        this.Reprints = Reprints;
+        this.Total = Total;
+    }
+    public int Awaiting { get; set; }
+    public int Ready { get; set; }
+    public int PrintedToday { get; set; }
+    public int Errors { get; set; }
+    public int Reprints { get; set; }
+    public int Total { get; set; }
+}
 public sealed record LabelPdfResult(byte[] Content, string ContentType, string FileName, bool IsNativePdf);
 public sealed record LabelPrintJobActionDto(string Key, string Label, bool IsPrimary = false, bool IsDanger = false);
 public sealed record LabelPrintJobTimelineDto(string Key, string Title, DateTime At, string User, string Detail, bool IsCurrent = false, bool IsError = false);

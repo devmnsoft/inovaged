@@ -53,6 +53,27 @@ public sealed class ProcessingCenterCatalogTests
         Assert.False(ProcessingCenterCatalog.CanCancel("UPLOAD", "RECEIVING"));
         Assert.True(ProcessingCenterCatalog.CanCancel("JOB", "PROCESSING"));
         Assert.False(ProcessingCenterCatalog.CanCancel("OCR", "COMPLETED"));
+        Assert.Equal(20, ProcessingCenterCatalog.MaxBatchReprocess);
+        Assert.Contains("target.id = ANY(@jobIds)", ProcessingCenterSql.RetryJobs, StringComparison.Ordinal);
+        Assert.Contains("target.tenant_id = @tenantId", ProcessingCenterSql.RetryJobs, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Timeline_skips_conversion_for_pdf_and_marks_office_conversion_failure()
+    {
+        var pdf = ProcessingCenterCatalog.Timeline("OCR", "COMPLETED", "laudo.pdf", null);
+        Assert.Equal("Dispensada", pdf[1].State);
+        Assert.Equal("Concluída", pdf[2].State);
+        Assert.Equal("Concluída", pdf[4].State);
+
+        var office = ProcessingCenterCatalog.Timeline("OCR", "ERROR", "guia clínica (1).docx", InovaGed.Application.Common.Preview.DocumentConversionException.TimeoutMessage);
+        Assert.Equal("Falhou", office[1].State);
+        Assert.Equal("Aguardando", office[2].State);
+        Assert.DoesNotContain(office, stage => stage.State == "Falhou" && stage.Name == "OCR");
+
+        var preview = ProcessingCenterCatalog.Timeline("PREVIEW", "READY", "planilha.xlsx", null);
+        Assert.Equal("Concluída", preview[1].State);
+        Assert.Equal("Dispensada", preview[2].State);
     }
 
     [Fact]

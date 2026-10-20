@@ -42,7 +42,8 @@
             <label class="form-label" for="disposition-status">Situação</label>
             <select id="disposition-status" class="form-select" name="status">
                 <option value="">Todas</option>
-                @foreach (var option in new[] { "ELIMINATION_READY", "TRANSFER_READY", "REVIEW_REQUIRED", "DISPOSED" })
+                @{ var gateList1 = new[] { "ELIMINATION_READY", "TRANSFER_READY", "REVIEW_REQUIRED", "DISPOSED" }; }
+                @foreach (var option in gateList1)
                 {
                     if (status == option)
                     {

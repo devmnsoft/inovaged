@@ -17,8 +17,8 @@
         <div class="btn-group flex-wrap">
             <a class="btn btn-outline-secondary" asp-controller="Ged" asp-action="Index">Voltar ao GED</a>
             <a class="btn btn-outline-success" asp-action="ExportCsv" asp-route-batchId="@Model.Batch.Id">Exportar CSV</a>
-            <button class="btn btn-outline-primary js-upload-ack" data-batch-id="@Model.Batch.Id">Marcar como visto</button>
-            @if (failed > 0) { <button class="btn btn-warning js-upload-retry" data-batch-id="@Model.Batch.Id">Reenviar falhas (@failed)</button> }
+            <button class="btn btn-outline-primary js-upload-ack" data-batch-id="@Model.Batch.Id" type="submit">Marcar como visto</button>
+            @if (failed > 0) { <button class="btn btn-warning js-upload-retry" data-batch-id="@Model.Batch.Id" type="submit">Reenviar falhas (@failed)</button> }
         </div>
     </div>
 
@@ -36,25 +36,25 @@
 
     <div class="mb-2 d-flex gap-2 flex-wrap align-items-center">
         <strong data-selected-summary>0 selecionados</strong>
-        <button class="btn btn-sm btn-primary js-review-reviewed" data-batch-id="@Model.Batch.Id">Marcar conferido</button>
-        <button class="btn btn-sm btn-outline-primary js-open-classification" data-batch-id="@Model.Batch.Id">Classificar</button>
+        <button class="btn btn-sm btn-primary js-review-reviewed" data-batch-id="@Model.Batch.Id" type="submit">Marcar conferido</button>
+        <button class="btn btn-sm btn-outline-primary js-open-classification" data-batch-id="@Model.Batch.Id" type="submit">Classificar</button>
         <a class="btn btn-sm btn-outline-primary js-label-selection" asp-controller="Labels" asp-action="BatchPrint" asp-route-subjectType="DOCUMENT">Gerar etiquetas</a>
-        <button class="btn btn-sm btn-outline-warning js-batch-created-incomplete" data-batch-id="@Model.Batch.Id">Marcar documentos criados como incompletos</button>
-        <button class="btn btn-sm btn-outline-warning js-batch-selected-incomplete" data-batch-id="@Model.Batch.Id">Marcar selecionados como incompletos</button>
-        <button class="btn btn-sm btn-outline-danger js-batch-created-delete" data-batch-id="@Model.Batch.Id">Excluir documentos criados neste lote</button>
-        <button class="btn btn-sm btn-outline-danger js-batch-selected-delete" data-batch-id="@Model.Batch.Id">Excluir selecionados</button>
-        <button class="btn btn-sm btn-outline-secondary js-upload-cancel" data-batch-id="@Model.Batch.Id">Fechar lote</button>
+        <button class="btn btn-sm btn-outline-warning js-batch-created-incomplete" data-batch-id="@Model.Batch.Id" type="submit">Marcar documentos criados como incompletos</button>
+        <button class="btn btn-sm btn-outline-warning js-batch-selected-incomplete" data-batch-id="@Model.Batch.Id" type="submit">Marcar selecionados como incompletos</button>
+        <button class="btn btn-sm btn-outline-danger js-batch-created-delete" data-batch-id="@Model.Batch.Id" type="submit">Excluir documentos criados neste lote</button>
+        <button class="btn btn-sm btn-outline-danger js-batch-selected-delete" data-batch-id="@Model.Batch.Id" type="submit">Excluir selecionados</button>
+        <button class="btn btn-sm btn-outline-secondary js-upload-cancel" data-batch-id="@Model.Batch.Id" type="submit">Fechar lote</button>
         <span class="small text-muted">Retry disponível: @retryable</span>
     </div>
 
     <ul class="nav nav-pills gap-1 mb-2" id="uploadFilters">
-        <li class="nav-item"><button class="nav-link active" data-filter="all">Todos</button></li>
-        <li class="nav-item"><button class="nav-link" data-filter="COMPLETED">Sucesso</button></li>
-        <li class="nav-item"><button class="nav-link" data-filter="failures">Falhas</button></li>
-        <li class="nav-item"><button class="nav-link" data-filter="ABORTED">Abortados</button></li>
-        <li class="nav-item"><button class="nav-link" data-filter="DUPLICATE">Duplicados</button></li>
-        <li class="nav-item"><button class="nav-link" data-filter="created">Criados</button></li>
-        <li class="nav-item"><button class="nav-link" data-filter="retry">Retry disponível</button></li>
+        <li class="nav-item"><button class="nav-link active" data-filter="all" type="submit">Todos</button></li>
+        <li class="nav-item"><button class="nav-link" data-filter="COMPLETED" type="submit">Sucesso</button></li>
+        <li class="nav-item"><button class="nav-link" data-filter="failures" type="submit">Falhas</button></li>
+        <li class="nav-item"><button class="nav-link" data-filter="ABORTED" type="submit">Abortados</button></li>
+        <li class="nav-item"><button class="nav-link" data-filter="DUPLICATE" type="submit">Duplicados</button></li>
+        <li class="nav-item"><button class="nav-link" data-filter="created" type="submit">Criados</button></li>
+        <li class="nav-item"><button class="nav-link" data-filter="retry" type="submit">Retry disponível</button></li>
     </ul>
 
     <div class="card shadow-sm"><div class="table-responsive">
@@ -75,7 +75,7 @@
                     <td>@if (i.DocumentId.HasValue && i.IntakeReviewStatus != "UNAVAILABLE") { <a asp-controller="Ged" asp-action="Details" asp-route-id="@i.DocumentId">Abrir documento</a> } else { <span>@(i.IntakeReviewStatus == "UNAVAILABLE" ? "Documento indisponível" : "-")</span> }</td>
                     <td>@(i.SizeBytes.HasValue ? $"{i.SizeBytes.Value:n0}" : "-")</td>
                     <td>@(i.ElapsedMs.HasValue ? $"{i.ElapsedMs.Value}ms" : "-")</td>
-                    <td class="text-nowrap"><button class="btn btn-sm btn-outline-secondary js-copy-error" data-error="@(i.ErrorMessage ?? i.ProcessingWarning)" data-correlation="@i.CorrelationId">Copiar erro</button></td>
+                    <td class="text-nowrap"><button class="btn btn-sm btn-outline-secondary js-copy-error" data-error="@(i.ErrorMessage ?? i.ProcessingWarning)" data-correlation="@i.CorrelationId" type="submit">Copiar erro</button></td>
                 </tr>
             }
             </tbody>
@@ -85,13 +85,13 @@
 <dialog class="modal-dialog rounded border-0 shadow" data-correction-dialog>
  <form method="dialog" class="p-4" style="min-width:min(92vw,32rem)"><h2 class="h5">Marcar como precisa de correção</h2>
  <label class="form-label" for="correctionReason">Motivo</label><textarea id="correctionReason" class="form-control" rows="4" required></textarea>
- <div class="d-flex justify-content-end gap-2 mt-3"><button class="btn btn-outline-secondary" value="cancel">Cancelar</button><button class="btn btn-primary" value="confirm">Confirmar</button></div></form>
+ <div class="d-flex justify-content-end gap-2 mt-3"><button class="btn btn-outline-secondary" value="cancel" type="submit">Cancelar</button><button class="btn btn-primary" value="confirm" type="submit">Confirmar</button></div></form>
 </dialog>
 <dialog class="modal-dialog rounded border-0 shadow" data-classification-dialog>
  <form method="dialog" class="p-4" style="min-width:min(92vw,36rem)"><h2 class="h5">Classificar documentos</h2>
  <label class="form-label" for="classificationSearch">Classificação</label><input id="classificationSearch" class="form-control" type="search" placeholder="Busque por código ou título" autocomplete="off" />
  <select id="classificationChoice" class="form-select mt-2" size="6" aria-label="Resultados de classificação"></select>
- <div class="d-flex justify-content-end gap-2 mt-3"><button class="btn btn-outline-secondary" value="cancel">Cancelar</button><button class="btn btn-primary" value="confirm">Aplicar classificação</button></div></form>
+ <div class="d-flex justify-content-end gap-2 mt-3"><button class="btn btn-outline-secondary" value="cancel" type="submit">Cancelar</button><button class="btn btn-primary" value="confirm" type="submit">Aplicar classificação</button></div></form>
 </dialog>
 <form id="uploadDetailTokenForm">@Html.AntiForgeryToken()</form>
 @section Scripts { <script src="~/js/ged-bulk-actions.js" asp-append-version="true"></script><script>

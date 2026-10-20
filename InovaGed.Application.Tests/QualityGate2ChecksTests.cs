@@ -30,6 +30,49 @@ public sealed class QualityGate2ChecksTests : IDisposable
     }
 
     [Fact]
+    public async Task SecurityScanReadsAntiforgeryPastRouteTemplateBraces()
+    {
+        var dir = Directory.CreateDirectory(Path.Combine(root, "InovaGed.Web", "Controller"));
+        await File.WriteAllTextAsync(Path.Combine(dir.FullName, "SampleController.cs"), """
+[Authorize]
+public class SampleController {
+ [HttpPost, ValidateAntiForgeryToken]
+ public void Combined() {}
+ [HttpPost("/Labels/Designer/Edit/{templateKey}")]
+ [HttpPost("/Labels/Designer/{templateKey}/Save")]
+ [ValidateAntiForgeryToken]
+ public void Save() {}
+ [HttpPost("/open")]
+ public void Open() {}
+}
+""");
+        var result = await new SecurityQualityCheck().RunAsync(Context(), default);
+        var posts = result.Where(x => x.Status == QualityStatus.Fail && x.Message.Contains("POST sem")).ToArray();
+        Assert.Single(posts);
+        Assert.Contains("SampleController", posts[0].Message);
+    }
+
+    [Fact]
+    public async Task DependencyInjectionFindsServiceRegisteredOutsideProgram()
+    {
+        Directory.CreateDirectory(Path.Combine(root, "InovaGed.Web"));
+        await File.WriteAllTextAsync(Path.Combine(root, "InovaGed.Web", "Program.cs"), "public class Program {}\npublic class SampleController { public SampleController(object service) {} }");
+        Directory.CreateDirectory(Path.Combine(root, "InovaGed.Infrastructure"));
+        await File.WriteAllTextAsync(Path.Combine(root, "InovaGed.Infrastructure", "DependencyInjection.cs"),
+            "IPcdVersionResolver IRetentionDestinationRepository IRetentionAuditWriter ILabelTemplateCatalogService ILabelPrintJobService ILabelPdfRenderService ILabelPrintRegistrar ILabelPayloadBuilder ILabelQrCodeService InstrumentVersionRepository");
+        var result = await new DependencyInjectionQualityCheck().RunAsync(Context(), default);
+        Assert.DoesNotContain(result, x => x.Status == QualityStatus.Fail);
+    }
+
+    [Fact]
+    public async Task IncidentCheckWarnsWhenDatabaseIsNotRequired()
+    {
+        var result = await new IncidentCenterQualityCheck().RunAsync(new QualityContext(root, true, "Host=127.0.0.1;Port=1;Database=inovaged_quality_gate_offline;Username=none", null), default);
+        Assert.Contains(result, x => x.Status == QualityStatus.Warning);
+        Assert.DoesNotContain(result, x => x.Status == QualityStatus.Fail);
+    }
+
+    [Fact]
     public async Task PerformanceCheckReportsSelectStar()
     {
         var infra = Directory.CreateDirectory(Path.Combine(root, "InovaGed.Infrastructure"));

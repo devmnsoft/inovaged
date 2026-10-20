@@ -9,11 +9,11 @@
         <div class="fw-semibold">Custódia: @c.SituacaoLabel</div>
         <div class="small">Origem @c.SetorOrigem · atual @c.SetorAtual · destino @c.SetorDestino · remetente @c.Remetente · destinatário @c.Destinatario</div>
         <div class="d-flex flex-wrap gap-2 mt-2">
-            @if (c.PodeReceber) { <form asp-action="Receber" method="post">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><input type="hidden" name="movimentoId" value="@c.MovimentoId" /><button class="btn btn-success btn-sm">Receber</button></form> }
-            @if (c.PodeConfirmarRetorno) { <form asp-action="ConfirmarRetorno" method="post">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><input type="hidden" name="movimentoId" value="@c.MovimentoId" /><button class="btn btn-success btn-sm">Confirmar retorno</button></form> }
-            @if (c.PodeDevolver) { <form asp-action="Devolver" method="post" class="d-flex gap-2">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><input name="observacao" class="form-control form-control-sm" placeholder="Observação" /><button class="btn btn-warning btn-sm">Devolver</button></form> }
-            @if (c.PodeEstornar) { <form asp-action="Estornar" method="post" class="d-flex gap-2">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><input name="justificativa" class="form-control form-control-sm" required placeholder="Justificativa" /><button class="btn btn-outline-danger btn-sm">Estornar</button></form> }
-            <form asp-action="Reabrir" method="post" class="d-flex gap-2">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><input name="justificativa" class="form-control form-control-sm" placeholder="Reabertura justificada" /><button class="btn btn-outline-dark btn-sm">Reabrir</button></form>
+            @if (c.PodeReceber) { <form asp-action="Receber" method="post">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><input type="hidden" name="movimentoId" value="@c.MovimentoId" /><button class="btn btn-success btn-sm" type="submit">Receber</button></form> }
+            @if (c.PodeConfirmarRetorno) { <form asp-action="ConfirmarRetorno" method="post">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><input type="hidden" name="movimentoId" value="@c.MovimentoId" /><button class="btn btn-success btn-sm" type="submit">Confirmar retorno</button></form> }
+            @if (c.PodeDevolver) { <form asp-action="Devolver" method="post" class="d-flex gap-2">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><input name="observacao" class="form-control form-control-sm" placeholder="Observação" /><button class="btn btn-warning btn-sm" type="submit">Devolver</button></form> }
+            @if (c.PodeEstornar) { <form asp-action="Estornar" method="post" class="d-flex gap-2">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><input name="justificativa" class="form-control form-control-sm" required placeholder="Justificativa" /><button class="btn btn-outline-danger btn-sm" type="submit">Estornar</button></form> }
+            <form asp-action="Reabrir" method="post" class="d-flex gap-2">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><input name="justificativa" class="form-control form-control-sm" placeholder="Reabertura justificada" /><button class="btn btn-outline-dark btn-sm" type="submit">Reabrir</button></form>
         </div>
         @if (c.CustodiaFisica.Count > 0) { <ul class="small mt-2 mb-0">@foreach (var f in c.CustodiaFisica) { <li>@f.Origem: @f.Documento, @f.Localizacao, @f.Detentor, @f.Situacao</li> }</ul> }
     </div></div>
@@ -31,7 +31,7 @@
                 <label class="form-label" for="newDraftTitle">Nova minuta</label>
                 <input id="newDraftTitle" name="titulo" class="form-control mb-2" maxlength="200" required placeholder="Título" />
                 <textarea name="conteudo" class="form-control mb-2" rows="4" maxlength="12000" required placeholder="Texto do despacho"></textarea>
-                <button class="btn btn-sm btn-outline-primary">Salvar rascunho</button>
+                <button class="btn btn-sm btn-outline-primary" type="submit">Salvar rascunho</button>
             </form>
         }
         @if (Model.Minutas.Count == 0)
@@ -56,7 +56,7 @@
                         <input id="draft-title-@minuta.Id" name="titulo" class="form-control mb-2" maxlength="200" required value="@minuta.Titulo" />
                         <label class="form-label small" for="draft-content-@minuta.Id">Conteúdo</label>
                         <textarea id="draft-content-@minuta.Id" name="conteudo" class="form-control mb-2" rows="4" maxlength="12000" required>@minuta.Conteudo</textarea>
-                        <button class="btn btn-sm btn-outline-primary">Salvar edição</button>
+                        <button class="btn btn-sm btn-outline-primary" type="submit">Salvar edição</button>
                     </form>
                 }
                 else
@@ -71,7 +71,7 @@
                             <input type="hidden" name="protocoloId" value="@Model.Id" />
                             <input type="hidden" name="minutaId" value="@minuta.Id" />
                             <input type="hidden" name="versao" value="@minuta.Versao" />
-                            <button class="btn btn-sm btn-success">Confirmar minuta</button>
+                            <button class="btn btn-sm btn-success" type="submit">Confirmar minuta</button>
                         </form>
                     }
                     @if (minuta.PodeEncaminhar)
@@ -83,7 +83,7 @@
                             <select name="setorDestinoId" asp-items="Model.SetoresDestino" class="form-select form-select-sm" required>
                                 <option value="">Setor de destino</option>
                             </select>
-                            <button class="btn btn-sm btn-primary">Encaminhar pelo fluxo oficial</button>
+                            <button class="btn btn-sm btn-primary" type="submit">Encaminhar pelo fluxo oficial</button>
                         </form>
                     }
                     @if (minuta.PodeDescartar)
@@ -93,7 +93,7 @@
                             <input type="hidden" name="protocoloId" value="@Model.Id" />
                             <input type="hidden" name="minutaId" value="@minuta.Id" />
                             <input type="hidden" name="versao" value="@minuta.Versao" />
-                            <button class="btn btn-sm btn-outline-danger">Descartar</button>
+                            <button class="btn btn-sm btn-outline-danger" type="submit">Descartar</button>
                         </form>
                     }
                 </div>
@@ -126,7 +126,7 @@
                 @Html.AntiForgeryToken()
                 <input type="hidden" name="protocoloId" value="@Model.Id" />
                 <div class="col-md-10"><label class="visually-hidden" for="newPendingItem">Descrição da pendência</label><input id="newPendingItem" name="descricao" class="form-control" maxlength="500" required placeholder="Nova pendência documental" /></div>
-                <div class="col-md-2"><button class="btn btn-sm btn-outline-primary w-100">Registrar pendência</button></div>
+                <div class="col-md-2"><button class="btn btn-sm btn-outline-primary w-100" type="submit">Registrar pendência</button></div>
             </form>
         }
         @if (Model.Pendencias.Count == 0)
@@ -170,7 +170,7 @@
                                 <option value="">Atribuir a</option>
                             </select>
                         </div>
-                        <div class="col-md-4"><button class="btn btn-sm btn-outline-primary">Atribuir</button></div>
+                        <div class="col-md-4"><button class="btn btn-sm btn-outline-primary" type="submit">Atribuir</button></div>
                     </form>
                 }
                 @if (pendencia.PodeResolver)
@@ -192,7 +192,7 @@
                                     }
                                 </select>
                             </div>
-                            <div class="col-md-4"><button class="btn btn-sm btn-success">Resolver com comprovante</button></div>
+                            <div class="col-md-4"><button class="btn btn-sm btn-success" type="submit">Resolver com comprovante</button></div>
                         </form>
                     }
                     else
@@ -208,7 +208,7 @@
                         <input type="hidden" name="pendenciaId" value="@pendencia.Id" />
                         <label class="visually-hidden" for="discard-@pendencia.Id">Motivo do descarte</label>
                         <input id="discard-@pendencia.Id" name="motivo" class="form-control form-control-sm" maxlength="1000" required placeholder="Motivo do descarte" />
-                        <button class="btn btn-sm btn-outline-danger">Descartar</button>
+                        <button class="btn btn-sm btn-outline-danger" type="submit">Descartar</button>
                     </form>
                 }
                 @{
@@ -232,10 +232,11 @@
 </section>
 <ul class="nav nav-tabs mb-3"><li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#dados" type="button">Dados</button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#anexos" type="button">Anexos</button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tram" type="button">Tramitação</button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#obs" type="button">Observações</button></li>@if(Model.PodeOperar){<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#acoes" type="button">Ações</button></li>}<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#iaAssist" type="button"><span class="badge bg-primary text-white me-1">IA</span> Assistência</button></li></ul>
 <div class="tab-content"><div class="tab-pane fade show active" id="dados"><div class="card border-0 shadow-sm"><div class="card-body row g-3"><div class="col-md-3"><small class="text-muted">Espécie</small><div>@Model.Especie</div></div><div class="col-md-3"><small class="text-muted">Tipo</small><div>@Model.TipoSolicitacao</div></div><div class="col-md-3"><small class="text-muted">Procedência</small><div>@Model.Procedencia</div></div><div class="col-md-3"><small class="text-muted">Origem</small><div>@Model.OrigemPedido</div></div><div class="col-md-4"><small class="text-muted">Solicitante</small><div>@Model.SolicitanteNome</div></div><div class="col-md-4"><small class="text-muted">Interessado</small><div>@Model.Interessado</div></div><div class="col-md-4"><small class="text-muted">Contato</small><div>@Model.Email @Model.Telefone</div></div><div class="col-md-12"><small class="text-muted">Descrição</small><div class="border rounded p-3 bg-light">@Model.Descricao</div></div><div class="col-md-12"><small class="text-muted">Informações complementares</small><div class="border rounded p-3 bg-light">@Model.InformacoesComplementares</div></div></div></div></div>
-<div class="tab-pane fade" id="anexos">@if(Model.PodeAnexar){<div class="card border-0 shadow-sm mb-3"><div class="card-body"><form asp-action="Anexar" method="post" enctype="multipart/form-data" class="row g-2">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><div class="col-md-3"><select name="tipoDocumentoId" asp-items="Model.TiposDocumento" class="form-select"><option value="">Tipo</option></select></div><div class="col-md-4"><input name="descricao" class="form-control" placeholder="Descrição" /></div><div class="col-md-4"><input type="file" name="arquivos" multiple class="form-control" /></div><div class="col-md-1"><button class="btn btn-primary w-100">+</button></div></form></div></div>}<div class="card border-0 shadow-sm"><table class="table mb-0"><thead><tr><th>Arquivo</th><th>Tipo</th><th>Setor</th><th>Data</th><th></th></tr></thead><tbody>@foreach(var d in Model.Documentos){<tr><td>@d.NomeArquivo<br /><small>@d.ContentType - @d.TamanhoBytes bytes</small></td><td>@d.TipoDocumento</td><td>@d.SetorNome</td><td>@d.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td><td class="text-end"><a asp-action="VisualizarDocumento" asp-route-id="@d.Id" class="btn btn-sm btn-outline-primary">Ver</a>@if(d.PodeExcluir){<form asp-action="ExcluirDocumento" method="post" class="d-inline">@Html.AntiForgeryToken()<input type="hidden" name="id" value="@d.Id" /><input type="hidden" name="motivo" value="Exclusão pelo setor responsável" /><button class="btn btn-sm btn-outline-danger">Excluir</button></form>}</td></tr>}@if(!Model.Documentos.Any()){<tr><td colspan="5" class="text-center text-muted">Nenhum anexo.</td></tr>}</tbody></table></div></div>
+<div class="tab-pane fade" id="anexos">@if(Model.PodeAnexar){<div class="card border-0 shadow-sm mb-3"><div class="card-body"><form asp-action="Anexar" method="post" enctype="multipart/form-data" class="row g-2">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><div class="col-md-3"><select name="tipoDocumentoId" asp-items="Model.TiposDocumento" class="form-select"><option value="">Tipo</option></select></div><div class="col-md-4"><input name="descricao" class="form-control" placeholder="Descrição" /></div><div class="col-md-4"><input type="file" name="arquivos" multiple class="form-control" /></div><div class="col-md-1"><button class="btn btn-primary w-100" type="submit">+</button></div></form></div></div>}<div class="card border-0 shadow-sm"><table class="table mb-0"><thead><tr><th>Arquivo</th><th>Tipo</th><th>Setor</th><th>Data</th><th></th></tr></thead><tbody>@foreach(var d in Model.Documentos){<tr><td>@d.NomeArquivo<br /><small>@d.ContentType - @d.TamanhoBytes bytes</small></td><td>@d.TipoDocumento</td><td>@d.SetorNome</td><td>@d.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td><td class="text-end"><a asp-action="VisualizarDocumento" asp-route-id="@d.Id" class="btn btn-sm btn-outline-primary">Ver</a>@if(d.PodeExcluir){<form asp-action="ExcluirDocumento" method="post" class="d-inline">@Html.AntiForgeryToken()<input type="hidden" name="id" value="@d.Id" /><input type="hidden" name="motivo" value="Exclusão pelo setor responsável" /><button class="btn btn-sm btn-outline-danger" type="submit">Excluir</button></form>}</td></tr>}@if(!Model.Documentos.Any()){<tr><td colspan="5" class="text-center text-muted">Nenhum anexo.</td></tr>}</tbody></table></div></div>
 <div class="tab-pane fade" id="tram"><div class="card border-0 shadow-sm"><div class="card-body">@foreach(var t in Model.Tramitacoes){<div class="border-bottom py-2"><b>@t.Acao</b> <span class="text-muted small">@t.DataTramitacao.ToString("dd/MM/yyyy HH:mm")</span><div class="small text-muted">@t.SetorOrigemNome → @t.SetorDestinoNome | @t.UsuarioNome</div><div>@t.Despacho @t.Observacao @t.Justificativa</div></div>}@if(!Model.Tramitacoes.Any()){<div class="text-muted">Nenhuma tramitação.</div>}</div></div></div>
-<div class="tab-pane fade" id="obs">@if(Model.PodeOperar){<div class="card border-0 shadow-sm mb-3"><div class="card-body"><form asp-action="AdicionarObservacao" method="post" class="row g-2">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><div class="col-md-3"><select name="tipo" class="form-select"><option value="PUBLICA">Pública</option><option value="DESPACHO">Despacho</option><option value="INTERNA_SETOR">Interna do Setor</option></select></div><div class="col-md-8"><input name="observacao" class="form-control" /></div><div class="col-md-1"><button class="btn btn-primary w-100">+</button></div></form></div></div>}<div class="card border-0 shadow-sm"><div class="card-body">@foreach(var o in Model.Observacoes){<div class="border-bottom py-2"><b>@o.Tipo</b> <span class="text-muted small">@o.CreatedAt.ToString("dd/MM/yyyy HH:mm")</span><div class="small text-muted">@o.SetorNome | @o.UsuarioNome</div><div>@o.Observacao</div></div>}@if(!Model.Observacoes.Any()){<div class="text-muted">Nenhuma observação.</div>}</div></div></div>
-@if(Model.PodeOperar){<div class="tab-pane fade" id="acoes"><div class="row g-3"><div class="col-md-6"><div class="card border-0 shadow-sm"><div class="card-header bg-white">Tramitar</div><div class="card-body"><form asp-action="Tramitar" method="post">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><select name="setorDestinoId" asp-items="Model.SetoresDestino" class="form-select mb-2"></select><textarea name="despacho" class="form-control mb-2" placeholder="Despacho"></textarea><textarea name="observacao" class="form-control mb-2" placeholder="Observação"></textarea><button class="btn btn-primary">Tramitar</button></form></div></div></div><div class="col-md-6"><div class="card border-0 shadow-sm"><div class="card-header bg-white">Decisão</div><div class="card-body">@foreach(var a in new[]{"Deferir","Indeferir","Finalizar","Arquivar"}){<form asp-action="@a" method="post" class="mb-2">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><textarea name="justificativa" class="form-control mb-1" placeholder="Justificativa obrigatória"></textarea><button class="btn btn-secondary">@a</button></form>}</div></div></div></div></div>}
+<div class="tab-pane fade" id="obs">@if(Model.PodeOperar){<div class="card border-0 shadow-sm mb-3"><div class="card-body"><form asp-action="AdicionarObservacao" method="post" class="row g-2">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><div class="col-md-3"><select name="tipo" class="form-select"><option value="PUBLICA">Pública</option><option value="DESPACHO">Despacho</option><option value="INTERNA_SETOR">Interna do Setor</option></select></div><div class="col-md-8"><input name="observacao" class="form-control" /></div><div class="col-md-1"><button class="btn btn-primary w-100" type="submit">+</button></div></form></div></div>}<div class="card border-0 shadow-sm"><div class="card-body">@foreach(var o in Model.Observacoes){<div class="border-bottom py-2"><b>@o.Tipo</b> <span class="text-muted small">@o.CreatedAt.ToString("dd/MM/yyyy HH:mm")</span><div class="small text-muted">@o.SetorNome | @o.UsuarioNome</div><div>@o.Observacao</div></div>}@if(!Model.Observacoes.Any()){<div class="text-muted">Nenhuma observação.</div>}</div></div></div>
+@{ var gateList1 = new[]{"Deferir","Indeferir","Finalizar","Arquivar"}; }
+@if(Model.PodeOperar){<div class="tab-pane fade" id="acoes"><div class="row g-3"><div class="col-md-6"><div class="card border-0 shadow-sm"><div class="card-header bg-white">Tramitar</div><div class="card-body"><form asp-action="Tramitar" method="post">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><select name="setorDestinoId" asp-items="Model.SetoresDestino" class="form-select mb-2"></select><textarea name="despacho" class="form-control mb-2" placeholder="Despacho"></textarea><textarea name="observacao" class="form-control mb-2" placeholder="Observação"></textarea><button class="btn btn-primary" type="submit">Tramitar</button></form></div></div></div><div class="col-md-6"><div class="card border-0 shadow-sm"><div class="card-header bg-white">Decisão</div><div class="card-body">@foreach(var a in gateList1){<form asp-action="@a" method="post" class="mb-2">@Html.AntiForgeryToken()<input type="hidden" name="protocoloId" value="@Model.Id" /><textarea name="justificativa" class="form-control mb-1" placeholder="Justificativa obrigatória"></textarea><button class="btn btn-secondary" type="submit">@a</button></form>}</div></div></div></div></div>}
 
 <!-- ABA ASSISTÊNCIA DE IA -->
 <div class="tab-pane fade" id="iaAssist">

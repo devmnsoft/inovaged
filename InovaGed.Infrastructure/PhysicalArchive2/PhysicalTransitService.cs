@@ -362,12 +362,12 @@ from ged.physical_loan_batch where tenant_id=@t and id=@bid and status='CLOSED'
         return Trunc(v!, max);
     }
 
-    private sealed class SectorRow { public Guid Id { get; set; } public string Nome { get; set; } = ""; public string? Sigla { get; set; } }
-    private sealed class CatalogRow { public Guid Id { get; set; } public string Code { get; set; } = ""; public string Title { get; set; } = ""; public bool IsOut { get; set; } }
-    private sealed class StatusRow { public string Status { get; set; } = ""; }
-    private sealed class LoanLockRow { public Guid Id { get; set; } public string Status { get; set; } = ""; public Guid? BatchId { get; set; } }
-    private sealed class CountsRow { public long OpenBatches { get; set; } public long OpenItems { get; set; } public long OverdueItems { get; set; } public long ReturnedToday { get; set; } }
-    private sealed class BatchRow { public Guid Id { get; set; } public string Number { get; set; } = ""; public string SectorName { get; set; } = ""; public string? CarrierName { get; set; } public string? CarrierId { get; set; } public int ItemsTotal { get; set; } public int ItemsReturned { get; set; } public int ItemsLost { get; set; } public string Status { get; set; } = ""; public DateTime CreatedAt { get; set; } public DateTime? DueAt { get; set; } public string? CreatorName { get; set; } public bool Overdue { get; set; } }
-    private sealed class LoanItemRow { public Guid Id { get; set; } public Guid? DocumentId { get; set; } public string DocCode { get; set; } = ""; public string? DocTitle { get; set; } public string Status { get; set; } = ""; public string? CarrierName { get; set; } public DateTime LoanedAt { get; set; } public DateTime? DueAt { get; set; } public DateTime? ReturnedAt { get; set; } public string? LostReason { get; set; } }
-    private sealed class EventRow { public DateTime OccurredAt { get; set; } public string EventType { get; set; } = ""; public string Title { get; set; } = ""; public string? Description { get; set; } public string? ActorName { get; set; } }
+    private sealed class SectorRow { public Guid Id { get; set; } public string Nome { get; set; } = ""; public string? Sigla { get; set; } };
+    private sealed class CatalogRow { public Guid Id { get; set; } public string Code { get; set; } = ""; public string Title { get; set; } = ""; public bool IsOut { get; set; } };
+    private sealed class StatusRow { public string Status { get; set; } = ""; };
+    private sealed class LoanLockRow { public Guid Id { get; set; } public string Status { get; set; } = ""; public Guid? BatchId { get; set; } };
+    private sealed class CountsRow { public long OpenBatches { get; set; } public long OpenItems { get; set; } public long OverdueItems { get; set; } public long ReturnedToday { get; set; } };
+    private sealed class BatchRow { public Guid Id { get; set; } public string Number { get; set; } = ""; public string SectorName { get; set; } = ""; public string? CarrierName { get; set; } public string? CarrierId { get; set; } public int ItemsTotal { get; set; } public int ItemsReturned { get; set; } public int ItemsLost { get; set; } public string Status { get; set; } = ""; public DateTime CreatedAt { get; set; } public DateTime? DueAt { get; set; } public string? CreatorName { get; set; } public bool Overdue { get; set; } };
+    private sealed class LoanItemRow { public Guid Id { get; set; } public Guid? DocumentId { get; set; } public string DocCode { get; set; } = ""; public string? DocTitle { get; set; } public string Status { get; set; } = ""; public string? CarrierName { get; set; } public DateTime LoanedAt { get; set; } public DateTime? DueAt { get; set; } public DateTime? ReturnedAt { get; set; } public string? LostReason { get; set; } };
+    private sealed class EventRow { public DateTime OccurredAt { get; set; } public string EventType { get; set; } = ""; public string Title { get; set; } = ""; public string? Description { get; set; } public string? ActorName { get; set; } };
 }

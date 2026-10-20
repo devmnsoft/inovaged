@@ -31,6 +31,6 @@ public sealed class RetentionQueueItemVM
     public string? ClassificationName { get; set; }
 
     public DateTime? DueAt { get; set; }
-    public string? RetentionStatus { get; set; } // EXPIRED / DUE_SOON / OK etc (ajuste)
-    public string? SuggestedDestination { get; set; } // ELIMINAR / TRANSFERIR / REAVALIAR etc (ajuste)
+    public string? RetentionStatus { get; set; } // EXPIRED / DUE_SOON / OK etc (ajuste);
+    public string? SuggestedDestination { get; set; } // ELIMINAR / TRANSFERIR / REAVALIAR etc (ajuste);
 }

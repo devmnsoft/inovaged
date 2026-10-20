@@ -20,7 +20,22 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with: { dotnet-version: '8.0.x' }
-      - run: dotnet run --project InovaGed.Environment.Doctor -- quality-gate --no-db-required
+      - name: Quality gate
+        shell: bash
+        run: |
+          set +e
+          dotnet run --project InovaGed.Environment.Doctor -- quality-gate --no-db-required
+          code=$?
+          set -e
+          if [ "$code" -eq 2 ]; then
+            echo "Quality gate FAIL bloqueia a entrega. O relatório permanece em artifacts/quality-gate."
+            exit 2
+          fi
+          if [ "$code" -eq 1 ]; then
+            echo "Quality gate WARNING. A triagem fica no relatório. O status geral não foi alterado para PASS."
+            exit 0
+          fi
+          exit "$code"
       - if: always()
         uses: actions/upload-artifact@v4
         with: { name: quality-gate-2-report, path: artifacts/quality-gate/ }

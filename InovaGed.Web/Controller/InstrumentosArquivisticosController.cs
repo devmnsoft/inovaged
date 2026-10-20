@@ -349,7 +349,7 @@ public sealed class InstrumentosArquivisticosController : Controller
     {
         public Guid ClassificationId { get; set; }
         public Guid? NewParentId { get; set; }
-        public string? NewCode { get; set; }     // opcional
+        public string? NewCode { get; set; }     // opcional;
         public string? Reason { get; set; }
         public List<ClassificationPickRow> Classes { get; set; } = new();
     }

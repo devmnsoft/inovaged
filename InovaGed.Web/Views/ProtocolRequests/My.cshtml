@@ -26,7 +26,8 @@
                 <label class="form-label" for="status">Status</label>
                 <select id="status" name="status" class="form-select">
                     <option value="">Todos os status</option>
-                    @foreach (var status in new[] { ProtocolStatuses.Requested, ProtocolStatuses.InReview, ProtocolStatuses.ReturnedForAdjustment, ProtocolStatuses.AdjustmentAnswered, ProtocolStatuses.Approved, ProtocolStatuses.Rejected, ProtocolStatuses.Finished, ProtocolStatuses.Cancelled })
+                    @{ var gateList1 = new[] { ProtocolStatuses.Requested, ProtocolStatuses.InReview, ProtocolStatuses.ReturnedForAdjustment, ProtocolStatuses.AdjustmentAnswered, ProtocolStatuses.Approved, ProtocolStatuses.Rejected, ProtocolStatuses.Finished, ProtocolStatuses.Cancelled }; }
+                    @foreach (var status in gateList1)
                     {
                         <option value="@status" selected="@(string.Equals(currentStatus, status, StringComparison.OrdinalIgnoreCase))">@ProtocolStatuses.Label(status)</option>
                     }
@@ -42,7 +43,7 @@
             </div>
             <input type="hidden" name="pageSize" value="@ViewBag.PageSize" />
             <div class="col-lg-1 col-md-12 d-grid">
-                <button class="btn btn-outline-primary">Filtrar</button>
+                <button class="btn btn-outline-primary" type="submit">Filtrar</button>
             </div>
         </div>
     </div>

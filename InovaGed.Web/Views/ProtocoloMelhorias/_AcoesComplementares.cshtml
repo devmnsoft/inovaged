@@ -24,7 +24,7 @@ Ele usa as actions do ProtocoloMelhoriasController.
             <form method="post" action="/Protocolo/Receber" class="d-inline">
                 @Html.AntiForgeryToken()
                 <input type="hidden" name="protocoloId" value="@Model.Id" />
-                <button class="btn btn-success">
+                <button class="btn btn-success" type="submit">
                     <i class="bi bi-check2-circle me-1"></i>
                     Receber
                 </button>
@@ -36,7 +36,7 @@ Ele usa as actions do ProtocoloMelhoriasController.
             <input type="hidden" name="protocoloId" value="@Model.Id" />
             <label class="form-label">Solicitar Complementação</label>
             <textarea name="justificativa" class="form-control mb-2" rows="2" placeholder="Informe o que precisa ser complementado"></textarea>
-            <button class="btn btn-warning">Solicitar Complementação</button>
+            <button class="btn btn-warning" type="submit">Solicitar Complementação</button>
         </form>
 
         <form method="post" action="/Protocolo/Cancelar" class="mb-3">
@@ -44,7 +44,7 @@ Ele usa as actions do ProtocoloMelhoriasController.
             <input type="hidden" name="protocoloId" value="@Model.Id" />
             <label class="form-label">Cancelar Protocolo</label>
             <textarea name="justificativa" class="form-control mb-2" rows="2" placeholder="Justificativa obrigatória"></textarea>
-            <button class="btn btn-danger">Cancelar</button>
+            <button class="btn btn-danger" type="submit">Cancelar</button>
         </form>
 
         <form method="post" action="/Protocolo/Reabrir">
@@ -52,7 +52,7 @@ Ele usa as actions do ProtocoloMelhoriasController.
             <input type="hidden" name="protocoloId" value="@Model.Id" />
             <label class="form-label">Reabrir Protocolo</label>
             <textarea name="justificativa" class="form-control mb-2" rows="2" placeholder="Justificativa obrigatória"></textarea>
-            <button class="btn btn-dark">Reabrir</button>
+            <button class="btn btn-dark" type="submit">Reabrir</button>
         </form>
     </div>
 </div>

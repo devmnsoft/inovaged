@@ -46,7 +46,7 @@
                             <a class="btn btn-sm btn-outline-primary" asp-action="Details" asp-route-batchId="@b.Id">Abrir</a>
                             @if (b.HasRetryableItems)
                             {
-                                <button class="btn btn-sm btn-outline-warning js-upload-retry" data-batch-id="@b.Id">Reenviar falhas</button>
+                                <button class="btn btn-sm btn-outline-warning js-upload-retry" data-batch-id="@b.Id" type="submit">Reenviar falhas</button>
                             }
                         </td>
                     </tr>

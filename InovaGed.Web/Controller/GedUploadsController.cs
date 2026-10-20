@@ -294,12 +294,12 @@ insert into ged.label_print_selection_item(selection_id,subject_id) select @sele
         return Content(sb.ToString(), "text/csv", Encoding.UTF8);
     }
 
-    private sealed class LastProblemRow { public Guid BatchId { get; set; } public Guid? FolderId { get; set; } public string? FolderName { get; set; } public int FailedCount { get; set; } public int SuccessCount { get; set; } public int SkippedCount { get; set; } public int Total { get; set; } public DateTimeOffset CreatedAt { get; set; } }
-    public sealed class AcknowledgeRequest { public string? Notes { get; set; } }
-    public sealed class BatchDocumentActionRequest { public string? Reason { get; set; } public IReadOnlyList<Guid>? OnlySelectedDocumentIds { get; set; } }
-    public sealed class IntakeReviewRequest { public IReadOnlyList<Guid> DocumentIds { get; set; } = []; public string Status { get; set; } = ""; public string? Reason { get; set; } }
-    public sealed class BulkClassifyRequest { public IReadOnlyList<Guid> DocumentIds { get; set; } = []; public Guid ClassificationId { get; set; } }
-    public sealed class LabelSelectionRequest { public IReadOnlyList<Guid> DocumentIds { get; set; } = []; }
+    private sealed class LastProblemRow { public Guid BatchId { get; set; } public Guid? FolderId { get; set; } public string? FolderName { get; set; } public int FailedCount { get; set; } public int SuccessCount { get; set; } public int SkippedCount { get; set; } public int Total { get; set; } public DateTimeOffset CreatedAt { get; set; } };
+    public sealed class AcknowledgeRequest { public string? Notes { get; set; } };
+    public sealed class BatchDocumentActionRequest { public string? Reason { get; set; } public IReadOnlyList<Guid>? OnlySelectedDocumentIds { get; set; } };
+    public sealed class IntakeReviewRequest { public IReadOnlyList<Guid> DocumentIds { get; set; } = []; public string Status { get; set; } = ""; public string? Reason { get; set; } };
+    public sealed class BulkClassifyRequest { public IReadOnlyList<Guid> DocumentIds { get; set; } = []; public Guid ClassificationId { get; set; } };
+    public sealed class LabelSelectionRequest { public IReadOnlyList<Guid> DocumentIds { get; set; } = []; };
 
     private async Task<bool> CanAccessBatchAsync(Guid batchId, CancellationToken ct)
     {

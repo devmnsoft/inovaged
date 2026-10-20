@@ -619,6 +619,6 @@ select exists(
         public string? IncompleteReason { get; set; }
         public string? IncompleteSource { get; set; }
     }
-    private sealed class VersionInfo { public Guid VersionId { get; set; } public string FileName { get; set; } = string.Empty; public string StoragePath { get; set; } = string.Empty; public string? ChecksumSha256 { get; set; } public DateTime? UploadedAtUtc { get; set; } }
-    private sealed class AcceptedChunk { public long SizeBytes { get; set; } public string ChecksumSha256 { get; set; } = string.Empty; public string TempPath { get; set; } = string.Empty; }
+    private sealed class VersionInfo { public Guid VersionId { get; set; } public string FileName { get; set; } = string.Empty; public string StoragePath { get; set; } = string.Empty; public string? ChecksumSha256 { get; set; } public DateTime? UploadedAtUtc { get; set; } };
+    private sealed class AcceptedChunk { public long SizeBytes { get; set; } public string ChecksumSha256 { get; set; } = string.Empty; public string TempPath { get; set; } = string.Empty; };
 }
