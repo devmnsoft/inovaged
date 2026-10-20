@@ -1,0 +1,74 @@
+{
+  "date": "2026-10-20",
+  "baseCommit": "95fe0f53",
+  "build": {
+    "command": "dotnet build InovaGed.sln --no-restore -v quiet",
+    "exitCode": 0,
+    "warnings": 263
+  },
+  "targeted": {
+    "file": "InovaGed.Application.Tests/TestResults/document-intelligence.trx",
+    "sha256": "1bbc4c579a041691ff6cbce605fecbec640f7dc43b157771b78dc56dfc0468ff",
+    "counters": {
+      "total": 78,
+      "executed": 78,
+      "passed": 78,
+      "failed": 0,
+      "error": 0,
+      "timeout": 0,
+      "aborted": 0,
+      "inconclusive": 0,
+      "passedButRunAborted": 0,
+      "notRunnable": 0,
+      "notExecuted": 0,
+      "disconnected": 0,
+      "warning": 0,
+      "completed": 0,
+      "inProgress": 0,
+      "pending": 0
+    }
+  },
+  "realOcr": {
+    "file": "InovaGed.Application.Tests/TestResults/ocr-real-engine.trx",
+    "sha256": "3b8d8efeb472da3b3149ac9447e536d6037853d22ee93c3a86c0d394832819d8",
+    "counters": {
+      "total": 9,
+      "executed": 9,
+      "passed": 9,
+      "failed": 0,
+      "error": 0,
+      "timeout": 0,
+      "aborted": 0,
+      "inconclusive": 0,
+      "passedButRunAborted": 0,
+      "notRunnable": 0,
+      "notExecuted": 0,
+      "disconnected": 0,
+      "warning": 0,
+      "completed": 0,
+      "inProgress": 0,
+      "pending": 0
+    }
+  },
+  "geminiSynthetic": {
+    "model": "gemini-3.1-flash-lite",
+    "catalogAccepted": true,
+    "generationPassed": false,
+    "httpStatus": 503,
+    "failure": "ProviderUnavailable"
+  },
+  "groq": {
+    "credentialAccepted": false,
+    "httpStatus": 401
+  },
+  "broadRegression": {
+    "status": "interrupted",
+    "observedFailures": 31,
+    "passed": false
+  },
+  "migrations": [
+    "2026_10_20_ocr_lease_recovery.sql",
+    "2026_10_20_ai_sensitive_egress.sql"
+  ],
+  "implementationCommit": "ce9eda703c754e97aa05a99fe171aaa50f79e944"
+}
