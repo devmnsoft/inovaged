@@ -18,6 +18,7 @@ public sealed class OcrProcessRunner : IOcrProcessRunner
             return new(null, string.Empty, string.Empty, false, 0, "Caminho do executável não configurado.");
         if (Path.IsPathRooted(fileName) && !File.Exists(fileName))
             return new(null, string.Empty, string.Empty, false, 0, $"Arquivo não encontrado: {fileName}");
+        ct.ThrowIfCancellationRequested();
 
         try
         {
@@ -44,9 +45,15 @@ public sealed class OcrProcessRunner : IOcrProcessRunner
             {
                 await process.WaitForExitAsync(timeoutCts.Token);
             }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            catch (OperationCanceledException)
             {
-                try { if (!process.HasExited) process.Kill(true); } catch { }
+                try
+                {
+                    if (!process.HasExited) process.Kill(true);
+                    await process.WaitForExitAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+                }
+                catch { }
+                ct.ThrowIfCancellationRequested();
                 return new(null, await stdoutTask, await stderrTask, true, sw.ElapsedMilliseconds, "Tempo limite excedido ao executar comando de versão.");
             }
             return new(process.ExitCode, await stdoutTask, await stderrTask, false, sw.ElapsedMilliseconds, null);

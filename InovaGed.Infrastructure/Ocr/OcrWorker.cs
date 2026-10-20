@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Dapper;
 using InovaGed.Application;
 using InovaGed.Application.Classification;
@@ -195,13 +195,10 @@ public sealed class OcrWorker : BackgroundService
                     var result = await WithLeaseRenewalAsync(
                         jobs,
                         job.Id,
-                        renewalToken => ExecuteWithRetryAsync(
-                            async retryCt => await ocr.OcrizePdfAsync(
-                                pdfStoragePath: pdfPath,
-                                invalidateDigitalSignatures: job.InvalidateDigitalSignatures,
-                                ct: retryCt),
-                            job,
-                            renewalToken),
+                        renewalToken => ocr.OcrizePdfAsync(
+                            pdfStoragePath: pdfPath,
+                            invalidateDigitalSignatures: job.InvalidateDigitalSignatures,
+                            ct: renewalToken),
                         stoppingToken);
 
                     if (result?.OcrPdfBytes is null || result.OcrPdfBytes.Length == 0)
@@ -239,20 +236,8 @@ public sealed class OcrWorker : BackgroundService
                     }
 
                     var extractedText = result.ExtractedText ?? "";
-                    var assist = scope.ServiceProvider.GetService<IFreeAssist>();
-                    if (assist is { CanAssistOcr: true } && extractedText.Length <= FreeAssistPolicy.MaxOcrCharacters)
-                    {
-                        try
-                        {
-                            var cleaned = await assist.CleanOcrTextAsync(extractedText, stoppingToken);
-                            if (!string.IsNullOrWhiteSpace(cleaned)) extractedText = cleaned;
-                        }
-                        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { throw; }
-                        catch (Exception ex)
-                        {
-                            _logger.LogWarning(ex, "A leitura assistida do OCR foi ignorada. O texto original da extração permanece. JobId={JobId}", job.Id);
-                        }
-                    }
+                    // OCR is a faithful transcript. AI suggestions belong to the governed,
+                    // versioned review flow and must never overwrite this text or leave this host here.
                     var newFileName = BuildOcrFileName(sourceVersion.FileName);
 
                     await using var ms = new MemoryStream(result.OcrPdfBytes);
@@ -365,6 +350,7 @@ public sealed class OcrWorker : BackgroundService
                             sourceVersionId = job.DocumentVersionId,
                             resultVersionId = ocrVersionId,
                             extractedTextLength = extractedText.Length,
+                            recoveryMethod = result.RecoveryMethod,
                             descriptionGenerated = true,
                             metadataGenerated = true
                         },
@@ -416,7 +402,13 @@ public sealed class OcrWorker : BackgroundService
                 }
                 catch (OcrProcessingException ex)
                 {
-                    await jobs.MarkErrorAsync(job.Id, $"{ex.FriendlyMessage} Código: {ex.Code}", ex.DetailsJson, stoppingToken);
+                    var options = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<OcrOptions>>().Value;
+                    var attempts = await jobs.GetAttemptsAsync(job.Id, stoppingToken);
+                    if (!ex.IsPermanent && attempts < Math.Max(1, options.MaxAttempts))
+                        await jobs.MarkRetryAsync(job.Id, attempts, DateTimeOffset.UtcNow.Add(options.RetryDelay(attempts)),
+                            $"{ex.FriendlyMessage} Código: {ex.Code}", stoppingToken);
+                    else
+                        await jobs.MarkErrorAsync(job.Id, $"{ex.FriendlyMessage} Código: {ex.Code}", ex.DetailsJson, stoppingToken);
 
                     await SaveOcrDescriptionAndMetadataAsync(
                         db,
@@ -551,7 +543,13 @@ public sealed class OcrWorker : BackgroundService
             _logger.LogWarning(ex, "Não foi possível ler as tentativas da conversão. JobId={JobId}", job.Id);
         }
 
-        var decision = OcrConversionPolicy.Decide(failure, recordedAttempts);
+        var options = new OcrOptions();
+        using (var policyScope = _scopeFactory.CreateScope())
+            options = policyScope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<OcrOptions>>().Value;
+        var retry = failure.Transient && recordedAttempts < Math.Max(1, options.MaxAttempts);
+        var decision = new OcrConversionDecision(retry,
+            retry || !failure.Transient ? failure.UserMessage : DocumentConversionException.DefinitiveMessage,
+            recordedAttempts, options.RetryDelay(recordedAttempts));
         var details = JsonSerializer.Serialize(new { code = failure.FailureCode, stage = "CONVERSION", attempts = decision.Attempts, retry = decision.Retry });
         try
         {
@@ -590,10 +588,10 @@ public sealed class OcrWorker : BackgroundService
     private async Task<T> WithLeaseRenewalAsync<T>(IOcrJobRepository jobs, long jobId, Func<CancellationToken, Task<T>> work, CancellationToken ct)
     {
         using var renewal = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        var loop = RenewLeaseLoopAsync(jobs, jobId, renewal.Token);
+        var loop = RenewLeaseLoopAsync(jobs, jobId, renewal);
         try
         {
-            return await work(ct);
+            return await work(renewal.Token);
         }
         finally
         {
@@ -603,8 +601,9 @@ public sealed class OcrWorker : BackgroundService
         }
     }
 
-    private async Task RenewLeaseLoopAsync(IOcrJobRepository jobs, long jobId, CancellationToken ct)
+    private async Task RenewLeaseLoopAsync(IOcrJobRepository jobs, long jobId, CancellationTokenSource renewal)
     {
+        var ct = renewal.Token;
         using var timer = new PeriodicTimer(TimeSpan.FromMinutes(2));
         try
         {
@@ -620,7 +619,9 @@ public sealed class OcrWorker : BackgroundService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Renovação de lease não concluída. JobId={JobId}", jobId);
+                    _logger.LogWarning(ex, "Lease perdido; cancelando o processamento. JobId={JobId}", jobId);
+                    renewal.Cancel();
+                    throw;
                 }
             }
         }
@@ -644,36 +645,13 @@ public sealed class OcrWorker : BackgroundService
     }
 
 
-    private async Task<T> ExecuteWithRetryAsync<T>(Func<CancellationToken, Task<T>> action, OcrJobDto job, CancellationToken ct)
-    {
-        var maxAttempts = 3;
-        var delays = new[] { TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(5) };
-        for (var attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            try
-            {
-                return await action(ct);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OcrProcessingException { IsPermanent: true } && attempt < maxAttempts)
-            {
-                var delay = delays[Math.Min(attempt - 1, delays.Length - 1)];
-                _logger.LogWarning(ex,
-                    "Falha OCR temporária. Tenant={TenantId} VersionId={VersionId} JobId={JobId} Tentativa={Attempt}/{MaxAttempts} Backoff={Backoff}",
-                    job.TenantId, job.DocumentVersionId, job.Id, attempt, maxAttempts, delay);
-                await Task.Delay(delay, ct);
-            }
-        }
-
-        throw new InvalidOperationException("Falha de OCR após múltiplas tentativas.");
-    }
-
     private void LogOcrInput(OcrJobDto job, DocumentVersionDownloadDto sourceVersion, string pdfPath)
     {
         var ext = Path.GetExtension(sourceVersion.FileName)?.ToLowerInvariant();
         var kind = ext is ".pdf" ? "PDF" : "IMAGE_OR_OTHER";
         _logger.LogInformation(
-            "OCR entrada. Tenant={TenantId} JobId={JobId} VersionId={VersionId} DocumentId={DocumentId} FileName={FileName} SizeBytes={SizeBytes} Type={Type} Storage={StoragePath} PdfPath={PdfPath}",
-            job.TenantId, job.Id, sourceVersion.VersionId, sourceVersion.DocumentId, sourceVersion.FileName, sourceVersion.SizeBytes, kind, sourceVersion.StoragePath, pdfPath);
+            "OCR entrada. Tenant={TenantId} JobId={JobId} VersionId={VersionId} DocumentId={DocumentId} SizeBytes={SizeBytes} Type={Type}",
+            job.TenantId, job.Id, sourceVersion.VersionId, sourceVersion.DocumentId, sourceVersion.SizeBytes, kind);
     }
     private static async Task RunClassificationAsync(
         IServiceScope scope,

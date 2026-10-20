@@ -235,7 +235,7 @@ set execution_id = @executionId
 where tenant_id = @tenantId and id = @runId
 """, new { tenantId, runId = run.Id, executionId }, cancellationToken: token));
                         run.ExecutionId = executionId;
-                    }), ct);
+                    }, ContainsSensitiveData: true), ct);
 
                 segRow.AiExecutionId = response.ExecutionId ?? segRow.AiExecutionId;
                 run.ExecutionId = response.ExecutionId ?? run.ExecutionId;

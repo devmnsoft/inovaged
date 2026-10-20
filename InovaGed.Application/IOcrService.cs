@@ -3,7 +3,8 @@
     // Resultado do OCR: PDF pesquisável + texto extraído (opcional)
     public sealed record OcrPdfResult(
         byte[] OcrPdfBytes,
-        string ExtractedText
+        string ExtractedText,
+        string? RecoveryMethod = null
     );
 
     // Exceção específica para o controller tratar

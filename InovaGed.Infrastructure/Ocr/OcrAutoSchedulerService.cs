@@ -110,7 +110,7 @@ public sealed class OcrAutoSchedulerService : IOcrAutoSchedulerService
                             ? await _repository.GetLatestOcrJobStatusAsync(options.TenantId, candidate.VersionId.Value, ct)
                             : null;
 
-                        if (ShouldSkipByStatus(options, latestStatus, item, result))
+                        if (ShouldSkipByStatus(options, latestStatus, candidate.HasOcrText, item, result))
                         {
                             await RegisterItemAsync(result, item, ct);
                             continue;
@@ -217,7 +217,7 @@ public sealed class OcrAutoSchedulerService : IOcrAutoSchedulerService
         }
     }
 
-    private static bool ShouldSkipByStatus(OcrAutoScheduleOptions options, string? latestStatus, OcrAutoScheduleItemResultDto item, OcrAutoScheduleRunResultDto result)
+    private static bool ShouldSkipByStatus(OcrAutoScheduleOptions options, string? latestStatus, bool hasOcrText, OcrAutoScheduleItemResultDto item, OcrAutoScheduleRunResultDto result)
     {
         var status = (latestStatus ?? string.Empty).Trim().ToUpperInvariant();
         if (status == "PENDING" && options.SkipIfOcrJobPending)
@@ -236,7 +236,7 @@ public sealed class OcrAutoSchedulerService : IOcrAutoSchedulerService
             return true;
         }
 
-        if (status == "COMPLETED" && options.SkipIfOcrAvailable)
+        if (status == "COMPLETED" && options.SkipIfOcrAvailable && hasOcrText)
         {
             item.Status = "SKIPPED_ALREADY_HAS_OCR";
             item.Reason = "OCR já concluído para a versão.";

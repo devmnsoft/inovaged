@@ -27,7 +27,7 @@ public sealed class OcrEnvironmentValidator : IOcrEnvironmentValidator
         var result = new OcrEnvironmentValidationResult
         {
             ProcessUser = Environment.UserName,
-            WindowsIdentity = WindowsIdentity.GetCurrent().Name,
+            WindowsIdentity = OperatingSystem.IsWindows() ? WindowsIdentity.GetCurrent().Name : Environment.UserName,
             MachineName = Environment.MachineName,
             CurrentDirectory = Directory.GetCurrentDirectory(),
             BaseDirectory = AppContext.BaseDirectory,
@@ -76,7 +76,8 @@ public sealed class OcrEnvironmentValidator : IOcrEnvironmentValidator
         var cmd = $"\"{path}\" {string.Join(' ', args)}";
         if (!exists)
             return Check(name, configKey, path, false, false, cmd, null, "Arquivo não encontrado ou caminho não configurado.", SuggestExecutable(path));
-        var proc = await _runner.RunVersionAsync(path!, args, AppContext.BaseDirectory, env, TimeSpan.FromSeconds(10), ct);
+        var proc = await _runner.RunVersionAsync(path!, args, AppContext.BaseDirectory, env,
+            TimeSpan.FromSeconds(Math.Clamp(_options.EnvironmentProbeTimeoutSeconds, 5, 120)), ct);
         return Check(name, configKey, path, true, proc.Success, cmd, proc, proc.Success ? null : proc.ExceptionMessage ?? "Comando de versão falhou.", proc.Success ? null : SuggestExecutable(path));
     }
 

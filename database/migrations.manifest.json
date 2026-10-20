@@ -1450,6 +1450,22 @@
       "transactional": true,
       "deploymentSafety": "Additive",
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_10_20_ocr_lease_recovery",
+      "path": "database/migrations/2026_10_20_ocr_lease_recovery.sql",
+      "module": "OCR",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_10_20_ai_sensitive_egress",
+      "path": "database/migrations/2026_10_20_ai_sensitive_egress.sql",
+      "module": "DocumentAi",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
     }
   ]
 }

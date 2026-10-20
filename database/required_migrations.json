@@ -1090,5 +1090,19 @@
     "area": "Ged",
     "required": true,
     "description": "Permite histórico de movimentação para a raiz e grava o identificador de correlação, sem apagar registros."
-  }
+  },
+{
+  "name": "2026_10_20_ocr_lease_recovery",
+  "path": "database/migrations/2026_10_20_ocr_lease_recovery.sql",
+  "area": "OCR",
+  "required": true,
+  "description": "Recuperacao limitada de leases OCR e indices da fila."
+},
+{
+  "name": "2026_10_20_ai_sensitive_egress",
+  "path": "database/migrations/2026_10_20_ai_sensitive_egress.sql",
+  "area": "DocumentAi",
+  "required": true,
+  "description": "Autorizacao formal por tenant para processamento externo de dados sensiveis."
+}
 ]

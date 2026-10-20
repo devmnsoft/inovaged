@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using InovaGed.Application.ArtificialIntelligence;
 
 namespace InovaGed.Infrastructure.ArtificialIntelligence;
@@ -27,6 +29,13 @@ public sealed class GovernedDocumentAiGateway : IDocumentAiGateway
             return Failure(AiFailureKind.ModelUnavailable, "A política efetiva não possui provedor e modelo autorizados.");
         if (!provider.Equals(_provider.ActiveProvider, StringComparison.OrdinalIgnoreCase) || !string.Equals(model, _provider.ModelFor(request.Task), StringComparison.Ordinal))
             return Failure(AiFailureKind.ModelUnavailable, "A configuração global não autoriza o provedor/modelo definido pelo cliente.", provider, model);
+
+        if (request.ContainsSensitiveData && !AiEndpointPolicy.IsLocal(provider)
+            && (!_provider.SensitiveDataPermitted || !policy.AllowSensitiveExternalProcessing || string.IsNullOrWhiteSpace(policy.ExternalAuthorizationReference)))
+            return Failure(AiFailureKind.Disabled, "Envio externo de dados sensíveis bloqueado: falta autorização formal na política do cliente.", provider, model);
+
+        using var egressMetadata = request.ContainsSensitiveData ? EgressMetadata(request, policy, provider) : null;
+        if (egressMetadata is not null) request = request with { ExecutionMetadata = egressMetadata };
 
         var inputCharacters = request.Instructions.Length + request.Context.Sum(x => x.Reference.Length + x.Text.Length);
         if (inputCharacters > policy.MaximumInputCharacters)
@@ -74,7 +83,11 @@ public sealed class GovernedDocumentAiGateway : IDocumentAiGateway
         }
         // The governance store stamps sent_at at the exact send instant; every earlier failure path
         // settles with zero consumption instead of a fixed over-reservation.
-        var governed = request with { OnRequestSent = ct => _governance.MarkSentAsync(lease.ExecutionId, ct) };
+        var governed = request with
+        {
+            OnRequestSent = ct => _governance.MarkSentAsync(lease.ExecutionId, ct),
+            SensitiveExternalAuthorizationReference = policy.AllowSensitiveExternalProcessing ? policy.ExternalAuthorizationReference : null
+        };
         AiResult result;
         try { result = await _provider.ExecuteAsync(governed, cancellationToken); }
         catch (OperationCanceledException)
@@ -91,4 +104,17 @@ public sealed class GovernedDocumentAiGateway : IDocumentAiGateway
 
     private static AiResult Failure(AiFailureKind kind, string message, string provider = "", string model = "", string? correlation = null, Guid? executionId = null) =>
         new(false, null, null, null, provider, model, kind, message, correlation ?? Guid.NewGuid().ToString("N"), false, executionId);
+
+    private static JsonDocument EgressMetadata(AiRequest request, AiEffectivePolicy policy, string provider)
+    {
+        var original = request.ExecutionMetadata is null ? null : JsonNode.Parse(request.ExecutionMetadata.RootElement.GetRawText());
+        var metadata = original as JsonObject ?? new JsonObject { ["requestMetadata"] = original };
+        metadata["egressPolicy"] = new JsonObject
+        {
+            ["sensitiveData"] = true, ["localProvider"] = AiEndpointPolicy.IsLocal(provider),
+            ["policyRevision"] = policy.Revision,
+            ["authorizationReference"] = AiEndpointPolicy.IsLocal(provider) ? null : policy.ExternalAuthorizationReference
+        };
+        return JsonDocument.Parse(metadata.ToJsonString());
+    }
 }

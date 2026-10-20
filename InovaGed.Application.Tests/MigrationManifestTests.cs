@@ -48,7 +48,7 @@ public sealed class MigrationManifestTests
             Path.Combine("InovaGed.Infrastructure", "Ged", "Instruments", "ClassificationPlanQueries.cs")
         })
         {
-            Assert.DoesNotContain("i.title", File.ReadAllText(Path.Combine(root, relative)), StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotMatch(@"(?i)(?<![\w])i\.title\b", File.ReadAllText(Path.Combine(root, relative)));
         }
     }
 

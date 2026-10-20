@@ -434,6 +434,32 @@ $cleanup$;
 /// <summary>Pure (no database) behavioral tests of the governed reservation sizing and fail-closed pre-network paths.</summary>
 public sealed class GovernedDocumentAiGatewayReservationTests
 {
+    [Theory]
+    [InlineData(false, null, false)]
+    [InlineData(true, null, false)]
+    [InlineData(true, "AUT-SYNTHETIC-01", true)]
+    public async Task Sensitive_documents_require_explicit_tenant_authorization_before_external_send(bool allowed, string? reference, bool expected)
+    {
+        using var key = AiKeyScope.Set("GROQ_API_KEY", "synthetic-key");
+        var store = new FakeStore { AllowSensitiveExternalProcessing = allowed, AuthorizationReference = reference };
+        var result = await Governed(store, GroqOptions(100)).ExecuteAsync(new AiRequest(Guid.NewGuid(), Guid.NewGuid(),
+            AiTask.Summarize, "resuma documento sintético", [], ContainsSensitiveData: true), default);
+        Assert.Equal(expected, result.Success);
+        if (!expected)
+        {
+            Assert.Equal(AiFailureKind.Disabled, result.Failure);
+            Assert.Equal(long.MinValue, store.LastReservation);
+            Assert.Equal(0, store.SentStamps);
+            Assert.False(result.ProviderReached);
+        }
+        else
+        {
+            Assert.Equal(1, store.SentStamps);
+            Assert.Contains("AUT-SYNTHETIC-01", store.LastMetadata);
+            Assert.Contains("egressPolicy", store.LastMetadata);
+        }
+    }
+
     [Fact]
     public async Task Failed_receipt_binding_prevents_send_and_settles_the_own_reservation()
     {
@@ -537,7 +563,7 @@ public sealed class GovernedDocumentAiGatewayReservationTests
     {
         var options = new DocumentAiOptions { Enabled = true, Provider = "Groq", MaximumOutputTokens = maxOutputTokens };
         options.TaskModels["Summarize"] = "test-model";
-        options.Providers["Groq"] = new AiProviderOptions { Enabled = true, BaseUrl = "https://api.groq.com/openai/v1", AllowedModels = ["test-model"], StructuredOutputModels = ["test-model"] };
+        options.Providers["Groq"] = new AiProviderOptions { Enabled = true, SensitiveDataPermitted = true, BaseUrl = "https://api.groq.com/openai/v1", AllowedModels = ["test-model"], StructuredOutputModels = ["test-model"] };
         return options;
     }
 
@@ -556,16 +582,20 @@ public sealed class GovernedDocumentAiGatewayReservationTests
 
     private sealed class FakeStore : IAiGovernanceStore
     {
+        public bool AllowSensitiveExternalProcessing { get; set; }
+        public string? AuthorizationReference { get; set; }
+        public string? LastMetadata { get; set; }
         public IReadOnlyCollection<AiTask>? AllowedTasksOverride { get; set; }
         public long LastReservation { get; set; } = long.MinValue;
         public int SentStamps { get; private set; }
         public AiResult? LastCompletion { get; private set; }
         public Task<AiEffectivePolicy?> GetEffectivePolicyAsync(Guid tenantId, AiTask task, CancellationToken ct) =>
-            Task.FromResult<AiEffectivePolicy?>(new AiEffectivePolicy(tenantId, 1, true, AllowedTasksOverride??[task], ["Groq"], new Dictionary<AiTask, string> { [task] = "test-model" }, 1_000_000, 50_000, DateTimeOffset.UtcNow, 0, 0));
+            Task.FromResult<AiEffectivePolicy?>(new AiEffectivePolicy(tenantId, 1, true, AllowedTasksOverride??[task], ["Groq"], new Dictionary<AiTask, string> { [task] = "test-model" }, 1_000_000, 50_000, DateTimeOffset.UtcNow, 0, 0, AllowSensitiveExternalProcessing, AuthorizationReference));
         public AiExecutionLease? NextLease { get; set; }
         public Task<AiExecutionLease> ReserveAsync(AiRequest request, string provider, string model, long policyRevision, long estimatedTokens, CancellationToken ct)
         {
             LastReservation = estimatedTokens;
+            LastMetadata = request.ExecutionMetadata?.RootElement.GetRawText();
             return Task.FromResult(NextLease ?? new AiExecutionLease(Guid.NewGuid(), true, AiExecutionState.Reserved));
         }
         public Task<bool> MarkRunningAsync(Guid executionId, CancellationToken ct) => Task.FromResult(true);

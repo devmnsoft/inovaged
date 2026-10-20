@@ -21,7 +21,7 @@
    <h2 class="h5 mb-0">Teste de Conectividade do Provedor</h2>
    <span class="badge bg-light text-dark border">Diagnóstico em Tempo Real</span>
   </div>
-  <p class="small text-muted mb-3">Valida endpoint HTTPS oficial, presença da chave no ambiente (sem exibir o segredo), tempo de resposta e integridade da API.</p>
+  <p class="small text-muted mb-3">Consulta o catálogo atual de modelos e valida o endpoint autorizado. Ollama usa somente endereço local. A disponibilidade não comprova faixa gratuita ou qualidade documental.</p>
   <div class="row g-2 align-items-center">
    <div class="col-md-4">
     <select id="testProviderSelect" class="form-select form-select-sm">
@@ -58,6 +58,13 @@
   @Html.AntiForgeryToken()
   <input type="hidden" name="revision" value="@Model.Revision">
   <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" name="enabled" value="true" checked="@Model.Enabled"><label class="form-check-label">Permitir tarefas assistidas para este cliente</label></div>
+  <fieldset class="border rounded p-3 mb-3">
+   <legend class="h6">Tratamento externo de dados sensíveis</legend>
+   <div class="form-check mb-2"><input id="sensitive-egress" class="form-check-input" type="checkbox" name="allowSensitiveExternalProcessing" value="true" checked="@Model.AllowSensitiveExternalProcessing"><label class="form-check-label" for="sensitive-egress">Autorizar envio externo conforme autorização formal do cliente</label></div>
+   <label class="form-label" for="egress-reference">Referência da autorização e política de tratamento</label>
+   <input id="egress-reference" class="form-control" name="externalAuthorizationReference" maxlength="500" value="@Model.ExternalAuthorizationReference" aria-describedby="egress-help">
+   <small id="egress-help" class="form-text">Informe somente o identificador da autorização, sem dados de pacientes. Ollama local pode operar sem esta permissão. Uma chave de API configurada não autoriza envio de documentos.</small>
+  </fieldset>
   <div class="row g-3"><div class="col-md-6"><label class="form-label" for="provider">Provedor autorizado</label><select id="provider" name="provider" class="form-select">@foreach(var item in Model.ProviderCatalog){<option value="@item.Key" selected="@(item.Key.Equals(Model.SelectedProvider,StringComparison.OrdinalIgnoreCase))">@item.Key</option>}</select></div>
   <div class="col-md-6"><label class="form-label" for="model">Modelo homologado</label><select id="model" name="model" required class="form-select" aria-describedby="model-help">@foreach(var item in Model.ProviderCatalog.SelectMany(x=>x.Value.StructuredOutputModels).Distinct()){<option selected="@(item==Model.SelectedModel)">@item</option>}</select><small id="model-help">Somente modelos globais homologados para saída estruturada.</small></div>
   <fieldset class="col-12"><legend class="h6">Tarefas habilitadas individualmente</legend>@foreach(var task in InovaGed.Application.ArtificialIntelligence.AiTaskCatalog.Supported){<label class="form-check form-check-inline" title="@InovaGed.Application.ArtificialIntelligence.AiTaskCatalog.Label(task)"><input class="form-check-input" type="checkbox" name="tasks" value="@task" checked="@Model.SelectedTasks.Contains(task.ToString())"> @InovaGed.Application.ArtificialIntelligence.AiTaskCatalog.Label(task) <span class="text-muted">(@task)</span></label>}<div class="form-text">Pergunte ao acervo, resumo, preenchimento, tipo documental e classificação arquivística podem ser habilitados. O tipo documental usa ged.document_type e não é a classe do plano.</div>@foreach(var task in InovaGed.Application.ArtificialIntelligence.AiTaskCatalog.Unavailable){<p class="form-text mb-0" role="note"><strong>@InovaGed.Application.ArtificialIntelligence.AiTaskCatalog.Label(task):</strong> @InovaGed.Application.ArtificialIntelligence.AiTaskCatalog.UnavailableReason(task)</p>}</fieldset>

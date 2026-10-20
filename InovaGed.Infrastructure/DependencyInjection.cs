@@ -87,9 +87,15 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<IConfiguration>(configuration);
         services.TryAddSingleton<global::InovaGed.Application.Common.Time.ITenantTimeZoneService, Common.Time.TenantTimeZoneService>();
         services.TryAddScoped<ICurrentUser, AnonymousCurrentUser>();
+        services.TryAddScoped<InovaGed.Application.Security.IGedAccessPolicyService, InovaGed.Infrastructure.Security.GedAccessPolicyService>();
+        services.TryAddScoped<InovaGed.Application.Ged.IFolderCommands, InovaGed.Infrastructure.Ged.FolderCommands>();
 
         services.AddOptions<DocumentAiOptions>().Bind(configuration.GetSection(DocumentAiOptions.SectionName));
-        services.AddHttpClient<DocumentAiGateway>();
+        services.AddSingleton<AiProviderCircuitBreaker>();
+        services.AddHttpClient<DocumentAiGateway>()
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false });
+        services.AddHttpClient("AiProviderDiagnostics")
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false });
         services.AddScoped<IAiGovernanceStore, PostgresAiGovernanceStore>();
         services.AddScoped<IAssistedDocumentStore, PostgresAssistedDocumentStore>();
         services.AddScoped<IDocumentAiGateway, GovernedDocumentAiGateway>();
@@ -294,11 +300,16 @@ public static class InfrastructureServiceCollectionExtensions
     {
         services.AddOptions<OcrOptions>()
             .Bind(configuration.GetSection("Ocr"))
+            .Validate(o => o.MaxAttempts is >= 1 and <= 100 && o.MaxParallelJobs is >= 1 and <= 64,
+                "Ocr: MaxAttempts (1..100) e MaxParallelJobs (1..64) inválidos.")
+            .Validate(o => o.LeaseSeconds >= 180 && o.MaxJobMinutes >= 1 && o.TimeoutMinutes >= 1,
+                "Ocr: LeaseSeconds deve ser >= 180; timeouts devem ser positivos.")
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
         services.AddScoped<IPdfTextExtractor, PopplerPdfTextExtractor>();
         services.AddScoped<IOcrService, OcrMyPdfOcrService>();
+        services.TryAddScoped<InovaGed.Application.Ocr.IOcrJobRepository, OcrJobRepository>();
         services.TryAddScoped<IOcrEnvironmentValidator, OcrEnvironmentValidator>();
         services.TryAddSingleton<IOcrProcessRunner, OcrProcessRunner>();
 
@@ -316,6 +327,9 @@ public static class InfrastructureServiceCollectionExtensions
             .ValidateOnStart();
 
         services.AddScoped<IPreviewGenerator, LibreOfficePreviewGenerator>();
+        services.TryAddSingleton<InovaGed.Infrastructure.Preview.PreviewQueue>();
+        services.TryAddSingleton<InovaGed.Application.Preview.IPreviewJobQueue>(sp => sp.GetRequiredService<InovaGed.Infrastructure.Preview.PreviewQueue>());
+        services.TryAddScoped<InovaGed.Application.Preview.IPreviewStatusRepository, InovaGed.Infrastructure.Preview.PreviewStatusRepository>();
         services.AddInfrastructureModule("Preview", true, ["Storage", "LibreOffice"], true, HealthStatus.Degraded);
         return services;
     }

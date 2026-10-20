@@ -71,7 +71,10 @@ public enum OcrFailureCode
     OCR_PDF_ENCRYPTED,
     OCR_PDF_CORRUPTED,
     OCR_CANCELLED,
-    OCR_UNKNOWN_ERROR
+    OCR_UNKNOWN_ERROR,
+    OCR_TEXT_EXTRACTION_FAILED,
+    OCR_TEXT_EMPTY,
+    OCR_TEXT_LOW_QUALITY
 }
 
 public sealed class OcrProcessingException : Exception
@@ -80,7 +83,7 @@ public sealed class OcrProcessingException : Exception
     public string FriendlyMessage { get; }
     public string? DetailsJson { get; }
     public string? TechnicalDetailsJson => DetailsJson;
-    public bool IsPermanent => Code is OcrFailureCode.OCR_ENVIRONMENT_INVALID or OcrFailureCode.OCR_TESSERACT_LANGUAGE_MISSING or OcrFailureCode.OCR_GHOSTSCRIPT_NOT_FOUND or OcrFailureCode.OCR_QPDF_NOT_FOUND or OcrFailureCode.OCR_PDF_ENCRYPTED or OcrFailureCode.OCR_PDF_CORRUPTED or OcrFailureCode.OCR_INPUT_FILE_NOT_FOUND or OcrFailureCode.OCR_INPUT_FILE_NOT_READABLE or OcrFailureCode.OCR_OUTPUT_WRITE_DENIED;
+    public bool IsPermanent => Code is OcrFailureCode.OCR_ENVIRONMENT_INVALID or OcrFailureCode.OCR_TESSERACT_LANGUAGE_MISSING or OcrFailureCode.OCR_GHOSTSCRIPT_NOT_FOUND or OcrFailureCode.OCR_QPDF_NOT_FOUND or OcrFailureCode.OCR_PDF_ENCRYPTED or OcrFailureCode.OCR_PDF_CORRUPTED or OcrFailureCode.OCR_INPUT_FILE_NOT_FOUND or OcrFailureCode.OCR_INPUT_FILE_NOT_READABLE or OcrFailureCode.OCR_OUTPUT_WRITE_DENIED or OcrFailureCode.OCR_TEXT_LOW_QUALITY;
 
     public OcrProcessingException(OcrFailureCode code, string friendlyMessage, string technicalMessage, string? detailsJson = null, Exception? inner = null)
         : base(technicalMessage, inner)

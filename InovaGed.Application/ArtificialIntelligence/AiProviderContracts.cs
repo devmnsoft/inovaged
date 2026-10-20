@@ -22,7 +22,9 @@ public sealed record AiRequest(
     IReadOnlyList<AiExecutionSource>? Sources = null,
     Func<CancellationToken, Task>? OnRequestSent = null,
     JsonDocument? ExecutionMetadata = null,
-    Func<Guid,CancellationToken,Task>? OnExecutionReserved = null)
+    Func<Guid,CancellationToken,Task>? OnExecutionReserved = null,
+    bool ContainsSensitiveData = false,
+    string? SensitiveExternalAuthorizationReference = null)
 {
     /// <summary>Sources registered server-side. Never trusted from the client.</summary>
     public IReadOnlyList<AiExecutionSource> SourceDocuments => Sources ?? [];
@@ -95,6 +97,8 @@ public sealed class DocumentAiOptions
     public Dictionary<string, AiProviderOptions> Providers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, string> TaskModels { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public int TimeoutSeconds { get; set; } = 30;
+    public int CircuitFailureThreshold { get; set; } = 3;
+    public int CircuitBreakSeconds { get; set; } = 30;
     public int MaximumInputCharacters { get; set; } = 50_000;
     public int MaximumOutputTokens { get; set; } = 1_000;
     public int MaximumOutputCharacters { get; set; } = 100_000;
@@ -105,6 +109,8 @@ public sealed class DocumentAiOptions
 public sealed class AiProviderOptions
 {
     public bool Enabled { get; set; }
+    /// <summary>Enable only after verifying the provider agreement permits sensitive data. Free Gemini does not.</summary>
+    public bool SensitiveDataPermitted { get; set; }
     public string BaseUrl { get; set; } = string.Empty;
     public List<string> AllowedModels { get; set; } = [];
     /// <summary>Models for which this adapter/provider combination was explicitly homologated with strict JSON schema.</summary>
@@ -117,7 +123,8 @@ public sealed record AiEffectivePolicy(
     Guid TenantId, long Revision, bool Enabled, IReadOnlyCollection<AiTask> Tasks,
     IReadOnlyCollection<string> Providers, IReadOnlyDictionary<AiTask, string> Models,
     long MonthlyTokenLimit, int MaximumInputCharacters, DateTimeOffset PeriodStart,
-    long ConsumedTokens, long ReservedTokens);
+    long ConsumedTokens, long ReservedTokens,
+    bool AllowSensitiveExternalProcessing = false, string? ExternalAuthorizationReference = null);
 
 public sealed record AiExecutionLease(Guid ExecutionId, bool IsOwner, AiExecutionState State, AiResult? ExistingResult = null, bool ResultExpired = false, bool ResultMalformed = false);
 public sealed record AiExecutionStatus(Guid ExecutionId, Guid TenantId, Guid UserId, AiTask Task,

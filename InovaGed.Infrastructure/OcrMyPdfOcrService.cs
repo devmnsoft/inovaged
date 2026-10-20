@@ -17,13 +17,15 @@ public sealed class OcrMyPdfOcrService : IOcrService
     private readonly ILogger<OcrMyPdfOcrService> _logger;
     private readonly IOcrEnvironmentValidator _environmentValidator;
     private readonly OcrOptions _options;
+    private readonly IOcrProcessRunner _runner;
 
-    public OcrMyPdfOcrService(IFileStorage storage, IOptions<OcrOptions> options, IOcrEnvironmentValidator environmentValidator, ILogger<OcrMyPdfOcrService> logger)
+    public OcrMyPdfOcrService(IFileStorage storage, IOptions<OcrOptions> options, IOcrEnvironmentValidator environmentValidator, ILogger<OcrMyPdfOcrService> logger, IOcrProcessRunner? runner = null)
     {
         _storage = storage;
         _logger = logger;
         _environmentValidator = environmentValidator;
         _options = options.Value;
+        _runner = runner ?? new OcrProcessRunner();
     }
 
     public async Task<OcrPdfResult> OcrizePdfAsync(string pdfStoragePath, bool invalidateDigitalSignatures, CancellationToken ct)
@@ -48,8 +50,9 @@ public sealed class OcrMyPdfOcrService : IOcrService
                 throw BuildException(OcrFailureCode.OCR_INPUT_FILE_NOT_FOUND, "OCR falhou porque o arquivo de entrada não foi localizado.", "Arquivo de entrada OCR não encontrado.", null);
 
             var sw = Stopwatch.StartNew();
+            var deadline = DateTimeOffset.UtcNow.AddMinutes(Math.Max(1, _options.TimeoutMinutes));
             var psi = CreateOcrProcessStartInfo(inPdf, outTmp, tempDir, invalidateDigitalSignatures);
-            _logger.LogInformation("OCR: executando OCRmyPDF. Exe={Exe} Args={Args} User={User}", psi.FileName, string.Join(' ', psi.ArgumentList), WindowsIdentity.GetCurrent().Name);
+            _logger.LogInformation("OCR: executando OCRmyPDF. Exe={Exe}", psi.FileName);
             var (exit, stdout, stderr, timedOut) = await RunProcessAsync(psi, TimeSpan.FromMinutes(Math.Max(1, _options.TimeoutMinutes)), ct);
             sw.Stop();
 
@@ -63,11 +66,9 @@ public sealed class OcrMyPdfOcrService : IOcrService
                 inputFileSize = new FileInfo(inPdf).Length,
                 workingDirectory = tempDir,
                 exitCode = exit,
-                stdout = TrimMax(stdout, 4000),
-                stderr = TrimMax(stderr, 4000),
                 elapsedMs = sw.ElapsedMilliseconds,
                 timeoutSeconds = (int)TimeSpan.FromMinutes(Math.Max(1, _options.TimeoutMinutes)).TotalSeconds,
-                processUser = WindowsIdentity.GetCurrent().Name,
+                processUser = Environment.UserName,
                 correlationId = System.Diagnostics.Activity.Current?.Id
             };
 
@@ -86,9 +87,38 @@ public sealed class OcrMyPdfOcrService : IOcrService
                 throw BuildException(OcrFailureCode.OCR_OUTPUT_WRITE_DENIED, "OCR falhou porque o PDF de saída não foi gerado.", "OCRmyPDF concluiu sem gerar saída.", details);
 
             File.Move(outTmp, outPdf, overwrite: true);
+            string? recoveryMethod = null;
             var text = await ExtractTextWithPdfToTextAsync(outPdf, tempDir, ct);
+            if (OcrTextQuality.IsFragmented(text!) && _options.UseRotatePages)
+            {
+                // Sparse or skewed pages can be falsely rotated by OSD. Retry from the intact
+                // input once, with deskew retained and cardinal rotation disabled.
+                _logger.LogWarning("OCR fragmentado: repetindo leitura local sem rotação automática.");
+                var retryPdf = Path.Combine(tempDir, "output_no_rotation.pdf");
+                var remaining = deadline - DateTimeOffset.UtcNow;
+                if (remaining <= TimeSpan.Zero)
+                    throw BuildException(OcrFailureCode.OCR_PROCESS_TIMEOUT, "OCR excedeu o tempo limite.", "Limite total do OCR excedido.", new { stage = "QUALITY_RECOVERY" });
+                var retryPsi = CreateOcrProcessStartInfo(inPdf, retryPdf, tempDir, invalidateDigitalSignatures, allowRotate: false);
+                var retry = await RunProcessAsync(retryPsi, remaining, ct);
+                if (retry.TimedOut)
+                    throw BuildException(OcrFailureCode.OCR_PROCESS_TIMEOUT, "OCR excedeu o tempo limite.", "Limite total do OCR excedido.", new { stage = "QUALITY_RECOVERY" });
+                if (retry.ExitCode == 0 && File.Exists(retryPdf))
+                {
+                    var retryText = await ExtractTextWithPdfToTextAsync(retryPdf, tempDir, ct, rawOrder: true);
+                    if (!OcrTextQuality.IsFragmented(retryText!))
+                    {
+                        text = retryText;
+                        recoveryMethod = "tesseract-psm6-no-rotation-poppler-raw";
+                        File.Move(retryPdf, outPdf, overwrite: true);
+                    }
+                }
+            }
+            if (OcrTextQuality.IsFragmented(text!))
+                throw BuildException(OcrFailureCode.OCR_TEXT_LOW_QUALITY,
+                    "Texto excessivamente fragmentado. Confira a orientação e a qualidade do documento antes de reprocessar.",
+                    "OCR requer conferência de qualidade.", new { stage = "TEXT_QUALITY", reviewRequired = true });
             var bytes = await File.ReadAllBytesAsync(outPdf, ct);
-            return new OcrPdfResult(bytes, text ?? "");
+            return new OcrPdfResult(bytes, text ?? "", recoveryMethod);
         }
         finally
         {
@@ -96,13 +126,19 @@ public sealed class OcrMyPdfOcrService : IOcrService
         }
     }
 
-    private ProcessStartInfo CreateOcrProcessStartInfo(string inPdf, string outPdf, string tempDir, bool invalidateDigitalSignatures)
+    private ProcessStartInfo CreateOcrProcessStartInfo(string inPdf, string outPdf, string tempDir, bool invalidateDigitalSignatures, bool allowRotate = true)
     {
         var psi = new ProcessStartInfo { FileName = _options.OcrMyPdfPath ?? "ocrmypdf", UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true, WorkingDirectory = tempDir, StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8 };
         psi.ArgumentList.Add("--language"); psi.ArgumentList.Add(string.IsNullOrWhiteSpace(_options.Languages) ? "por+eng" : _options.Languages);
         if (_options.UseDeskew) psi.ArgumentList.Add("--deskew");
         if (_options.UseClean) psi.ArgumentList.Add("--clean");
-        if (_options.UseRotatePages) psi.ArgumentList.Add("--rotate-pages");
+        if (_options.UseRotatePages && allowRotate) psi.ArgumentList.Add("--rotate-pages");
+        if (!allowRotate)
+        {
+            // Recovery targets fragmented layout/orientation. The normal pass keeps
+            // automatic segmentation for documents with multiple columns.
+            psi.ArgumentList.Add("--tesseract-pagesegmode"); psi.ArgumentList.Add("6");
+        }
         psi.ArgumentList.Add(NormalizePdfMode(_options.PdfMode));
         psi.ArgumentList.Add("--optimize"); psi.ArgumentList.Add(Math.Clamp(_options.OptimizeLevel, 0, 3).ToString());
         psi.ArgumentList.Add("--output-type"); psi.ArgumentList.Add(string.IsNullOrWhiteSpace(_options.OutputType) ? "pdf" : _options.OutputType);
@@ -115,28 +151,34 @@ public sealed class OcrMyPdfOcrService : IOcrService
 
     private static string BuildOcrPathEnvironment(OcrOptions options) => OcrEnvironmentValidator.BuildOcrPathEnvironment(options);
 
-    private async Task<string?> ExtractTextWithPdfToTextAsync(string pdfPath, string tempDir, CancellationToken ct)
+    private async Task<string?> ExtractTextWithPdfToTextAsync(string pdfPath, string tempDir, CancellationToken ct, bool rawOrder = false)
     {
-        var pdftotext = !string.IsNullOrWhiteSpace(_options.PdfToTextPath) ? _options.PdfToTextPath : Path.Combine(_options.PopplerBinPath ?? "", "pdftotext.exe");
-        if (string.IsNullOrWhiteSpace(pdftotext) || !File.Exists(pdftotext)) return "";
+        var executable = OperatingSystem.IsWindows() ? "pdftotext.exe" : "pdftotext";
+        var pdftotext = !string.IsNullOrWhiteSpace(_options.PdfToTextPath) ? _options.PdfToTextPath
+            : string.IsNullOrWhiteSpace(_options.PopplerBinPath) ? executable : Path.Combine(_options.PopplerBinPath, executable);
         var outTxt = Path.Combine(tempDir, "out.txt");
         var psi = new ProcessStartInfo(pdftotext) { UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true, CreateNoWindow = true, WorkingDirectory = tempDir, StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8 };
+        psi.ArgumentList.Add("-enc"); psi.ArgumentList.Add("UTF-8");
+        if (rawOrder) psi.ArgumentList.Add("-raw");
         psi.ArgumentList.Add(pdfPath); psi.ArgumentList.Add(outTxt); psi.Environment["PATH"] = BuildOcrPathEnvironment(_options);
-        var (exit, stdout, stderr, _) = await RunProcessAsync(psi, TimeSpan.FromSeconds(60), ct);
-        if (exit != 0) { _logger.LogWarning("pdftotext falhou. Exit={ExitCode}. STDERR={Err}. STDOUT={Out}", exit, TrimMax(stderr, 2000), TrimMax(stdout, 2000)); return ""; }
-        return File.Exists(outTxt) ? await File.ReadAllTextAsync(outTxt, Encoding.UTF8, ct) : "";
+        var (exit, _, _, timedOut) = await RunProcessAsync(psi, TimeSpan.FromSeconds(60), ct);
+        if (exit != 0 || timedOut || !File.Exists(outTxt))
+            throw BuildException(OcrFailureCode.OCR_TEXT_EXTRACTION_FAILED,
+                "O PDF foi processado, mas a extração de texto falhou. Reprocesse após verificar o Poppler.",
+                "Falha na extração de texto pesquisável.", new { stage = "TEXT_EXTRACTION", exitCode = exit, timedOut });
+        var text = await File.ReadAllTextAsync(outTxt, Encoding.UTF8, ct);
+        if (string.IsNullOrWhiteSpace(text))
+            throw BuildException(OcrFailureCode.OCR_TEXT_EMPTY,
+                "Nenhum texto legível foi extraído. O documento precisa de conferência ou de uma imagem de melhor qualidade.",
+                "OCR sem texto pesquisável.", new { stage = "TEXT_EXTRACTION" });
+        return text;
     }
 
-    private static async Task<(int ExitCode, string StdOut, string StdErr, bool TimedOut)> RunProcessAsync(ProcessStartInfo psi, TimeSpan timeout, CancellationToken ct)
+    private async Task<(int ExitCode, string StdOut, string StdErr, bool TimedOut)> RunProcessAsync(ProcessStartInfo psi, TimeSpan timeout, CancellationToken ct)
     {
-        using var p = Process.Start(psi) ?? throw new InvalidOperationException($"Falha ao iniciar processo: {psi.FileName}");
-        var stdoutTask = p.StandardOutput.ReadToEndAsync();
-        var stderrTask = p.StandardError.ReadToEndAsync();
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeoutCts.CancelAfter(timeout);
-        try { await p.WaitForExitAsync(timeoutCts.Token); }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { try { if (!p.HasExited) p.Kill(true); } catch { } return (-1, await stdoutTask, await stderrTask, true); }
-        return (p.ExitCode, await stdoutTask, await stderrTask, false);
+        var result = await _runner.RunVersionAsync(psi.FileName, psi.ArgumentList.ToArray(), psi.WorkingDirectory,
+            psi.Environment.Where(x => x.Value is not null).ToDictionary(x => x.Key, x => x.Value!), timeout, ct);
+        return (result.ExitCode ?? -1, result.StdOut, result.StdErr, result.TimedOut);
     }
 
     private static OcrFailureCode Classify(string s)

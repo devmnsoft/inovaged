@@ -1,9 +1,10 @@
-﻿using Dapper;
+using Dapper;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ocr;
 using InovaGed.Domain.Ged;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Microsoft.Extensions.Options;
 using System.Text.Json;
 
 namespace InovaGed.Infrastructure.Ocr;
@@ -13,13 +14,15 @@ public sealed class OcrJobRepository : IOcrJobRepository
     private readonly IDbConnectionFactory _db;
     private readonly ILogger<OcrJobRepository> _logger;
 
-    private static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(10);
-    private const int MaxConcurrentProcessingJobs = 1;
+    private readonly OcrOptions _options;
+    // Scoped repository: every claim gets an owner that another worker cannot reuse.
+    private readonly string _owner = Guid.NewGuid().ToString("N");
 
-    public OcrJobRepository(IDbConnectionFactory db, ILogger<OcrJobRepository> logger)
+    public OcrJobRepository(IDbConnectionFactory db, ILogger<OcrJobRepository> logger, IOptions<OcrOptions>? options = null)
     {
         _db = db;
         _logger = logger;
+        _options = options?.Value ?? new OcrOptions();
     }
 
     public async Task<long> EnqueueAsync(
@@ -31,22 +34,28 @@ public sealed class OcrJobRepository : IOcrJobRepository
     {
         await using var conn = await _db.OpenAsync(ct);
 
-        if (!invalidateDigitalSignatures)
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(
+            "SELECT pg_advisory_xact_lock(hashtextextended(@key, 0));",
+            new { key = $"ocr:{tenantId:N}:{documentVersionId:N}" }, tx, cancellationToken: ct));
+        var preserveCompleted = !invalidateDigitalSignatures && await HasSearchableTextAsync(conn, tenantId, documentVersionId, tx, ct);
         {
+
             const string existingSql = @"
 SELECT id
 FROM ged.ocr_job
 WHERE tenant_id = @tenantId
   AND document_version_id = @documentVersionId
-  AND status IN ('PENDING'::ged.ocr_status_enum, 'PROCESSING'::ged.ocr_status_enum, 'COMPLETED'::ged.ocr_status_enum)
+  AND (status IN ('PENDING'::ged.ocr_status_enum, 'PROCESSING'::ged.ocr_status_enum)
+       OR (status = 'COMPLETED'::ged.ocr_status_enum AND @preserveCompleted))
 ORDER BY requested_at DESC
 LIMIT 1;";
 
             var existingId = await conn.ExecuteScalarAsync<long?>(
                 new CommandDefinition(
                     existingSql,
-                    new { tenantId, documentVersionId },
-                    cancellationToken: ct));
+                    new { tenantId, documentVersionId, preserveCompleted },
+                    transaction: tx, cancellationToken: ct));
 
             if (existingId.HasValue)
             {
@@ -56,6 +65,7 @@ LIMIT 1;";
                     tenantId,
                     documentVersionId);
 
+                await tx.CommitAsync(ct);
                 return existingId.Value;
             }
         }
@@ -65,80 +75,18 @@ INSERT INTO ged.ocr_job
   (tenant_id, document_version_id, status, requested_by, invalidate_digital_signatures)
 VALUES
   (@tenantId, @documentVersionId, 'PENDING'::ged.ocr_status_enum, @requestedBy, @invalidate)
-ON CONFLICT ON CONSTRAINT ocr_job_pkey DO NOTHING
 RETURNING id;";
-
-        try
-        {
-            var id = await conn.ExecuteScalarAsync<long?>(
-                new CommandDefinition(
-                    sql,
-                    new
-                    {
-                        tenantId,
-                        documentVersionId,
-                        requestedBy,
-                        invalidate = invalidateDigitalSignatures
-                    },
-                    cancellationToken: ct));
-
-            if (id.HasValue)
-            {
-                _logger.LogInformation(
-                    "OCR job enfileirado. JobId={JobId}, Tenant={TenantId}, Version={VersionId}, RequestedBy={RequestedBy}",
-                    id.Value,
-                    tenantId,
-                    documentVersionId,
-                    requestedBy);
-
-                return id.Value;
-            }
-
-            const string fallbackSql = @"
-SELECT id
-FROM ged.ocr_job
-WHERE tenant_id = @tenantId
-  AND document_version_id = @documentVersionId
-  AND status IN ('PENDING'::ged.ocr_status_enum, 'PROCESSING'::ged.ocr_status_enum)
-ORDER BY requested_at DESC
-LIMIT 1;";
-
-            var fallbackId = await conn.ExecuteScalarAsync<long?>(
-                new CommandDefinition(
-                    fallbackSql,
-                    new { tenantId, documentVersionId },
-                    cancellationToken: ct));
-
-            if (fallbackId.HasValue)
-                return fallbackId.Value;
-
-            const string insertDirectSql = @"
-INSERT INTO ged.ocr_job
-  (tenant_id, document_version_id, status, requested_by, invalidate_digital_signatures)
-VALUES
-  (@tenantId, @documentVersionId, 'PENDING'::ged.ocr_status_enum, @requestedBy, @invalidate)
-RETURNING id;";
-
-            return await conn.ExecuteScalarAsync<long>(
-                new CommandDefinition(
-                    insertDirectSql,
-                    new
-                    {
-                        tenantId,
-                        documentVersionId,
-                        requestedBy,
-                        invalidate = invalidateDigitalSignatures
-                    },
-                    cancellationToken: ct));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Erro ao enfileirar OCR. Tenant={TenantId}, Version={VersionId}", tenantId, documentVersionId);
-            throw;
-        }
+        var id = await conn.ExecuteScalarAsync<long>(new CommandDefinition(sql,
+            new { tenantId, documentVersionId, requestedBy, invalidate = invalidateDigitalSignatures },
+            transaction: tx, cancellationToken: ct));
+        await tx.CommitAsync(ct);
+        return id;
     }
 
-    public async Task<OcrJobDto?> DequeueAndMarkProcessingAsync(CancellationToken ct)
+    public Task<OcrJobDto?> DequeueAndMarkProcessingAsync(CancellationToken ct) =>
+        AcquireAsync(TimeSpan.FromSeconds(Math.Max(180, _options.LeaseSeconds)), ct);
+
+    private async Task<OcrJobDto?> AcquireAsync(TimeSpan leaseTime, CancellationToken ct)
     {
         const string sql = @"
 WITH lock_gate AS (
@@ -159,13 +107,14 @@ cte AS (
   WHERE
     lock_gate.ok = true
     AND capacity.running < @maxConcurrent
+    AND coalesce(attempts, 0) < @maxAttempts
+    AND NOT coalesce(cancel_requested, false)
     AND (next_attempt_at IS NULL OR next_attempt_at <= now())
     AND (
     status = 'PENDING'::ged.ocr_status_enum
     OR (
         status = 'PROCESSING'::ged.ocr_status_enum
-        AND lease_expires_at IS NOT NULL
-        AND lease_expires_at < now()
+        AND (lease_expires_at IS NULL OR lease_expires_at < now())
     )
     )
   ORDER BY requested_at
@@ -174,8 +123,14 @@ cte AS (
 )
 UPDATE ged.ocr_job j
 SET status = 'PROCESSING'::ged.ocr_status_enum,
-    started_at = COALESCE(j.started_at, now()),
-    lease_expires_at = now() + (@leaseSeconds || ' seconds')::interval,
+    started_at = now(),
+    attempts = coalesce(j.attempts, 0) + 1,
+    last_attempt_at = now(),
+    locked_by = @owner,
+    locked_at = now(),
+    updated_at = now(),
+    finished_at = null,
+    lease_expires_at = LEAST(now() + (@leaseSeconds || ' seconds')::interval, now() + (@maxJobMinutes || ' minutes')::interval),
     error_message = null
 FROM cte
 WHERE j.id = cte.id
@@ -189,13 +144,40 @@ RETURNING
         await using var conn = await _db.OpenAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
 
+        // Acquire before reading capacity so a fresh statement snapshot sees committed claims.
+        if (!await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
+            "SELECT pg_try_advisory_xact_lock(91827364);", transaction: tx, cancellationToken: ct)))
+            return null;
+
+        // Bound recovery even when a process dies on every attempt. ERROR is the dead-letter queue.
+        await conn.ExecuteAsync(new CommandDefinition(@"
+UPDATE ged.ocr_job
+SET status = 'CANCELLED'::ged.ocr_status_enum, finished_at = now(), updated_at = now(),
+    lease_expires_at = null, locked_by = null, locked_at = null,
+    error_message = 'Processamento cancelado por solicitação.'
+WHERE status IN ('PENDING'::ged.ocr_status_enum, 'PROCESSING'::ged.ocr_status_enum)
+  AND coalesce(cancel_requested, false);
+
+UPDATE ged.ocr_job
+SET status = 'ERROR'::ged.ocr_status_enum, finished_at = now(), updated_at = now(),
+    lease_expires_at = null, locked_by = null, locked_at = null,
+    failure_code = 'OCR_ATTEMPTS_EXHAUSTED',
+    error_message = 'Limite de tentativas atingido após interrupção. Reprocessamento manual necessário.'
+WHERE status IN ('PENDING'::ged.ocr_status_enum, 'PROCESSING'::ged.ocr_status_enum)
+  AND coalesce(attempts, 0) >= @maxAttempts
+  AND (status = 'PENDING'::ged.ocr_status_enum OR lease_expires_at IS NULL OR lease_expires_at < now());",
+            new { maxAttempts = Math.Max(1, _options.MaxAttempts) }, tx, cancellationToken: ct));
+
         var job = await conn.QuerySingleOrDefaultAsync<OcrJobDto>(
             new CommandDefinition(
                 sql,
                 new
                 {
-                    leaseSeconds = (int)LeaseDuration.TotalSeconds,
-                    maxConcurrent = MaxConcurrentProcessingJobs
+                    leaseSeconds = (int)Math.Clamp(leaseTime.TotalSeconds, 180, 86400),
+                    maxConcurrent = Math.Max(1, _options.MaxParallelJobs),
+                    maxAttempts = Math.Max(1, _options.MaxAttempts),
+                    maxJobMinutes = Math.Max(1, _options.MaxJobMinutes),
+                    owner = _owner
                 },
                 transaction: tx,
                 cancellationToken: ct));
@@ -224,21 +206,28 @@ RETURNING
     {
         const string sql = @"
 UPDATE ged.ocr_job
-SET lease_expires_at = now() + (@leaseSeconds || ' seconds')::interval
-WHERE id = @jobId
+SET lease_expires_at = LEAST(now() + (@leaseSeconds || ' seconds')::interval,
+        started_at + (@maxJobMinutes || ' minutes')::interval), updated_at = now()
+WHERE id = @jobId AND locked_by = @owner
+  AND lease_expires_at > now()
+  AND started_at + (@maxJobMinutes || ' minutes')::interval > now()
+  AND NOT coalesce(cancel_requested, false)
   AND status = 'PROCESSING'::ged.ocr_status_enum;";
 
         await using var conn = await _db.OpenAsync(ct);
 
-        await conn.ExecuteAsync(
+        var renewed = await conn.ExecuteAsync(
             new CommandDefinition(
                 sql,
                 new
                 {
                     jobId,
-                    leaseSeconds = (int)LeaseDuration.TotalSeconds
+                    leaseSeconds = Math.Max(180, _options.LeaseSeconds),
+                    maxJobMinutes = Math.Max(1, _options.MaxJobMinutes),
+                    owner = _owner
                 },
                 cancellationToken: ct));
+        if (renewed != 1) throw new InvalidOperationException("OCR lease expirado, cancelado ou pertencente a outro worker.");
     }
 
     public async Task MarkCompletedAsync(long jobId, CancellationToken ct)
@@ -256,14 +245,16 @@ SET status = 'COMPLETED'::ged.ocr_status_enum,
     error_message = null,
     result_document_id = COALESCE(@documentId, result_document_id),
     result_version_id = COALESCE(@resultVersionId, result_version_id)
-WHERE id = @jobId;";
+WHERE id = @jobId AND locked_by = @owner
+  AND status = 'PROCESSING'::ged.ocr_status_enum AND lease_expires_at > now()
+  AND NOT coalesce(cancel_requested, false);";
 
         await using var conn = await _db.OpenAsync(ct);
 
         await conn.ExecuteAsync(
             new CommandDefinition(
                 sql,
-                new { jobId, documentId, resultVersionId },
+                new { jobId, documentId, resultVersionId, owner = _owner },
                 cancellationToken: ct));
     }
 
@@ -285,7 +276,9 @@ SET status = 'ERROR'::ged.ocr_status_enum,
     lease_expires_at = null,
     locked_by = null,
     locked_at = null
-WHERE id = @jobId;";
+WHERE id = @jobId AND locked_by = @owner
+  AND status = 'PROCESSING'::ged.ocr_status_enum AND lease_expires_at > now()
+  AND NOT coalesce(cancel_requested, false);";
 
         try
         {
@@ -297,6 +290,7 @@ WHERE id = @jobId;";
                     new
                     {
                         jobId,
+                        owner = _owner,
                         error = errorMessage,
                         details = errorDetailsJson,
                         failureCode = ExtractFailureCode(errorDetailsJson)
@@ -329,14 +323,16 @@ UPDATE ged.ocr_job
 SET status = 'ERROR'::ged.ocr_status_enum,
     error_message = @errorMessage,
     finished_at = now()
-WHERE id = @jobId;";
+WHERE id = @jobId AND locked_by = @owner
+  AND status = 'PROCESSING'::ged.ocr_status_enum AND lease_expires_at > now()
+  AND NOT coalesce(cancel_requested, false);";
 
         await using var conn = await _db.OpenAsync(ct);
 
         await conn.ExecuteAsync(
             new CommandDefinition(
                 sql,
-                new { jobId, errorMessage },
+                new { jobId, errorMessage, owner = _owner },
                 cancellationToken: ct));
     }
 
@@ -369,15 +365,17 @@ WHERE id = @jobId;";
         const string sql = @"
 UPDATE ged.ocr_job
 SET status = 'PENDING'::ged.ocr_status_enum,
-    attempts = @attempts,
+    attempts = GREATEST(attempts, @attempts),
     last_attempt_at = now(),
     next_attempt_at = @nextAttemptAt,
     lease_expires_at = null,
     error_message = @error
-WHERE id = @jobId;";
+WHERE id = @jobId AND locked_by = @owner
+  AND status = 'PROCESSING'::ged.ocr_status_enum AND lease_expires_at > now()
+  AND NOT coalesce(cancel_requested, false);";
 
         await using var conn = await _db.OpenAsync(ct);
-        await conn.ExecuteAsync(new CommandDefinition(sql, new { jobId, attempts, nextAttemptAt, error = errorMessage }, cancellationToken: ct));
+        await conn.ExecuteAsync(new CommandDefinition(sql, new { jobId, attempts, nextAttemptAt, error = errorMessage, owner = _owner }, cancellationToken: ct));
     }
 
     public async Task<bool> IsCancelRequestedAsync(long jobId, CancellationToken ct)
@@ -387,53 +385,11 @@ WHERE id = @jobId;";
         return await conn.ExecuteScalarAsync<bool>(new CommandDefinition(sql, new { jobId }, cancellationToken: ct));
     }
 
-public async Task<OcrJobLease?> LeaseNextAsync(TimeSpan leaseTime, CancellationToken ct)
+    public async Task<OcrJobLease?> LeaseNextAsync(TimeSpan leaseTime, CancellationToken ct)
     {
-        const string sql = @"
-WITH cte AS (
-  SELECT id
-  FROM ged.ocr_job
-  WHERE status = 'PENDING'::ged.ocr_status_enum
-    AND (next_attempt_at IS NULL OR next_attempt_at <= now())
-    AND (lease_expires_at IS NULL OR lease_expires_at < now())
-  ORDER BY requested_at
-  LIMIT 1
-  FOR UPDATE SKIP LOCKED
-)
-UPDATE ged.ocr_job j
-SET status = 'PROCESSING'::ged.ocr_status_enum,
-    started_at = COALESCE(started_at, now()),
-    lease_expires_at = now() + (@LeaseSeconds || ' seconds')::interval,
-    error_message = null
-FROM cte
-WHERE j.id = cte.id
-RETURNING
-    j.id,
-    j.tenant_id,
-    j.document_version_id,
-    j.requested_by,
-    j.invalidate_digital_signatures;";
-
-        await using var conn = await _db.OpenAsync(ct);
-        await using var tx = await conn.BeginTransactionAsync(ct);
-
-        var row = await conn.QueryFirstOrDefaultAsync(
-            new CommandDefinition(
-                sql,
-                new { LeaseSeconds = (int)leaseTime.TotalSeconds },
-                transaction: tx,
-                cancellationToken: ct));
-
-        await tx.CommitAsync(ct);
-
-        if (row is null) return null;
-
-        return new OcrJobLease(
-            JobId: (long)row.id,
-            TenantId: (Guid)row.tenant_id,
-            DocumentVersionId: (Guid)row.document_version_id,
-            InvalidateDigitalSignatures: (bool)row.invalidate_digital_signatures
-        );
+        var job = await AcquireAsync(leaseTime, ct);
+        return job is null ? null : new OcrJobLease(job.Id, job.TenantId,
+            job.DocumentVersionId, job.InvalidateDigitalSignatures);
     }
 
     public async Task<OcrJobStatusDto?> GetLatestByVersionIdAsync(Guid tenantId, Guid documentVersionId, CancellationToken ct)
@@ -494,11 +450,33 @@ SELECT EXISTS (
 
         await using var conn = await _db.OpenAsync(ct);
 
-        return await conn.ExecuteScalarAsync<bool>(
+        var completed = await conn.ExecuteScalarAsync<bool>(
             new CommandDefinition(
                 sql,
                 new { tenantId, documentVersionId },
                 cancellationToken: ct));
+        return completed && await HasSearchableTextAsync(conn, tenantId, documentVersionId, null, ct);
+    }
+
+    private static async Task<bool> HasSearchableTextAsync(NpgsqlConnection conn, Guid tenantId, Guid documentVersionId, NpgsqlTransaction? tx, CancellationToken ct)
+    {
+        var columns = (await conn.QueryAsync<string>(new CommandDefinition(@"
+SELECT column_name FROM information_schema.columns WHERE table_schema='ged'
+  AND table_name='document_search' AND column_name IN ('version_id','document_version_id');",
+            transaction: tx, cancellationToken: ct))).ToHashSet(StringComparer.Ordinal);
+        var predicates = new List<string>();
+        if (columns.Contains("version_id")) predicates.Add("ds.version_id IN (j.document_version_id,j.result_version_id)");
+        if (columns.Contains("document_version_id")) predicates.Add("ds.document_version_id IN (j.document_version_id,j.result_version_id)");
+        if (predicates.Count == 0) return false;
+        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition($@"
+SELECT EXISTS (
+  SELECT 1 FROM ged.document_search ds
+  JOIN ged.ocr_job j ON j.tenant_id = ds.tenant_id
+  WHERE j.tenant_id = @tenantId AND j.document_version_id = @documentVersionId
+    AND j.status = 'COMPLETED'::ged.ocr_status_enum
+    AND ({string.Join(" OR ", predicates)})
+    AND NULLIF(btrim(coalesce(ds.ocr_text,'')), '') IS NOT NULL
+);", new { tenantId, documentVersionId }, tx, cancellationToken: ct));
     }
 
     public async Task<int> CancelByVersionAsync(Guid tenantId, Guid versionId, Guid? cancelledBy, string reason, CancellationToken ct)

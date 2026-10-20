@@ -3197,4 +3197,5 @@ COMMIT;
 \ir migrations/2026_11_06_demais_setores_segment_and_state_alignment.sql
 \ir migrations/2026_11_07_preview_status_enum_operator_contract.sql
 \ir migrations/2026_11_08_document_move_root_history.sql
-
+\ir migrations/2026_10_20_ocr_lease_recovery.sql
+\ir migrations/2026_10_20_ai_sensitive_egress.sql

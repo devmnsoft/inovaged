@@ -247,7 +247,8 @@ WHERE g.tenant_id=@tenantId AND g.protocolo_id=@protocoloId AND g.reg_status='A'
             outputSchema,
             idempotencyKey,
             Sources: aiSources,
-            ExecutionMetadata: executionMetadata
+            ExecutionMetadata: executionMetadata,
+            ContainsSensitiveData: true
         );
 
         var aiResult = await gateway.ExecuteAsync(aiRequest, ct);

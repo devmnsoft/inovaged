@@ -6,6 +6,7 @@ using InovaGed.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using InovaGed.Application.ArtificialIntelligence;
+using InovaGed.Infrastructure.ArtificialIntelligence;
 
 namespace InovaGed.Web.Controllers;
 
@@ -37,7 +38,7 @@ public sealed class AiAdministrationController : Controller
         page = Math.Max(1, page); const int pageSize = 25;
         await using var c=await _db.OpenAsync(ct);
         var policy=await c.QuerySingleOrDefaultAsync<AiPolicyVm>(new CommandDefinition("""
-select p.enabled "Enabled",p.revision "Revision",p.allowed_tasks::text "AllowedTasks",p.allowed_providers::text "AllowedProviders",
+select coalesce((to_jsonb(p)->>'allow_sensitive_external')::boolean,false) "AllowSensitiveExternalProcessing",to_jsonb(p)->>'external_authorization_reference' "ExternalAuthorizationReference",p.enabled "Enabled",p.revision "Revision",p.allowed_tasks::text "AllowedTasks",p.allowed_providers::text "AllowedProviders",
 p.task_models::text "TaskModels",p.monthly_token_limit "MonthlyTokenLimit",p.maximum_input_characters "MaximumInputCharacters",
 coalesce(u.consumed_tokens,0) "ConsumedTokens",coalesce(u.reserved_tokens,0) "ReservedTokens",
 (select count(*) from ged.ai_execution e where e.tenant_id=p.tenant_id and e.state in ('Failed','Rejected','RemoteOutcomeUnknown','Expired')) "Failures"
@@ -45,7 +46,7 @@ from ged.ai_tenant_policy p left join ged.ai_monthly_usage u on u.tenant_id=p.te
 """,new{tenantId=_user.TenantId},cancellationToken:ct));
         policy ??= new(); policy.LoadSelections();
         policy.ProviderCatalog = _configuration.GetSection(DocumentAiOptions.SectionName).Get<DocumentAiOptions>()?.Providers ?? [];
-        policy.CredentialConfigured = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable($"{policy.SelectedProvider.ToUpperInvariant()}_API_KEY"));
+        policy.CredentialConfigured = AiEndpointPolicy.IsLocal(policy.SelectedProvider) || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable($"{policy.SelectedProvider.ToUpperInvariant()}_API_KEY"));
         // Reported tokens are what providers actually metered; estimated tokens are conservative
         // settlements (reservation without provider metering). Administration must see them apart.
         policy.Usage = await c.QuerySingleAsync<UsageTotalsVm>(new CommandDefinition("""
@@ -66,7 +67,7 @@ from ged.ai_execution where tenant_id=@tenantId order by created_at desc,id desc
         return View(policy);
     }
     [HttpPost,ValidateAntiForgeryToken]
-    public async Task<IActionResult> Save(bool enabled,string provider,string model,string[]? tasks,long revision,long monthlyTokenLimit=100000,int maximumInputCharacters=50000,CancellationToken ct=default)
+    public async Task<IActionResult> Save(bool enabled,string provider,string model,string[]? tasks,long revision,long monthlyTokenLimit=100000,int maximumInputCharacters=50000,bool allowSensitiveExternalProcessing=false,string? externalAuthorizationReference=null,CancellationToken ct=default)
     {
         var global=_configuration.GetSection(DocumentAiOptions.SectionName).Get<DocumentAiOptions>()??new();
         if(!global.Providers.TryGetValue(provider,out var providerOptions)||!providerOptions.Enabled||!providerOptions.AllowedModels.Contains(model,StringComparer.Ordinal)||!providerOptions.StructuredOutputModels.Contains(model,StringComparer.Ordinal)) return BadRequest("Provedor/modelo não homologado na configuração global.");
@@ -75,14 +76,19 @@ from ged.ai_execution where tenant_id=@tenantId order by created_at desc,id desc
         if(unsupported.Length>0)return BadRequest($"Tarefas indisponíveis: {string.Join(", ",unsupported)}. Tarefas implementadas: {string.Join(", ",AiTaskCatalog.Supported.Select(x=>x.ToString()))}.");
         var allowedTasks=(tasks??[]).Select(x=>Enum.Parse<AiTask>(x,true).ToString()).Distinct().ToArray();
         if(monthlyTokenLimit<0||monthlyTokenLimit>10_000_000||maximumInputCharacters<1000||maximumInputCharacters>global.MaximumInputCharacters)return BadRequest("Limites do cliente não podem exceder os limites globais.");
+        externalAuthorizationReference = externalAuthorizationReference?.Trim();
+        if (allowSensitiveExternalProcessing && !AiEndpointPolicy.IsLocal(provider) && !providerOptions.SensitiveDataPermitted)
+            return BadRequest("A modalidade contratual deste provedor não foi autorizada globalmente para dados sensíveis.");
+        if (allowSensitiveExternalProcessing && (string.IsNullOrWhiteSpace(externalAuthorizationReference) || externalAuthorizationReference.Length > 500))
+            return BadRequest("Informe a referência da autorização formal para tratamento externo de dados sensíveis (até 500 caracteres).");
         await using var c=await _db.OpenAsync(ct);
         var changed=await c.ExecuteAsync(new CommandDefinition("""
-insert into ged.ai_tenant_policy(tenant_id,enabled,allowed_tasks,allowed_providers,task_models,monthly_token_limit,maximum_input_characters,updated_by)
-values(@tenantId,@enabled,cast(@tasksJson as jsonb),cast(@providers as jsonb),cast(@models as jsonb),@monthlyTokenLimit,@maximumInputCharacters,@userId)
+insert into ged.ai_tenant_policy(tenant_id,enabled,allowed_tasks,allowed_providers,task_models,monthly_token_limit,maximum_input_characters,updated_by,allow_sensitive_external,external_authorization_reference)
+values(@tenantId,@enabled,cast(@tasksJson as jsonb),cast(@providers as jsonb),cast(@models as jsonb),@monthlyTokenLimit,@maximumInputCharacters,@userId,@allowSensitiveExternalProcessing,@externalAuthorizationReference)
 on conflict(tenant_id) do update set enabled=excluded.enabled,revision=ged.ai_tenant_policy.revision+1,allowed_tasks=excluded.allowed_tasks,
 allowed_providers=excluded.allowed_providers,task_models=excluded.task_models,monthly_token_limit=excluded.monthly_token_limit,
-maximum_input_characters=excluded.maximum_input_characters,updated_at=now(),updated_by=excluded.updated_by where ged.ai_tenant_policy.revision=@revision
-""",new{tenantId=_user.TenantId,_user.UserId,enabled,tasksJson=JsonSerializer.Serialize(allowedTasks),providers=JsonSerializer.Serialize(new[]{provider}),models=JsonSerializer.Serialize(allowedTasks.ToDictionary(x=>x,_=>model)),monthlyTokenLimit,maximumInputCharacters,revision},cancellationToken:ct));
+allow_sensitive_external=excluded.allow_sensitive_external,external_authorization_reference=excluded.external_authorization_reference,maximum_input_characters=excluded.maximum_input_characters,updated_at=now(),updated_by=excluded.updated_by where ged.ai_tenant_policy.revision=@revision
+""",new{tenantId=_user.TenantId,_user.UserId,enabled,tasksJson=JsonSerializer.Serialize(allowedTasks),providers=JsonSerializer.Serialize(new[]{provider}),models=JsonSerializer.Serialize(allowedTasks.ToDictionary(x=>x,_=>model)),monthlyTokenLimit,maximumInputCharacters,revision,allowSensitiveExternalProcessing,externalAuthorizationReference=allowSensitiveExternalProcessing?externalAuthorizationReference:null},cancellationToken:ct));
         if(changed==0)return Conflict("A política foi alterada por outro administrador. Recarregue antes de salvar.");
         TempData["Success"]="Política de IA salva. Resultados anteriores permanecem vinculados à revisão antiga."; return RedirectToAction(nameof(Index));
     }
@@ -96,6 +102,10 @@ maximum_input_characters=excluded.maximum_input_characters,updated_at=now(),upda
 
         if (!global.Providers.TryGetValue(provider, out var options) || !options.Enabled)
             return Ok(new { success = false, provider, model, message = $"O provedor '{provider}' não está habilitado na configuração global.", errorKind = "Disabled" });
+
+        if (!provider.Equals("Deterministic", StringComparison.OrdinalIgnoreCase)
+            && !AiEndpointPolicy.IsAllowed(provider, options.BaseUrl, global.TrustedEndpointHosts))
+            return Ok(new { success = false, provider, model, message = "Endpoint não autorizado.", errorKind = "Disabled" });
 
         if (!string.IsNullOrWhiteSpace(model) && !options.AllowedModels.Contains(model, StringComparer.Ordinal))
             return Ok(new { success = false, provider, model, message = $"O modelo '{model}' não é permitido para o provedor '{provider}'.", errorKind = "ModelUnavailable" });
@@ -125,7 +135,7 @@ maximum_input_characters=excluded.maximum_input_characters,updated_at=now(),upda
         };
 
         var key = string.IsNullOrEmpty(envKey) ? null : Environment.GetEnvironmentVariable(envKey);
-        if (string.IsNullOrWhiteSpace(key))
+        if (!AiEndpointPolicy.IsLocal(provider) && string.IsNullOrWhiteSpace(key))
         {
             return Ok(new
             {
@@ -139,7 +149,7 @@ maximum_input_characters=excluded.maximum_input_characters,updated_at=now(),upda
         }
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        using var client = _httpClientFactory.CreateClient();
+        using var client = _httpClientFactory.CreateClient("AiProviderDiagnostics");
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(TimeSpan.FromSeconds(10));
 
@@ -147,10 +157,14 @@ maximum_input_characters=excluded.maximum_input_characters,updated_at=now(),upda
         {
             Uri uri;
             HttpRequestMessage req;
-            if (provider.Equals("Gemini", StringComparison.OrdinalIgnoreCase))
+            if (AiEndpointPolicy.IsLocal(provider))
             {
-                var targetModel = string.IsNullOrWhiteSpace(model) ? "gemini-1.5-flash" : model;
-                uri = new Uri($"{options.BaseUrl.TrimEnd('/')}/models/{Uri.EscapeDataString(targetModel)}");
+                uri = new Uri($"{options.BaseUrl.TrimEnd('/')}/api/tags");
+                req = new HttpRequestMessage(HttpMethod.Get, uri);
+            }
+            else if (provider.Equals("Gemini", StringComparison.OrdinalIgnoreCase))
+            {
+                uri = new Uri($"{options.BaseUrl.TrimEnd('/')}/models");
                 req = new HttpRequestMessage(HttpMethod.Get, uri);
                 req.Headers.Add("x-goog-api-key", key);
             }
@@ -167,14 +181,27 @@ maximum_input_characters=excluded.maximum_input_characters,updated_at=now(),upda
                 sw.Stop();
                 if (resp.IsSuccessStatusCode)
                 {
+                    // Discovery does not authorize a model. Administrators must still homologate
+                    // and explicitly allow it before document processing.
+                    var payload = await ReadCatalogAsync(resp.Content, cts.Token);
+                    using var catalog = JsonDocument.Parse(payload);
+                    var collection = catalog.RootElement.TryGetProperty("models", out var models) ? models
+                        : catalog.RootElement.TryGetProperty("data", out var data) ? data : default;
+                    var availableModels = collection.ValueKind == JsonValueKind.Array
+                        ? collection.EnumerateArray().Select(x => x.TryGetProperty("name", out var name) ? name.GetString()
+                            : x.TryGetProperty("id", out var id) ? id.GetString() : null)
+                            .Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!.StartsWith("models/", StringComparison.Ordinal) ? x[7..] : x)
+                            .Distinct(StringComparer.Ordinal).Take(500).ToArray() : [];
+                    var modelFound = string.IsNullOrWhiteSpace(model) || availableModels.Contains(model, StringComparer.Ordinal);
                     return Ok(new
                     {
-                        success = true,
+                        success = modelFound,
                         provider,
                         model,
+                        availableModels,
                         latencyMs = sw.ElapsedMilliseconds,
-                        message = $"Conectividade confirmada com sucesso ({sw.ElapsedMilliseconds}ms). Provedor respondeu com HTTP {(int)resp.StatusCode}.",
-                        errorKind = "None",
+                        message = modelFound ? $"Catálogo consultado ({sw.ElapsedMilliseconds}ms). Disponibilidade não comprova faixa gratuita ou qualidade documental." : "O modelo configurado não consta no catálogo atual.",
+                        errorKind = modelFound ? "None" : "ModelUnavailable",
                         credentialConfigured = true
                     });
                 }
@@ -217,7 +244,7 @@ maximum_input_characters=excluded.maximum_input_characters,updated_at=now(),upda
         catch (Exception ex)
         {
             sw.Stop();
-            _logger.LogWarning(ex, "Falha na verificação de conectividade com {Provider}", provider);
+            _logger.LogWarning("Falha na verificação de conectividade com {Provider}; Cause={Cause}", provider, ex.GetType().Name);
             return Ok(new
             {
                 success = false,
@@ -230,7 +257,22 @@ maximum_input_characters=excluded.maximum_input_characters,updated_at=now(),upda
             });
         }
     }
+
+    private static async Task<string> ReadCatalogAsync(HttpContent content, CancellationToken ct)
+    {
+        await using var stream = await content.ReadAsStreamAsync(ct);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[8192];
+        while (true)
+        {
+            var read = await stream.ReadAsync(chunk.AsMemory(), ct);
+            if (read == 0) break;
+            if (buffer.Length + read > 1_000_000) throw new InvalidDataException("Catálogo excede o limite.");
+            await buffer.WriteAsync(chunk.AsMemory(0, read), ct);
+        }
+        return System.Text.Encoding.UTF8.GetString(buffer.ToArray());
+    }
 }
-public sealed class AiPolicyVm { public bool Enabled{get;set;} public long Revision{get;set;} public string AllowedTasks{get;set;}="[]"; public string AllowedProviders{get;set;}="[]"; public string TaskModels{get;set;}="{}"; public long MonthlyTokenLimit{get;set;}=100000; public int MaximumInputCharacters{get;set;}=50000; public long ConsumedTokens{get;set;} public long ReservedTokens{get;set;} public long Failures{get;set;} public bool CredentialConfigured{get;set;} public string SelectedProvider{get;set;}="";public string SelectedModel{get;set;}="";public HashSet<string> SelectedTasks{get;set;}=[];public Dictionary<string,AiProviderOptions> ProviderCatalog{get;set;}=[];public UsageTotalsVm Usage{get;set;}=new();public List<AiExecutionRow> Executions{get;set;}=[];public int ExecutionsPage{get;set;}=1;public int ExecutionsTotalPages{get;set;}=1;public void LoadSelections(){SelectedProvider=(JsonSerializer.Deserialize<string[]>(AllowedProviders)??[]).FirstOrDefault()??"";var models=JsonSerializer.Deserialize<Dictionary<string,string>>(TaskModels)??[];SelectedModel=models.Values.FirstOrDefault()??"";SelectedTasks=(JsonSerializer.Deserialize<string[]>(AllowedTasks)??[]).ToHashSet(StringComparer.OrdinalIgnoreCase);}}
+public sealed class AiPolicyVm { public bool AllowSensitiveExternalProcessing{get;set;}public string? ExternalAuthorizationReference{get;set;} public bool Enabled{get;set;} public long Revision{get;set;} public string AllowedTasks{get;set;}="[]"; public string AllowedProviders{get;set;}="[]"; public string TaskModels{get;set;}="{}"; public long MonthlyTokenLimit{get;set;}=100000; public int MaximumInputCharacters{get;set;}=50000; public long ConsumedTokens{get;set;} public long ReservedTokens{get;set;} public long Failures{get;set;} public bool CredentialConfigured{get;set;} public string SelectedProvider{get;set;}="";public string SelectedModel{get;set;}="";public HashSet<string> SelectedTasks{get;set;}=[];public Dictionary<string,AiProviderOptions> ProviderCatalog{get;set;}=[];public UsageTotalsVm Usage{get;set;}=new();public List<AiExecutionRow> Executions{get;set;}=[];public int ExecutionsPage{get;set;}=1;public int ExecutionsTotalPages{get;set;}=1;public void LoadSelections(){SelectedProvider=(JsonSerializer.Deserialize<string[]>(AllowedProviders)??[]).FirstOrDefault()??"";var models=JsonSerializer.Deserialize<Dictionary<string,string>>(TaskModels)??[];SelectedModel=models.Values.FirstOrDefault()??"";SelectedTasks=(JsonSerializer.Deserialize<string[]>(AllowedTasks)??[]).ToHashSet(StringComparer.OrdinalIgnoreCase);}}
 public sealed class UsageTotalsVm { public long ReportedTotal{get;set;} public long SettledTotal{get;set;} public long EstimatedTotal{get;set;} public int Executions{get;set;} }
 public sealed class AiExecutionRow { public string ExecutionId{get;set;}=""; public DateTimeOffset CreatedAt{get;set;} public string Task{get;set;}=""; public string State{get;set;}=""; public long ReportedTotalTokens{get;set;} public long SettledTokens{get;set;} public bool IsEstimated{get;set;} public string CorrelationId{get;set;}=""; }
