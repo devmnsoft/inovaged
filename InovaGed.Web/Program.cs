@@ -168,6 +168,7 @@ builder.Services.AddScoped<DatabaseSchemaExceptionFilter>();
 
 var mvc = builder.Services.AddControllersWithViews(options =>
 {
+    options.ModelBinderProviders.Insert(0, new InovaGed.Web.ModelBinding.BillingDecimalModelBinderProvider());
     options.Filters.AddService<DatabaseSchemaExceptionFilter>();
 });
 #if DEBUG
@@ -523,6 +524,7 @@ builder.Services.AddScoped<ISecureDocumentLinkService, SecureDocumentLinkService
 builder.Services.AddScoped<IBatchQueries, BatchQueries>();
 builder.Services.AddScoped<IBillingQueries, BillingQueries>();
 builder.Services.AddScoped<IBillingCommands, BillingCommands>();
+builder.Services.AddScoped<IBillingOperations, BillingOperations>();
 builder.Services.AddScoped<IBillingExtractionService, BillingExtractionService>();
 builder.Services.AddScoped<IBillingRuleService, BillingRuleService>();
 builder.Services.AddScoped<IHospitalBillingQueries, HospitalBillingQueries>();

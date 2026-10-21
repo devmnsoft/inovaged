@@ -540,7 +540,7 @@
 </main>
 @Html.AntiForgeryToken()
 <div class="modal fade" id="moveDocumentsModal" tabindex="-1" aria-hidden="true" aria-labelledby="moveDocumentsTitle">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-lg ged-move-dialog">
         <div class="modal-content">
             <div class="modal-header"><h5 class="modal-title" id="moveDocumentsTitle">Mover documentos para outra pasta</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div>
             <div class="modal-body">
@@ -556,7 +556,7 @@
                 <label class="form-label mt-2" for="destinationFolderName">Pasta de destino</label>
                 <input type="text" id="destinationFolderName" class="form-control" placeholder="Pasta selecionada" readonly />
                 <p id="moveDestinationPermission" class="small text-muted mt-2 mb-1">Selecione uma pasta ativa. A permissão de mover e a gravação no destino são conferidas no servidor ao confirmar.</p>
-                <div id="folderSearchResults" class="list-group mt-2" style="max-height: 240px; overflow-y: auto;" aria-label="Hierarquia de pastas"></div>
+                <div id="folderSearchResults" class="list-group mt-2" aria-label="Hierarquia de pastas"></div>
                 <div id="folderSearchEmpty" class="text-muted small mt-2 d-none">Nenhuma pasta encontrada.</div>
                 <div id="folderSearchLoading" class="text-muted small mt-2 d-none">Buscando pastas...</div>
                 <div class="form-check mt-3">

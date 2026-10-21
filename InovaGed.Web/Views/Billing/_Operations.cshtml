@@ -1,0 +1,44 @@
+@using InovaGed.Application.Billing
+@using System.Globalization
+@model BillingExtractionDto
+@{var data=(BillingOperationsDto)ViewBag.Operations; var total=Model.NetAmount??Model.GrossAmount??0;}
+<section class="card mt-3"><div class="card-body">
+<h2 class="h5">Parcelas e liquidação</h2>
+<p>Total revisado @total.ToString("C") · Parcelado @data.Installments.Sum(x=>x.Amount).ToString("C") · Liquidado @data.Installments.Sum(x=>x.Settled).ToString("C") · Saldo @((total-data.Installments.Sum(x=>x.Settled)).ToString("C"))</p>
+<p class="small text-muted">Registre pagamentos e recebimentos já realizados. Estes registros não executam transferências bancárias.</p>
+<div class="table-responsive"><table class="table"><thead><tr><th>Parcela</th><th>Operação</th><th>Vencimento</th><th>Valor</th><th>Saldo</th><th>Status</th><th>Registrar liquidação</th></tr></thead><tbody>
+@foreach(var i in data.Installments){<tr><td>@i.Sequence</td><td>@(i.Direction=="PAYABLE"?"A pagar":"A receber")</td><td>@i.DueDate.ToString("dd/MM/yyyy")</td><td>@i.Amount.ToString("C")</td><td>@i.Balance.ToString("C")</td><td>@i.Status</td><td>
+@if(i.Balance>0 && Model.ExtractionStatus=="APPROVED"){
+<form asp-action="Settle" method="post" class="d-flex flex-wrap gap-2">
+<input type="hidden" name="ExtractionId" value="@Model.Id"/><input type="hidden" name="InstallmentId" value="@i.Id"/><input type="hidden" name="IdempotencyKey" value="@Guid.NewGuid()"/>
+<input type="number" name="Amount" min="0.01" step="0.01" max="@i.Balance.ToString(CultureInfo.InvariantCulture)" required aria-label="Valor liquidado" class="form-control"/>
+<input type="date" name="SettledOn" required aria-label="Data da liquidação" class="form-control"/>
+<input name="Reference" required maxlength="200" placeholder="Referência do comprovante" aria-label="Referência do comprovante" class="form-control"/>
+<button class="btn btn-outline-primary" type="submit">Registrar</button></form>}
+</td></tr>}
+</tbody></table></div>
+@if(Model.ExtractionStatus=="APPROVED"){
+<form asp-action="AddInstallment" method="post" class="row g-2">
+<input type="hidden" name="ExtractionId" value="@Model.Id"/>
+<div class="col-md"><label for="direction">Operação</label><select id="direction" name="Direction" class="form-select"><option value="PAYABLE">A pagar</option><option value="RECEIVABLE">A receber</option></select></div>
+<div class="col-md"><label for="sequence">Número da parcela</label><input id="sequence" type="number" name="Sequence" value="@(data.Installments.Count==0?1:data.Installments.Max(x=>x.Sequence)+1)" min="1" max="9999" required class="form-control"/></div>
+<div class="col-md"><label for="installmentDue">Vencimento</label><input id="installmentDue" type="date" name="DueDate" required class="form-control"/></div>
+<div class="col-md"><label for="installmentAmount">Valor da parcela</label><input id="installmentAmount" type="number" name="Amount" step="0.01" min="0.01" required class="form-control"/></div>
+<div class="col-auto align-self-end"><button type="submit" class="btn btn-primary">Adicionar parcela</button></div></form>
+}else{<p>A revisão deve estar aprovada para registrar parcelas e liquidações.</p>}
+</div></section>
+<section class="card mt-3"><div class="card-body"><h2 class="h5">Conciliação dos comprovantes</h2>
+<table class="table"><thead><tr><th>Parcela</th><th>Data</th><th>Valor</th><th>Referência</th><th>Conciliação</th></tr></thead><tbody>
+@foreach(var s in data.Settlements){<tr><td>@s.Sequence</td><td>@s.SettledOn.ToString("dd/MM/yyyy")</td><td>@s.Amount.ToString("C")</td><td>@s.Reference</td><td>
+@if(s.ReconciledAt is not null){<span>Conciliado em @s.ReconciledAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>}
+else{<form asp-action="Reconcile" method="post"><input type="hidden" name="id" value="@s.Id"/><input type="hidden" name="extractionId" value="@Model.Id"/><button type="submit" class="btn btn-outline-success">Confirmar conciliação</button></form>}
+</td></tr>}
+</tbody></table></div></section>
+<section class="card mt-3"><div class="card-body"><h2 class="h5">Histórico de revisões</h2>
+@foreach(var h in data.History){
+<article class="border-bottom py-3"><strong>@h.ReviewedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</strong><p>Responsável: @h.ReviewedBy · @h.Reason</p>
+<details><summary>Comparar alterações</summary><table class="table"><thead><tr><th>Campo</th><th>Antes</th><th>Depois</th></tr></thead><tbody>
+@{using var before=System.Text.Json.JsonDocument.Parse(h.PreviousSnapshotJson??"{}");using var after=System.Text.Json.JsonDocument.Parse(h.SnapshotJson); var fields=new[]{("supplier_name","Fornecedor"),("supplier_document","CPF / CNPJ"),("invoice_number","Nota"),("invoice_series","Série"),("issue_date","Emissão"),("due_date","Vencimento"),("competence_month","Competência"),("gross_amount","Bruto"),("net_amount","Líquido"),("tax_amount","Impostos"),("contract_number","Contrato"),("purchase_order","Ordem"),("cost_center","Centro de custo"),("service_description","Descrição"),("ust_quantity","Quantidade UST"),("ust_unit_value","Valor UST"),("extraction_status","Status"),("responsible_user_id","Responsável"),("review_due_date","Prazo"),("priority","Prioridade"),("divergence_reason","Divergência")};
+foreach(var field in fields){var old=before.RootElement.TryGetProperty(field.Item1,out var a)?a.ToString():"—";var current=after.RootElement.TryGetProperty(field.Item1,out var b)?b.ToString():"—";if(old!=current){<tr><td>@field.Item2</td><td>@old</td><td>@current</td></tr>}}}
+</tbody></table></details></article>}
+</div></section>

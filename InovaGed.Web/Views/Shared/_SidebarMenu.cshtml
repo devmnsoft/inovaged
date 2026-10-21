@@ -121,3 +121,11 @@ else
     <a asp-controller="SmartSearch" asp-action="Index" class="@ActiveAny("SmartSearch")"><i class="bi bi-stars"></i><span>Busca Inteligente</span></a>
     @await Component.InvokeAsync("DemaisSetoresMenu")
 }
+
+@if(!isFullAdmin){
+    @inject InovaGed.Application.Security.IPermissionService BillingPermissions
+    @inject InovaGed.Application.Identity.ICurrentUser BillingUser
+    @if(await BillingPermissions.HasAsync(BillingUser.TenantId,BillingUser.UserId,"BILLING_VIEW",Context.RequestAborted)){
+        <details class="sidebar-group" open><summary>Financeiro</summary><a asp-controller="Billing" asp-action="Index" class="@ActiveAny("Billing")"><i class="bi bi-receipt"></i><span>Faturamento</span></a></details>
+    }
+}

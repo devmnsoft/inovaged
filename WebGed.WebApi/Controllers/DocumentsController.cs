@@ -1,4 +1,4 @@
-﻿using InovaGed.Application.Documents;
+using InovaGed.Application.Documents;
 using InovaGed.Application.Ged.Documents;
 using InovaGed.Application.Identity;
 using Microsoft.AspNetCore.Authorization;
@@ -58,7 +58,7 @@ public sealed class DocumentsController : ControllerBase
                 _currentUser.UserId,
                 User.Identity?.Name ?? _currentUser.Email,
                 request.DocumentId,
-                request.DestinationFolderId,
+                request.RequestedFolderId ?? request.DestinationFolderId,
                 request.Reason,
                 source,
                 IsAdmin(),
@@ -95,7 +95,7 @@ public sealed class DocumentsController : ControllerBase
                 _currentUser.UserId,
                 User.Identity?.Name ?? _currentUser.Email,
                 distinctDocumentIds,
-                request.DestinationFolderId,
+                request.RequestedFolderId ?? request.DestinationFolderId,
                 request.Reason,
                 source,
                 IsAdmin(),

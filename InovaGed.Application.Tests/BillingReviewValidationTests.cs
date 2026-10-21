@@ -18,7 +18,7 @@ public sealed class BillingReviewValidationTests
     [Fact]
     public void Approval_RequiresFiscalFields_AndConsistentDates()
     {
-        var input = new BillingReviewInput { IssueDate = new(2026, 8, 11), DueDate = new(2026, 8, 10), GrossAmount = 0, CompetenceMonth = "13/2026" };
+        var input = new BillingReviewInput { Notes = "Conferência fiscal", IssueDate = new(2026, 8, 11), DueDate = new(2026, 8, 10), GrossAmount = 0, CompetenceMonth = "13/2026" };
         var errors = new List<ValidationResult>();
 
         Assert.False(Validator.TryValidateObject(input, new ValidationContext(input), errors, true));
@@ -30,7 +30,7 @@ public sealed class BillingReviewValidationTests
     [Fact]
     public void Divergence_AllowsIncompleteFiscalFields_ButNotNegativeAmounts()
     {
-        var input = new BillingReviewInput { HasDivergence = true, GrossAmount = -1 };
+        var input = new BillingReviewInput { HasDivergence = true, DivergenceReason = "Campo não identificado", Notes = "Conferência fiscal", GrossAmount = -1 };
         var errors = new List<ValidationResult>();
 
         Assert.False(Validator.TryValidateObject(input, new ValidationContext(input), errors, true));

@@ -1,6 +1,7 @@
 (function () {
     const keys = { expanded: 'ged.folderTree.expanded', scrollTop: 'ged.folderTree.scrollTop', active: 'ged.folderTree.activeFolderId' };
     const emptyGuid = '00000000-0000-0000-0000-000000000000';
+    let listingSequence = 0;
     const GedMoveType = { DOCUMENTS: 'documents', FOLDER: 'folder' };
     window.GedMoveType = window.GedMoveType || GedMoveType;
     const esc = (v) => window.CSS?.escape ? CSS.escape(v) : v;
@@ -126,39 +127,56 @@
     }
 
     async function loadFolderDocuments(folderId, link, pushUrl = true) {
+        const sequence = ++listingSequence;
         const options = (link && typeof link === 'object' && !(link instanceof Element)) ? link : {};
         if (options && Object.prototype.hasOwnProperty.call(options, 'forceRefresh')) { link = null; }
-        if (!folderId) return;
+        if (!folderId) return { success: false, message: 'Não foi possível identificar a pasta para atualizar.' };
         const activeLink = link || document.querySelector(`.js-folder-node[data-folder-id="${esc(options.visualFolderId || folderId)}"], .js-folder-node[data-listing-folder-id="${esc(folderId)}"], .js-folder-node[data-upload-folder-id="${esc(folderId)}"]`);
         const listingFolderId = options.listingFolderId || getListingFolderId(activeLink) || folderId;
         const visualFolderId = options.visualFolderId || getVisualFolderId(activeLink) || listingFolderId;
         const uploadFolderId = getUploadFolderId(activeLink) || listingFolderId;
         saveTreeState();
         const container = document.querySelector('#gedDocumentsContainer');
-        if (container) container.innerHTML = '<div class="p-4 text-muted"><span class="spinner-border spinner-border-sm me-2"></span>Carregando documentos...</div>';
-        const query = options.q ?? document.getElementById('legacySmartSearchInput')?.value ?? document.getElementById('smartSearchInput')?.value ?? '';
-        const qParam = query ? `&q=${encodeURIComponent(query)}` : '';
-        const cacheBust = options.forceRefresh ? `&_ts=${Date.now()}` : '';
-        const res = await fetch(`/Ged/DocumentsList?folderId=${encodeURIComponent(listingFolderId)}${qParam}${cacheBust}`, { headers: { 'X-Requested-With': 'XMLHttpRequest' }, cache: options.forceRefresh ? 'no-store' : 'default' });
-        const html = await res.text();
-        if (!res.ok) { window.showAppToast?.('Não foi possível carregar os documentos da pasta.', 'error', 'GED'); return; }
-        const current = document.querySelector('#gedDocumentsContainer');
-        if (current) current.outerHTML = html;
-        window.GedDocumentsView?.init?.();
-        if (window.bootstrap?.Dropdown) document.querySelectorAll('#gedDocumentsContainer [data-bs-toggle="dropdown"]').forEach(el => window.bootstrap.Dropdown.getOrCreateInstance(el));
-        if (activeLink) setSelectedFolderFromNode(activeLink); else updateHiddenFields(visualFolderId, uploadFolderId, listingFolderId, options.folderName || document.querySelector('#gedDocumentsContainer')?.dataset?.folderName || 'pasta selecionada');
-        const resolvedFolderName = options.folderName || getFolderName(activeLink) || document.querySelector('#gedDocumentsContainer')?.dataset?.folderName;
-        updateHeader(resolvedFolderName);
-        if (pushUrl) {
-            const url = new URL(window.location.href);
-            url.searchParams.set('folderId', visualFolderId);
-            if (listingFolderId && listingFolderId !== visualFolderId) url.searchParams.set('listingFolderId', listingFolderId); else url.searchParams.delete('listingFolderId');
-            url.searchParams.set('visualFolderId', visualFolderId);
-            history.pushState({ folderId: visualFolderId, listingFolderId, visualFolderId }, '', url.toString());
+        if (container) container.setAttribute('aria-busy', 'true');
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30000);
+        try {
+            const query = options.q ?? document.getElementById('legacySmartSearchInput')?.value ?? document.getElementById('smartSearchInput')?.value ?? '';
+            const qParam = query ? `&q=${encodeURIComponent(query)}` : '';
+            const cacheBust = options.forceRefresh ? `&_ts=${Date.now()}` : '';
+            const res = await fetch(`/Ged/DocumentsList?folderId=${encodeURIComponent(listingFolderId)}${qParam}${cacheBust}`, { signal: controller.signal, headers: { 'X-Requested-With': 'XMLHttpRequest' }, cache: options.forceRefresh ? 'no-store' : 'default' });
+            const html = await res.text();
+            if (sequence !== listingSequence) return { success: false, superseded: true };
+            const parsed = new DOMParser().parseFromString(html, 'text/html');
+            const replacement = parsed.querySelector('#gedDocumentsContainer');
+            if (!res.ok || res.redirected || !replacement) throw new Error('Não foi possível carregar os documentos da pasta. Verifique a sessão e tente novamente.');
+            const current = document.querySelector('#gedDocumentsContainer');
+            if (!current) throw new Error('Lista de documentos indisponível.');
+            current.replaceWith(replacement);
+            window.GedDocumentsView?.init?.();
+            if (window.bootstrap?.Dropdown) document.querySelectorAll('#gedDocumentsContainer [data-bs-toggle="dropdown"]').forEach(el => window.bootstrap.Dropdown.getOrCreateInstance(el));
+            if (activeLink) setSelectedFolderFromNode(activeLink); else updateHiddenFields(visualFolderId, uploadFolderId, listingFolderId, options.folderName || document.querySelector('#gedDocumentsContainer')?.dataset?.folderName || 'pasta selecionada');
+            const resolvedFolderName = options.folderName || getFolderName(activeLink) || document.querySelector('#gedDocumentsContainer')?.dataset?.folderName;
+            updateHeader(resolvedFolderName);
+            if (pushUrl) {
+                const url = new URL(window.location.href);
+                url.searchParams.set('folderId', visualFolderId);
+                if (listingFolderId && listingFolderId !== visualFolderId) url.searchParams.set('listingFolderId', listingFolderId); else url.searchParams.delete('listingFolderId');
+                url.searchParams.set('visualFolderId', visualFolderId);
+                history.pushState({ folderId: visualFolderId, listingFolderId, visualFolderId }, '', url.toString());
+            }
+            restoreTreeState();
+            highlightUploadedDocuments(options.highlightDocumentIds || []);
+            updateDocumentCounters();
+            document.dispatchEvent(new CustomEvent('ged:documents-updated'));
+            return { success: true };
+        } catch (error) {
+            if (sequence === listingSequence) window.showAppToast?.('Não foi possível atualizar a lista. Os documentos exibidos foram preservados.', 'warning', 'GED');
+            return { success: false, error };
+        } finally {
+            clearTimeout(timeout);
+            if (sequence === listingSequence) document.querySelector('#gedDocumentsContainer')?.removeAttribute('aria-busy');
         }
-        restoreTreeState();
-        highlightUploadedDocuments(options.highlightDocumentIds || []);
-        updateDocumentCounters();
     }
 
     function highlightUploadedDocuments(ids) {
@@ -266,7 +284,14 @@
     document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.is-dragging,.ged-drop-target').forEach(el => el.classList.remove('is-dragging', 'ged-drop-target')); });
     document.addEventListener('drop', handleFolderDrop, true);
     window.addEventListener('beforeunload', saveTreeState);
-    window.addEventListener('popstate', function () { const url = new URL(location.href); const folderId = url.searchParams.get('folderId'); if (folderId) loadFolderDocuments(folderId, { visualFolderId: url.searchParams.get('visualFolderId') || folderId }, false); });
+    window.addEventListener('popstate', function () { const url = new URL(location.href); const folderId = url.searchParams.get('folderId'); if (folderId) loadFolderDocuments(folderId, { visualFolderId: url.searchParams.get('visualFolderId') || folderId }, false).catch(err => console.error('[GED Navigation]', err)); });
     document.addEventListener('DOMContentLoaded', restoreTreeState);
-    window.GedFolderNavigation = { loadFolderDocuments, setSelectedFolderFromNode, activateFolderFromCurrentId, highlightUploadedDocuments, refreshCurrentFolder: () => loadFolderDocuments(document.querySelector('#bulkListingFolderId')?.value || new URL(location.href).searchParams.get('folderId'), { forceRefresh: true }) };
+    window.GedFolderNavigation = { loadFolderDocuments, setSelectedFolderFromNode, activateFolderFromCurrentId, highlightUploadedDocuments, refreshCurrentFolder: () => {
+        const container = document.querySelector('#gedDocumentsContainer');
+        const url = new URL(location.href);
+        const selected = window.GedFolderSelection?.getSelected();
+        const visualFolderId = selected?.visualFolderId || container?.dataset.visualFolderId || url.searchParams.get('visualFolderId') || url.searchParams.get('folderId');
+        const listingFolderId = selected?.listingFolderId || container?.dataset.listingFolderId || document.querySelector('#bulkListingFolderId')?.value || url.searchParams.get('listingFolderId') || visualFolderId;
+        return loadFolderDocuments(listingFolderId, { forceRefresh: true, visualFolderId, listingFolderId }, false);
+    } };
 })();

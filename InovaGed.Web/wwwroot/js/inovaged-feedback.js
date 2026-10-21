@@ -6,6 +6,8 @@
   function drain() { while (visible < 3 && queue.length) mount(queue.shift()); }
   function mount(item) {
     const host = document.getElementById('appToastContainer'); if (!host) return;
+    // Escape the overlay root's stacking context so notices stay above modals.
+    if (host.parentElement !== document.body) document.body.appendChild(host);
     const config = settings[item.type] || settings.info; visible++;
     const node=document.createElement('section'); node.className=`ig-toast ig-toast--${item.type}`; node.setAttribute('role',item.type==='error'?'alert':'status');
     const body=document.createElement('div'), title=document.createElement('strong'), message=document.createElement('p'), closeButton=document.createElement('button');

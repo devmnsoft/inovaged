@@ -1466,6 +1466,14 @@
       "transactional": true,
       "deploymentSafety": "Additive",
       "requiresVerifiedBackup": true
+    },
+    {
+      "id": "2026_11_09_billing_operational_integrity",
+      "path": "database/migrations/2026_11_09_billing_operational_integrity.sql",
+      "module": "Billing",
+      "transactional": true,
+      "deploymentSafety": "Additive",
+      "requiresVerifiedBackup": true
     }
   ]
 }

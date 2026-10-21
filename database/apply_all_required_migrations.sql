@@ -3199,3 +3199,5 @@ COMMIT;
 \ir migrations/2026_11_08_document_move_root_history.sql
 \ir migrations/2026_10_20_ocr_lease_recovery.sql
 \ir migrations/2026_10_20_ai_sensitive_egress.sql
+
+\ir migrations/2026_11_09_billing_operational_integrity.sql

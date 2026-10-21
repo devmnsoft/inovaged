@@ -5,6 +5,8 @@ using Dapper;
 using InovaGed.Application.Audit;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.Ged.Documents;
+using InovaGed.Application.Ged.Folders;
+using InovaGed.Infrastructure.Security;
 using InovaGed.Application.Security;
 using InovaGed.Domain.Primitives;
 using Microsoft.Extensions.Logging;
@@ -20,9 +22,10 @@ public sealed class DocumentMoveService : IDocumentMoveService
     private readonly IAuditWriter _audit;
     private readonly ILogger<DocumentMoveService> _logger;
     private readonly IPermissionService _permissionService;
+    private readonly IAbacAuthorizationService _authorization;
 
-    public DocumentMoveService(IDbConnectionFactory db, IAuditWriter audit, ILogger<DocumentMoveService> logger, IPermissionService permissionService)
-    { _db = db; _audit = audit; _logger = logger; _permissionService = permissionService; }
+    public DocumentMoveService(IDbConnectionFactory db, IAuditWriter audit, ILogger<DocumentMoveService> logger, IPermissionService permissionService, IAbacAuthorizationService authorization)
+    { _db = db; _audit = audit; _logger = logger; _permissionService = permissionService; _authorization = authorization; }
 
     public Task<Result<DocumentMoveResultDto>> MoveAsync(Guid tenantId, Guid userId, string? userName, Guid documentId, Guid destinationFolderId, string? reason, string source, bool isAdmin, CancellationToken ct)
         => MoveAsync(tenantId, userId, userName, documentId, destinationFolderId, reason, source, isAdmin, null, null, ct);
@@ -32,6 +35,8 @@ public sealed class DocumentMoveService : IDocumentMoveService
         try
         {
             await using var conn = await _db.OpenAsync(ct);
+            destinationFolderId = await ResolveDestinationAsync(conn, tenantId, destinationFolderId, ct);
+            if (destinationFolderId == Guid.Empty) return Result<DocumentMoveResultDto>.Fail("FOLDER_NOT_FOUND", "Pasta de destino não encontrada ou sem mapeamento real.");
             var batchId = BatchIdFrom(tenantId, idempotencyKey);
             var conflict = await ReadIdempotencyConflictAsync(conn, null, tenantId, batchId, destinationFolderId, ct);
             if (conflict is not null)
@@ -63,12 +68,14 @@ public sealed class DocumentMoveService : IDocumentMoveService
 
             var batchId = BatchIdFrom(tenantId, idempotencyKey);
             await using var conn = await _db.OpenAsync(ct);
+            destinationFolderId = await ResolveDestinationAsync(conn, tenantId, destinationFolderId, ct);
+            if (destinationFolderId == Guid.Empty) return Result<DocumentBulkMoveResultDto>.Fail("FOLDER_NOT_FOUND", "Pasta de destino não encontrada ou sem mapeamento real.");
             var conflict = await ReadIdempotencyConflictAsync(conn, null, tenantId, batchId, destinationFolderId, ct);
             if (conflict is not null)
                 return Result<DocumentBulkMoveResultDto>.Fail("MOVE_FAILED", conflict);
 
             var replay = await ReadFullReplayAsync(conn, null, tenantId, batchId, destinationFolderId, distinct, ct);
-            if (replay is not null)
+            if (replay is not null && (await _authorization.FilterDocumentsAsync(tenantId, userId, distinct, "EDIT", ct)).Count == distinct.Length)
             {
                 replay.AllOrNothing = allOrNothing;
                 return Result<DocumentBulkMoveResultDto>.Ok(replay);
@@ -125,8 +132,11 @@ order by full_path
 limit 30;
 """;
 
-            return (await conn.QueryAsync<FolderOptionDto>(
+            var folders = (await conn.QueryAsync<FolderOptionDto>(
                 new CommandDefinition(sql, new { tenantId, term = normalizedTerm }, cancellationToken: ct))).AsList();
+            var canMove = await CanMoveAsync(conn, null, tenantId, userId, false, ct);
+            foreach (var folder in folders) folder.CanWrite = canMove;
+            return folders;
         }
         catch (Exception ex)
         {
@@ -282,6 +292,9 @@ limit 1
                 ownedTx = await conn.BeginTransactionAsync(ct);
                 localTx = ownedTx;
             }
+
+            if (!await _authorization.CanAccessDocumentAsync(tenantId, userId, documentId, "EDIT", new Dictionary<string, string>(), ct))
+                return await FinishAsync(ownsTransaction, localTx, Fail(documentId, "ACCESS_DENIED", "Você não tem permissão para mover este documento."), ct);
 
             var replay = await ReadDocumentReplayAsync(conn, localTx, tenantId, documentId, batchId, destinationFolderId, ct);
             if (replay is not null)
@@ -594,23 +607,32 @@ select exists (
     private async Task<bool> CanMoveAsync(NpgsqlConnection conn, DbTransaction? tx, Guid tenantId, Guid userId, bool isConfidential, CancellationToken ct)
     {
         var roles = await GetUserRolesAsync(conn, tx, tenantId, userId, ct);
-        if (roles.Contains("ADMIN")) return true;
+        if (roles.Contains("ADMIN") || roles.Contains("ADMINISTRADOR")) return true;
         if (roles.Contains("ADMINISTRADOROPHIR") || roles.Contains("ARQUIVISTAOPHIR"))
             return !isConfidential || await _permissionService.HasAsync(tenantId, userId, "GED_DOCUMENT_MOVE_CONFIDENTIAL", ct);
         return await _permissionService.HasAsync(tenantId, userId, "GED_DOCUMENT_MOVE", ct)
             && (!isConfidential || await _permissionService.HasAsync(tenantId, userId, "GED_DOCUMENT_MOVE_CONFIDENTIAL", ct));
     }
 
-    private static async Task<HashSet<string>> GetUserRolesAsync(NpgsqlConnection conn, DbTransaction? tx, Guid tenantId, Guid userId, CancellationToken ct)
+    private static Task<HashSet<string>> GetUserRolesAsync(NpgsqlConnection conn, DbTransaction? tx, Guid tenantId, Guid userId, CancellationToken ct)
+        => UserRoleReader.ReadAsync(conn, tx, tenantId, userId, ct);
+
+    private static async Task<Guid> ResolveDestinationAsync(NpgsqlConnection conn, Guid tenantId, Guid destination, CancellationToken ct)
     {
-        const string sql = """
-select r.normalized_name
-from ged.user_roles ur
-join ged.app_role r on r.id = ur.role_id and r.tenant_id = ur.tenant_id
-where ur.tenant_id = @tenantId
-  and ur.user_id = @userId
-""";
-        return (await conn.QueryAsync<string>(new CommandDefinition(sql, new { tenantId, userId }, transaction: tx, cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!FolderIdHelper.IsVirtualFolder(destination)) return destination;
+        var hasMap = await conn.ExecuteScalarAsync<bool>(new CommandDefinition("select to_regclass('ged.folder_virtual_map') is not null", cancellationToken: ct));
+        if (hasMap)
+        {
+            var mapped = await conn.QuerySingleOrDefaultAsync<Guid?>(new CommandDefinition("""
+select f.id from ged.folder_virtual_map m
+join ged.folder f on f.tenant_id=m.tenant_id and f.id=m.real_folder_id
+where m.tenant_id=@tenantId and m.virtual_folder_id=@destination and m.reg_status='A'
+and f.is_active and f.reg_status='A' limit 1
+""", new { tenantId, destination }, cancellationToken: ct));
+            if (mapped.HasValue) return mapped.Value;
+        }
+        var real = await conn.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from ged.folder where tenant_id=@tenantId and id=@destination and is_active and reg_status='A')", new { tenantId, destination }, cancellationToken: ct));
+        return real || destination == VirtualRootFolderId ? destination : Guid.Empty;
     }
 
     private static async Task<DocumentMoveResultDto> FinishAsync(bool ownsTransaction, DbTransaction? tx, DocumentMoveResultDto result, CancellationToken ct)

@@ -8,6 +8,8 @@ using InovaGed.Infrastructure.Common.Database;
 using InovaGed.Infrastructure.Ged.Documents;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
+using Microsoft.Extensions.Caching.Memory;
+using InovaGed.Infrastructure.Security;
 
 namespace InovaGed.Application.Tests.Ged;
 
@@ -110,6 +112,7 @@ where tenant_id = @tenantId and id = @documentId
         var child = await InsertFolderAsync(database.Connection, tenant, "Filha", parent);
         var documentId = await InsertDocumentAsync(database.Connection, tenant, parent, "Oficio");
         await InsertVersionAsync(database.Connection, tenant, documentId);
+        await database.Connection.ExecuteAsync("insert into ged.roles values(@role,@tenant,'ADMIN'); insert into ged.user_roles values(@tenant,@user,@role)",new{role=Guid.NewGuid(),tenant,user});
         var service = CreateService(database.Factory, new GrantPermissions());
 
         var moved = await service.MoveAsync(tenant, user, "tester", documentId, child, "organizar", "SINGLE", true, "corr-sub", null, CancellationToken.None);
@@ -389,8 +392,87 @@ for each row execute function ged.reject_document_folder_change();
         Assert.Equal(1, await database.Connection.ExecuteScalarAsync<int>("select count(*) from ged.document where id=@deniedDoc", new { deniedDoc }));
     }
 
+    [LocalPgFact]
+    public async Task Virtual_destinations_resolve_on_server_and_legacy_roles_are_recognized()
+    {
+        await using var database = await MoveDatabase.CreateAsync();
+        await database.ExecuteAsync(SchemaSql(true));
+        var origin = await InsertFolderAsync(database.Connection, database.TenantId, "Origem");
+        var destination = await InsertFolderAsync(database.Connection, database.TenantId, "Destino");
+        var document = await InsertDocumentAsync(database.Connection, database.TenantId, origin, "Documento");
+        var user = Guid.NewGuid(); var role = Guid.NewGuid();
+        var virtualId = Guid.Parse("f0000000-0000-0000-0000-000000000009");
+        await database.Connection.ExecuteAsync("""
+create table ged.folder_virtual_map(tenant_id uuid,virtual_folder_id uuid,real_folder_id uuid,reg_status text);
+insert into ged.folder_virtual_map values(@tenant,@virtualId,@destination,'A');
+insert into ged.roles values(@role,@tenant,'ARQUIVISTA_OPHIR');
+insert into ged.user_roles values(@tenant,@user,@role);
+""",new {tenant=database.TenantId,virtualId,destination,user,role});
+        var service=CreateService(database.Factory,new GrantPermissions());
+        var moved=await service.MoveAsync(database.TenantId,user,"tester",document,virtualId,null,"SINGLE",false,default);
+        Assert.True(moved.Success);
+        Assert.Equal(destination,await FolderOfAsync(database.Connection,document));
+        var available=await service.SearchFoldersAsync(database.TenantId,user,null,default);
+        Assert.All(available,x=>Assert.True(x.CanWrite));
+        var denied=await service.SearchFoldersAsync(database.TenantId,Guid.NewGuid(),null,default);
+        Assert.All(denied,x=>Assert.False(x.CanWrite));
+        var missing=await service.MoveAsync(database.TenantId,user,"tester",document,Guid.Parse("f0000000-0000-0000-0000-000000000099"),null,"SINGLE",false,default);
+        Assert.Equal("FOLDER_NOT_FOUND",missing.Error?.Code);
+        Assert.Equal(destination,await FolderOfAsync(database.Connection,document));
+    }
+
+    [LocalPgFact]
+    public async Task Mixed_document_access_moves_authorized_items_only_and_atomic_batch_rolls_back()
+    {
+        await using var database = await MoveDatabase.CreateAsync();
+        await database.ExecuteAsync(SchemaSql(true));
+        var origin=await InsertFolderAsync(database.Connection,database.TenantId,"Origem");
+        var destination=await InsertFolderAsync(database.Connection,database.TenantId,"Destino");
+        var first=await InsertDocumentAsync(database.Connection,database.TenantId,origin,"Permitido");
+        var second=await InsertDocumentAsync(database.Connection,database.TenantId,origin,"Negado");
+        var access=new DocumentAccess();access.Denied.Add(second);
+        var service=new DocumentMoveService(database.Factory,new NoopAudit(),NullLogger<DocumentMoveService>.Instance,new GrantPermissions(),access);
+        var atomic=await service.MoveBulkAsync(database.TenantId,Guid.NewGuid(),"tester",new[]{first,second},destination,null,"BULK",true,true,"atomic-acl","corr",default);
+        Assert.True(atomic.Value!.RolledBack);
+        Assert.Equal(origin,await FolderOfAsync(database.Connection,first));
+        Assert.Equal(origin,await FolderOfAsync(database.Connection,second));
+        var partial=await service.MoveBulkAsync(database.TenantId,Guid.NewGuid(),"tester",new[]{first,second},destination,null,"BULK",true,false,"partial-acl","corr",default);
+        Assert.Equal(1,partial.Value!.SuccessCount);
+        Assert.Equal(1,partial.Value.FailCount);
+        Assert.Equal("ACCESS_DENIED",partial.Value.Items.Single(x=>!x.Success).ErrorCode);
+        Assert.Equal(destination,await FolderOfAsync(database.Connection,first));
+        Assert.Equal(origin,await FolderOfAsync(database.Connection,second));
+        access.Denied.Add(first);
+        var repeat=await service.MoveAsync(database.TenantId,Guid.NewGuid(),"tester",first,destination,null,"SINGLE",true,"corr","partial-acl",default);
+        Assert.Equal("ACCESS_DENIED",repeat.Error?.Code);
+    }
+
+    [LocalPgFact]
+    public async Task Canonical_identity_permissions_authorize_move_without_legacy_user_role_copy()
+    {
+        await using var database=await MoveDatabase.CreateAsync();
+        await database.ExecuteAsync(SchemaSql(true));
+        var user=Guid.NewGuid();var role=Guid.NewGuid();
+        await database.Connection.ExecuteAsync("""
+create table ged.role_permission(tenant_id uuid,role_id uuid,permission_code text,reg_status text);
+insert into ged.app_role values(@role,@tenant,'OPERADOR');
+insert into ged.app_user_role values(@user,@role);
+insert into ged.role_permission values(@tenant,@role,'GED_DOCUMENT_MOVE','A');
+""",new {tenant=database.TenantId,user,role});
+        using var cache=new MemoryCache(new MemoryCacheOptions());
+        var permissions=new PermissionService(database.Factory,cache,NullLogger<PermissionService>.Instance);
+        Assert.True(await permissions.HasAsync(database.TenantId,user,"GED_DOCUMENT_MOVE",default));
+        Assert.False(await permissions.HasAsync(Guid.NewGuid(),user,"GED_DOCUMENT_MOVE",default));
+        var origin=await InsertFolderAsync(database.Connection,database.TenantId,"Origem");
+        var destination=await InsertFolderAsync(database.Connection,database.TenantId,"Destino");
+        var document=await InsertDocumentAsync(database.Connection,database.TenantId,origin,"Documento");
+        var service=CreateService(database.Factory,permissions);
+        Assert.True((await service.MoveAsync(database.TenantId,user,"tester",document,destination,null,"SINGLE",false,default)).Success);
+        Assert.Equal(destination,await FolderOfAsync(database.Connection,document));
+    }
+
     private static DocumentMoveService CreateService(NpgsqlConnectionFactory factory, IPermissionService permissions, IAuditWriter? audit = null)
-        => new(factory, audit ?? new NoopAudit(), NullLogger<DocumentMoveService>.Instance, permissions);
+        => new(factory, audit ?? new NoopAudit(), NullLogger<DocumentMoveService>.Instance, permissions, new DocumentAccess());
 
     private static async Task<Guid> InsertFolderAsync(NpgsqlConnection connection, Guid tenantId, string name, Guid? parentId = null, bool active = true)
     {
@@ -483,7 +565,9 @@ create unique index ux_document_folder_move_history_tenant_batch_document
     on ged.document_folder_move_history (tenant_id, batch_id, document_id)
     where batch_id is not null and reg_status = 'A';
 create table ged.app_role (id uuid primary key, tenant_id uuid not null, normalized_name text not null);
-create table ged.user_roles (tenant_id uuid not null, user_id uuid not null, role_id uuid not null);
+create table ged.roles (id uuid primary key, tenant_id uuid not null, name text not null);
+create table ged.app_user_role (user_id uuid not null, role_id uuid not null);
+create table ged.user_roles (tenant_id uuid not null, user_id uuid not null, role_id uuid not null references ged.roles(id));
 """;
 
     private static string FindRoot()
@@ -492,6 +576,12 @@ create table ged.user_roles (tenant_id uuid not null, user_id uuid not null, rol
         while (current is not null && !File.Exists(Path.Combine(current.FullName, "InovaGed.sln")))
             current = current.Parent;
         return current?.FullName ?? throw new DirectoryNotFoundException();
+    }
+
+    private sealed class DocumentAccess : IAbacAuthorizationService
+    {
+        public HashSet<Guid> Denied { get; } = [];
+        public Task<bool> CanAccessDocumentAsync(Guid tenantId, Guid userId, Guid documentId, string action, IReadOnlyDictionary<string,string> attributes, CancellationToken ct) => Task.FromResult(!Denied.Contains(documentId));
     }
 
     private sealed class GrantPermissions : IPermissionService

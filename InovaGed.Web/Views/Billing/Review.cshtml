@@ -7,8 +7,24 @@
 {
     <div class="mb-3"><partial name="_BillingChecklist" model="checks" /></div>
 }
+@if(ViewBag.Stored is BillingExtractionDto stored && Model.UseCandidate && ViewBag.Source is BillingExtractionDto candidate)
+{
+    <div class="alert alert-info">Você está revisando uma nova extração. Os dados anteriores permanecem preservados até salvar.</div>
+    <table class="table"><thead><tr><th>Campo</th><th>Revisado anteriormente</th><th>Nova extração</th></tr></thead><tbody>
+    @{var fields=new[]{("SupplierName","Fornecedor"),("SupplierDocument","CPF / CNPJ"),("InvoiceNumber","Nota"),("InvoiceSeries","Série"),("IssueDate","Emissão"),("DueDate","Vencimento"),("CompetenceMonth","Competência"),("GrossAmount","Valor bruto"),("NetAmount","Valor líquido"),("TaxAmount","Impostos"),("IssAmount","ISS"),("InssAmount","INSS"),("PisAmount","PIS"),("CofinsAmount","COFINS"),("IrAmount","IR"),("CsllAmount","CSLL"),("ContractNumber","Contrato"),("PurchaseOrder","Ordem de serviço / compra"),("CostCenter","Centro de custo"),("ServiceDescription","Descrição"),("UstQuantity","Quantidade UST"),("UstUnitValue","Valor unitário UST")};}
+    @foreach(var field in fields){var property=typeof(BillingExtractionDto).GetProperty(field.Item1)!;<tr><td>@field.Item2</td><td>@property.GetValue(stored)</td><td>@property.GetValue(candidate)</td></tr>}
+    </tbody></table>
+}
+<div class="row g-3"><div class="col-lg-5">
+@if(ViewBag.Source is BillingExtractionDto source && source.DocumentVersionId is Guid versionId)
+{
+    <p>Documento-fonte da extração <a href="@Url.Action("Preview","Ged",new{id=versionId})" target="_blank" rel="noopener">Abrir em outra aba</a></p>
+    <iframe title="Documento-fonte para conferência" src="@Url.Action("Preview","Ged",new{id=versionId})" style="width:100%;height:75vh;border:1px solid #ddd"></iframe>
+}
+else { <p>Não há versão de origem disponível para pré-visualização.</p> }
+</div><div class="col-lg-7">
 <form method="post" class="card border-0 shadow-sm">
-<div class="card-body row g-3">@Html.AntiForgeryToken()
+<div class="card-body row g-3">@Html.AntiForgeryToken()<input asp-for="Revision" type="hidden"/><input asp-for="UseCandidate" type="hidden"/>
 <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
 @{ var gateList1 = new[]{("SupplierName","Fornecedor"),("SupplierDocument","CPF / CNPJ"),("InvoiceNumber","Número da nota"),("InvoiceSeries","Série"),("CompetenceMonth","Competência (MM/AAAA)"),("ContractNumber","Contrato"),("PurchaseOrder","Ordem de serviço / compra"),("CostCenter","Centro de custo"),("ServiceDescription","Descrição do serviço")}; }
 @foreach(var p in gateList1)
@@ -20,6 +36,13 @@
 <div class="col-md-4"><label asp-for="TaxAmount" class="form-label">Impostos</label><input asp-for="TaxAmount" class="form-control" type="number" step=".01" /><span asp-validation-for="TaxAmount" class="text-danger"></span></div>
 <div class="col-md-4"><label asp-for="UstQuantity" class="form-label">Quantidade UST</label><input asp-for="UstQuantity" class="form-control" type="number" step=".0001" /></div>
 <div class="col-md-4"><label asp-for="UstUnitValue" class="form-label">Valor unitário UST</label><input asp-for="UstUnitValue" class="form-control" type="number" step=".0001" /></div>
+<div class="col-md-6"><label asp-for="ResponsibleUserId" class="form-label">Responsável</label><select asp-for="ResponsibleUserId" class="form-select"><option value="">Não atribuído</option>@foreach(var person in (IReadOnlyList<BillingAssignee>)ViewBag.Assignees){<option value="@person.Id">@person.Name</option>}</select></div>
+<div class="col-md-3"><label asp-for="ReviewDueDate" class="form-label">Prazo da revisão</label><input asp-for="ReviewDueDate" type="date" class="form-control"/></div>
+<div class="col-md-3"><label asp-for="Priority" class="form-label">Prioridade</label><select asp-for="Priority" class="form-select"><option value="0">Normal</option><option value="1">Atenção</option><option value="2">Alta</option><option value="3">Urgente</option></select></div>
+<div class="col-12"><label asp-for="DivergenceReason" class="form-label">Motivo da divergência</label><textarea asp-for="DivergenceReason" class="form-control" maxlength="1000"></textarea><span asp-validation-for="DivergenceReason" class="text-danger"></span></div>
+<div class="col-12"><label asp-for="Notes" class="form-label">Justificativa da revisão</label><textarea asp-for="Notes" class="form-control" required minlength="5" maxlength="1000"></textarea><span asp-validation-for="Notes" class="text-danger"></span></div>
+@if(ViewBag.Stored is BillingExtractionDto current && current.DuplicateCount>0){<div class="col-12 alert alert-warning">Há @current.DuplicateCount possível(is) duplicidade(s) com o mesmo fornecedor, nota, série e competência. Compare os documentos antes de aprovar.<label class="d-block"><input asp-for="ConfirmDuplicate" class="form-check-input"/> Conferi as possíveis duplicidades e confirmo esta aprovação.</label></div>}
 <div class="col-12 form-check ms-2"><input asp-for="HasDivergence" class="form-check-input"><label asp-for="HasDivergence" class="form-check-label">Marcar divergência para tratamento (permite salvar campos fiscais incompletos)</label></div>
 </div><div class="card-footer d-flex justify-content-between align-items-center gap-3"><span class="small text-muted">Salvar a revisão registra a conferência. Não gera cobrança nem aprova pagamento.</span><button class="btn btn-primary" type="submit">Salvar revisão</button></div></form>
+</div></div>
 @section Scripts { <partial name="_ValidationScriptsPartial" /> }

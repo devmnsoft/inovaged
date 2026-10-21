@@ -16,7 +16,7 @@
         ]);
     var metrics = new[]
     {
-        new AtlasMetricVm("Identificados", Model.Count.ToString(), "extrações do tenant", "info", "documents"),
+        new AtlasMetricVm("Identificados", Model.Count.ToString(), "extrações nesta página", "info", "documents"),
         new AtlasMetricVm("Prontos para revisão", ready.ToString(), "checklist obrigatório completo", "success", "check"),
         new AtlasMetricVm("Pendentes", (Model.Count - ready).ToString(), "falta dado obrigatório", "warning", "warning")
     };
@@ -65,3 +65,9 @@
         </table>
     </div>
 </div>
+
+<nav class="d-flex gap-3 mt-3" aria-label="Paginação do checklist">
+@if((int)ViewBag.Page>1){<a asp-action="Checklist" asp-route-page="@((int)ViewBag.Page-1)">Anterior</a>}
+<span>Página @ViewBag.Page · @ViewBag.Total resultado(s)</span>
+@if((long)(int)ViewBag.Page*50<(int)ViewBag.Total){<a asp-action="Checklist" asp-route-page="@((int)ViewBag.Page+1)">Próxima</a>}
+</nav>

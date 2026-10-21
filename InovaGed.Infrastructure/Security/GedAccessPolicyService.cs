@@ -106,28 +106,8 @@ public sealed class GedAccessPolicyService : IGedAccessPolicyService
 
     private static async Task<bool> QueryRoleExistsAsync(IDbConnection conn, Guid tenantId, Guid userId, string normalizedRole, CancellationToken ct)
     {
-        const string sql = @"
-select exists (
-    select 1
-    from (
-        select upper(replace(replace(replace(coalesce(ar.normalized_name, ar.name), ' ', ''), '_', ''), '-', '')) as role_name
-          from ged.app_user_role aur
-          join ged.app_role ar on ar.id = aur.role_id
-         where aur.user_id = @UserId
-           and ar.tenant_id = @TenantId
-        union all
-        select upper(replace(replace(replace(coalesce(r.code, r.name), ' ', ''), '_', ''), '-', '')) as role_name
-          from ged.user_roles ur
-          join ged.role r on r.id = ur.role_id
-         where ur.user_id = @UserId
-           and ur.tenant_id = @TenantId
-           and r.tenant_id = @TenantId
-    ) x
-    where x.role_name = @Role
-);";
-
-        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition(sql,
-            new { UserId = userId, TenantId = tenantId, Role = normalizedRole }, cancellationToken: ct));
+        var roles = await UserRoleReader.ReadAsync((System.Data.Common.DbConnection)conn, null, tenantId, userId, ct);
+        return roles.Contains(NormalizeRole(normalizedRole));
     }
 
     private static string NormalizeRole(string? value)

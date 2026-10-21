@@ -6,7 +6,7 @@ public sealed record HospitalBillingFilter(
     string? Insurer = null, string? Competence = null, string? Status = null,
     bool? HasDenial = null, string? Term = null, string? Unit = null,
     string? Patient = null, string? DocumentType = null, decimal? MinimumAmount = null,
-    decimal? MaximumAmount = null, bool? OcrPending = null, bool? HasDivergence = null);
+    decimal? MaximumAmount = null, bool? OcrPending = null, bool? HasDivergence = null, int Page = 1, int PageSize = 50, Guid? ResponsibleUserId = null);
 public sealed class HospitalBillingKpis
 {
     public int Total { get; set; } public int Pending { get; set; } public int Approved { get; set; }
@@ -16,6 +16,11 @@ public sealed class HospitalBillingKpis
 }
 public sealed class HospitalBillingDocumentDto
 {
+    public long Revision { get; set; }
+    public Guid? ResponsibleUserId { get; set; }
+    public int Priority { get; set; }
+    public string? AppealProtocol { get; set; }
+    public string? AppealResponse { get; set; }
     public Guid Id { get; set; } public Guid DocumentId { get; set; } public string Title { get; set; } = "Documento";
     public string DocumentType { get; set; } = "Conta hospitalar"; public string? Insurer { get; set; } public string? Provider { get; set; }
     public string? GuideNumber { get; set; } public string? AuthorizationNumber { get; set; } public string? Competence { get; set; }
@@ -40,7 +45,7 @@ public sealed class HospitalBillingDocumentDto
         _ => "ON_TIME"
     };
 }
-public sealed record HospitalBillingDashboard(HospitalBillingKpis Kpis, IReadOnlyList<HospitalBillingDocumentDto> Documents);
+public sealed record HospitalBillingDashboard(HospitalBillingKpis Kpis, IReadOnlyList<HospitalBillingDocumentDto> Documents, int Page = 1, int PageSize = 50);
 public sealed class HospitalBillingReportRow
 {
     public string Label { get; set; } = string.Empty;
@@ -68,12 +73,18 @@ public sealed class HospitalBillingReviewHistoryDto
 public sealed record HospitalBillingDetails(HospitalBillingDocumentDto Document, IReadOnlyList<HospitalBillingReviewHistoryDto> History);
 public sealed class HospitalBillingReviewRequest : IValidatableObject
 {
+    [Range(0, long.MaxValue)] public long Revision { get; set; }
+    public Guid? ResponsibleUserId { get; set; }
+    [Range(0, 3)] public int Priority { get; set; }
+    [StringLength(200)] public string? AppealProtocol { get; set; }
+    [StringLength(2000)] public string? AppealResponse { get; set; }
+
     [Required] public Guid Id { get; set; }
     [Required, RegularExpression("^(PENDING_REVIEW|APPROVED|DIVERGENT|DENIED|APPEAL_IN_REVIEW|RECOVERED|CLOSED)$")] public string Status { get; set; } = "PENDING_REVIEW";
     [RegularExpression("^(OPEN|IN_APPEAL|ANSWERED|RECOVERED|CLOSED)?$")] public string? DenialStatus { get; set; }
-    [Range(typeof(decimal), "0", "999999999999.99")] public decimal ApprovedAmount { get; set; }
-    [Range(typeof(decimal), "0", "999999999999.99")] public decimal DeniedAmount { get; set; }
-    [Range(typeof(decimal), "0", "999999999999.99")] public decimal RecoveredAmount { get; set; }
+    [Range(typeof(decimal), "0", "999999999999.99", ParseLimitsInInvariantCulture = true)] public decimal ApprovedAmount { get; set; }
+    [Range(typeof(decimal), "0", "999999999999.99", ParseLimitsInInvariantCulture = true)] public decimal DeniedAmount { get; set; }
+    [Range(typeof(decimal), "0", "999999999999.99", ParseLimitsInInvariantCulture = true)] public decimal RecoveredAmount { get; set; }
     [StringLength(500)] public string? DenialReason { get; set; }
     public DateOnly? AppealDueDate { get; set; }
     [Required, StringLength(1000, MinimumLength = 5)] public string? Notes { get; set; }
@@ -95,6 +106,7 @@ public sealed record HospitalBillingRulesCatalog(IReadOnlyList<HospitalBillingRu
 public interface IHospitalBillingQueries
 {
     Task<HospitalBillingDashboard> DashboardAsync(Guid tenantId, HospitalBillingFilter filter, CancellationToken ct);
+    Task<IReadOnlyList<HospitalBillingDocumentDto>> ExportAsync(Guid tenantId, HospitalBillingFilter filter, CancellationToken ct);
     Task<HospitalBillingDocumentDto?> GetAsync(Guid tenantId, Guid id, CancellationToken ct);
     Task<HospitalBillingDocumentDto?> GetByDocumentIdAsync(Guid tenantId, Guid documentId, CancellationToken ct);
     Task<HospitalBillingDetails?> GetDetailsAsync(Guid tenantId, Guid id, CancellationToken ct);

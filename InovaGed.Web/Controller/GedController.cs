@@ -3589,11 +3589,10 @@ SELECT
         try
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized();
-            if (await DenyDocumentAsync(request.DocumentId, "EDIT", ct) is { } deniedMove) return deniedMove;
             var isAdmin = RolePolicyHelper.IsFullAdmin(User);
             var correlationId = HttpContext.TraceIdentifier;
             _logger.LogInformation("Movimentação individual solicitada. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} Destination={DestinationFolderId} Source={Source} Document={DocumentId} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, request.RequestedFolderId ?? request.DestinationFolderId, request.DestinationFolderId, request.Source ?? "SINGLE", request.DocumentId, correlationId);
-            var result = await _documentMoveService.MoveAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentId, request.DestinationFolderId, request.Reason, request.Source ?? "SINGLE", isAdmin, correlationId, request.IdempotencyKey, ct);
+            var result = await _documentMoveService.MoveAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentId, request.RequestedFolderId ?? request.DestinationFolderId, request.Reason, request.Source ?? "SINGLE", isAdmin, correlationId, request.IdempotencyKey, ct);
             if (!result.IsSuccess)
                 return BadRequest(new { success = false, code = result.Error?.Code, message = result.Error?.Message ?? "Não foi possível mover o documento.", correlationId });
             return Ok(new { success = true, code = result.Value?.ErrorCode, message = result.Value?.Message ?? "Documento movido com sucesso.", correlationId, data = result.Value });
@@ -3613,14 +3612,10 @@ SELECT
         {
             if (!_currentUser.IsAuthenticated) return Unauthorized();
             if (request.DocumentIds is null || request.DocumentIds.Count == 0) return BadRequest(new { success = false, message = "Nenhum documento selecionado." });
-            foreach (var documentId in request.DocumentIds.Distinct())
-            {
-                if (await DenyDocumentAsync(documentId, "EDIT", ct) is { } deniedBulk) return deniedBulk;
-            }
             var isAdmin = RolePolicyHelper.IsFullAdmin(User);
             var correlationId = HttpContext.TraceIdentifier;
             _logger.LogInformation("Movimentação em lote solicitada. Tenant={TenantId} User={UserId} RequestedFolderId={RequestedFolderId} Destination={DestinationFolderId} Source={Source} Count={Count} AllOrNothing={AllOrNothing} CorrelationId={CorrelationId}", _currentUser.TenantId, _currentUser.UserId, request.RequestedFolderId ?? request.DestinationFolderId, request.DestinationFolderId, request.Source ?? "BULK", request.DocumentIds.Distinct().Count(), request.AllOrNothing, correlationId);
-            var result = await _documentMoveService.MoveBulkAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentIds, request.DestinationFolderId, request.Reason, request.Source ?? "BULK", isAdmin, request.AllOrNothing, request.IdempotencyKey, correlationId, ct);
+            var result = await _documentMoveService.MoveBulkAsync(_currentUser.TenantId, _currentUser.UserId, User.Identity?.Name, request.DocumentIds, request.RequestedFolderId ?? request.DestinationFolderId, request.Reason, request.Source ?? "BULK", isAdmin, request.AllOrNothing, request.IdempotencyKey, correlationId, ct);
             if (!result.IsSuccess)
                 return BadRequest(new { success = false, code = result.Error?.Code, message = result.Error?.Message ?? "Não foi possível mover os documentos.", correlationId });
             var data = result.Value!;

@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace InovaGed.Application.Billing;
 
-public sealed record BillingFilter(string? Supplier = null, string? SupplierDocument = null, string? Competence = null, string? Status = null, decimal? MinimumAmount = null);
+public sealed record BillingFilter(string? Supplier = null, string? SupplierDocument = null, string? Competence = null, string? Status = null, decimal? MinimumAmount = null, int Page = 1, int PageSize = 50, Guid? ResponsibleUserId = null, bool? Overdue = null);
 public sealed class BillingKpis
 {
     public BillingKpis() { }
@@ -25,10 +25,20 @@ public sealed class BillingKpis
 }
 public sealed class BillingExtractionDto
 {
+    public long Revision { get; set; }
+    public string? PendingCandidateJson { get; set; }
+    public string? ExtractedJson { get; set; }
+    public Guid? ResponsibleUserId { get; set; }
+    public DateTime? ReviewDueDate { get; set; }
+    public int Priority { get; set; }
+    public string? DivergenceReason { get; set; }
+    public int DuplicateCount { get; set; }
     public Guid Id { get; set; }
     public Guid DocumentId { get; set; }
     public Guid? DocumentVersionId { get; set; }
     public string DocumentTitle { get; set; } = "";
+    public string ProcessingStatus { get; set; } = "EXTRACTED";
+    // Legacy storage name: this field represents the human review, independently of settlement.
     public string ExtractionStatus { get; set; } = "PENDING";
     public string? DocumentKind { get; set; }
     public string? SupplierName { get; set; }
@@ -55,12 +65,24 @@ public sealed class BillingExtractionDto
     public decimal? UstUnitValue { get; set; }
     public decimal Confidence { get; set; }
     public string[] Warnings { get; set; } = [];
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string WarningsJson { set => Warnings = System.Text.Json.JsonSerializer.Deserialize<string[]>(value) ?? []; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime? ReviewedAt { get; set; }
 }
 
 public sealed class BillingReviewInput : IValidatableObject
 {
+    [Range(0, long.MaxValue)] public long Revision { get; set; }
+    public bool UseCandidate { get; set; }
+    public bool ConfirmDuplicate { get; set; }
+    public Guid? ResponsibleUserId { get; set; }
+    public DateTime? ReviewDueDate { get; set; }
+    [Range(0, 3)] public int Priority { get; set; }
+    [StringLength(1000)] public string? DivergenceReason { get; set; }
+    [Required, StringLength(1000, MinimumLength = 5)] public string Notes { get; set; } = "";
+
     public Guid Id { get; set; }
     public string DocumentTitle { get; set; } = "";
     [StringLength(200)]
@@ -97,6 +119,8 @@ public sealed class BillingReviewInput : IValidatableObject
         if (!string.IsNullOrWhiteSpace(CompetenceMonth) && !Regex.IsMatch(CompetenceMonth, @"^(0[1-9]|1[0-2])/\d{4}$"))
             yield return new ValidationResult("Informe a competência no formato MM/AAAA.", [nameof(CompetenceMonth)]);
 
+        if (HasDivergence && string.IsNullOrWhiteSpace(DivergenceReason))
+            yield return new ValidationResult("Informe o motivo da divergência.", [nameof(DivergenceReason)]);
         if (!HasDivergence)
         {
             if (string.IsNullOrWhiteSpace(SupplierName)) yield return new ValidationResult("Informe o fornecedor para aprovar.", [nameof(SupplierName)]);

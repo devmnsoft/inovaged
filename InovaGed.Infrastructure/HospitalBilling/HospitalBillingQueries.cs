@@ -1,4 +1,5 @@
 using Dapper;
+using System.ComponentModel.DataAnnotations;
 using InovaGed.Application.Common.Database;
 using InovaGed.Application.HospitalBilling;
 
@@ -6,7 +7,17 @@ namespace InovaGed.Infrastructure.HospitalBilling;
 
 public sealed class HospitalBillingQueries(IDbConnectionFactory db) : IHospitalBillingQueries
 {
+    static HospitalBillingQueries() => SqlMapper.AddTypeHandler(new DateOnlyHandler());
+
+    private sealed class DateOnlyHandler : SqlMapper.TypeHandler<DateOnly>
+    {
+        public override DateOnly Parse(object value) => value is DateOnly date ? date : DateOnly.FromDateTime(Convert.ToDateTime(value, System.Globalization.CultureInfo.InvariantCulture));
+        public override void SetValue(System.Data.IDbDataParameter parameter, DateOnly value)
+        { parameter.DbType = System.Data.DbType.Date; parameter.Value = value.ToDateTime(TimeOnly.MinValue); }
+    }
+
     private const string DocumentProjection = """
+h.revision "Revision",h.responsible_user_id "ResponsibleUserId",h.priority "Priority",h.appeal_protocol "AppealProtocol",h.appeal_response "AppealResponse",
 h.id "Id",
 h.document_id "DocumentId",
 coalesce(d.title,d.code,'Documento hospitalar') "Title",
@@ -43,6 +54,7 @@ h.due_date "DueDate"
     private const string DashboardWhereClause = """
 where h.tenant_id=@tenantId
   and h.reg_status='A'
+  and (@ResponsibleUserId is null or h.responsible_user_id=@ResponsibleUserId)
   and (@Insurer is null or h.insurer ilike '%'||@Insurer||'%')
   and (@Competence is null or h.competence=@Competence)
   and (@Status is null or h.review_status=@Status)
@@ -74,10 +86,22 @@ where h.tenant_id=@tenantId
   )
 """;
 
+    private static object Arguments(Guid tenantId, HospitalBillingFilter filter) => new { tenantId, filter.Insurer, filter.Competence, filter.Status, filter.HasDenial, filter.Term, filter.Unit, filter.Patient, filter.DocumentType, filter.MinimumAmount, filter.MaximumAmount, filter.OcrPending, filter.HasDivergence, filter.ResponsibleUserId, pageSize = Math.Clamp(filter.PageSize,1,200), offset = ((long)Math.Max(1,filter.Page)-1)*Math.Clamp(filter.PageSize,1,200) };
+
+    public async Task<IReadOnlyList<HospitalBillingDocumentDto>> ExportAsync(Guid tenantId, HospitalBillingFilter filter, CancellationToken ct)
+    {
+        await using var conn = await db.OpenAsync(ct);
+        return (await conn.QueryAsync<HospitalBillingDocumentDto>(new CommandDefinition($"""
+select {DocumentProjection} from ged.hospital_billing_document h
+left join ged.document d on d.tenant_id=h.tenant_id and d.id=h.document_id
+{DashboardWhereClause} order by h.priority desc,h.due_date asc nulls last,h.created_at desc,h.id desc
+""",Arguments(tenantId,filter),cancellationToken:ct))).AsList();
+    }
+
     public async Task<HospitalBillingDashboard> DashboardAsync(Guid tenantId, HospitalBillingFilter filter, CancellationToken ct)
     {
         await using var connection = await db.OpenAsync(ct);
-        var args = new { tenantId, filter.Insurer, filter.Competence, filter.Status, filter.HasDenial, filter.Term, filter.Unit, filter.Patient, filter.DocumentType, filter.MinimumAmount, filter.MaximumAmount, filter.OcrPending, filter.HasDivergence };
+        var args = Arguments(tenantId, filter);
         var documentsSql = $$"""
 select {{DocumentProjection}}
 from ged.hospital_billing_document h
@@ -85,8 +109,8 @@ left join ged.document d
   on d.tenant_id = h.tenant_id
  and d.id = h.document_id
 {{DashboardWhereClause}}
-order by h.created_at desc
-limit 300
+order by h.priority desc,h.due_date asc nulls last,h.created_at desc,h.id desc
+limit @pageSize offset @offset
 """;
         var documents = (await connection.QueryAsync<HospitalBillingDocumentDto>(new CommandDefinition(documentsSql, args, cancellationToken: ct))).AsList();
 
@@ -108,7 +132,7 @@ from ged.hospital_billing_document h
 {{DashboardWhereClause}}
 """;
         var kpis = await connection.QuerySingleAsync<HospitalBillingKpis>(new CommandDefinition(kpisSql, args, cancellationToken: ct));
-        return new(kpis, documents);
+        return new(kpis, documents, Math.Max(1,filter.Page), Math.Clamp(filter.PageSize,1,200));
     }
     public Task<HospitalBillingDocumentDto?> GetAsync(Guid tenantId, Guid id, CancellationToken ct) =>
         GetOneAsync(tenantId, "h.id=@value", id, ct);
@@ -148,16 +172,22 @@ from ged.hospital_billing_review_history where tenant_id=@tenantId and hospital_
     }
     public async Task<bool> ReviewAsync(Guid tenantId, Guid userId, HospitalBillingReviewRequest request, CancellationToken ct)
     {
+        if (!Validator.TryValidateObject(request, new ValidationContext(request), new List<ValidationResult>(), true)) return false;
         await using var connection = await db.OpenAsync(ct);
+        if (request.ResponsibleUserId.HasValue && !await connection.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from ged.app_user where tenant_id=@tenantId and id=@responsible and is_active and reg_status='A')", new { tenantId, responsible = request.ResponsibleUserId }, cancellationToken: ct))) return false;
         await using var transaction = await connection.BeginTransactionAsync(ct);
         var affected = await connection.ExecuteAsync(new CommandDefinition("""
 with previous as (
- select * from ged.hospital_billing_document where tenant_id=@tenantId and id=@Id and reg_status='A'
+ select * from ged.hospital_billing_document where tenant_id=@tenantId and id=@Id and reg_status='A' and revision=@Revision
  and @ApprovedAmount+@DeniedAmount<=presented_amount and @RecoveredAmount<=@DeniedAmount for update
 ), history as (
  insert into ged.hospital_billing_review_history(tenant_id,hospital_billing_id,reviewed_by,previous_review_status,review_status,previous_denial_status,denial_status,approved_amount,denied_amount,recovered_amount,notes,changed_fields)
  select @tenantId,id,@userId,review_status,@Status,denial_status,nullif(@DenialStatus,''),@ApprovedAmount,@DeniedAmount,@RecoveredAmount,nullif(trim(@Notes),''),
  jsonb_strip_nulls(jsonb_build_object(
+  'responsible',jsonb_build_object('from',responsible_user_id,'to',cast(@ResponsibleUserId as uuid)),
+  'priority',jsonb_build_object('from',priority,'to',@Priority),
+  'protocol',jsonb_build_object('from',appeal_protocol,'to',cast(@AppealProtocol as text)),
+  'response',jsonb_build_object('from',appeal_response,'to',cast(@AppealResponse as text)),
   'status',case when review_status is distinct from @Status then jsonb_build_object('from',review_status,'to',@Status) end,
   'denialStatus',case when denial_status is distinct from nullif(@DenialStatus,'') then jsonb_build_object('from',denial_status,'to',nullif(@DenialStatus,'')) end,
   'approvedAmount',case when approved_amount is distinct from @ApprovedAmount then jsonb_build_object('from',approved_amount,'to',@ApprovedAmount) end,
@@ -167,10 +197,10 @@ with previous as (
   'appealDueDate',case when due_date is distinct from @AppealDueDate then jsonb_build_object('from',due_date,'to',@AppealDueDate) end))
  from previous returning hospital_billing_id
 )
-update ged.hospital_billing_document h set review_status=@Status,denial_status=nullif(@DenialStatus,''),denial_reason=nullif(trim(@DenialReason),''),due_date=@AppealDueDate,
- approved_amount=@ApprovedAmount,denied_amount=@DeniedAmount,recovered_amount=@RecoveredAmount,appeal_filed=(@DenialStatus='IN_APPEAL'),reviewed_by=@userId,reviewed_at=now(),updated_at=now()
+update ged.hospital_billing_document h set revision=h.revision+1,responsible_user_id=@ResponsibleUserId,priority=@Priority,appeal_protocol=@AppealProtocol,appeal_response=@AppealResponse,review_status=@Status,denial_status=nullif(@DenialStatus,''),denial_reason=nullif(trim(@DenialReason),''),due_date=@AppealDueDate,
+ approved_amount=@ApprovedAmount,denied_amount=@DeniedAmount,recovered_amount=@RecoveredAmount,appeal_filed=coalesce(@DenialStatus='IN_APPEAL',false),reviewed_by=@userId,reviewed_at=now(),updated_at=now()
 from history where h.tenant_id=@tenantId and h.id=history.hospital_billing_id
-""", new { tenantId, userId, request.Id, request.Status, request.DenialStatus, request.DenialReason, request.AppealDueDate, request.ApprovedAmount, request.DeniedAmount, request.RecoveredAmount, request.Notes }, transaction, cancellationToken: ct));
+""", new { tenantId, userId, request.Id, request.Status, request.DenialStatus, request.DenialReason, request.AppealDueDate, request.ApprovedAmount, request.DeniedAmount, request.RecoveredAmount, request.Notes, request.Revision, request.ResponsibleUserId, request.Priority, request.AppealProtocol, request.AppealResponse }, transaction, cancellationToken: ct));
         if (affected == 0) { await transaction.RollbackAsync(ct); return false; }
         await transaction.CommitAsync(ct);
         return true;

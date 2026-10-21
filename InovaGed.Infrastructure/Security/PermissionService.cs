@@ -27,17 +27,17 @@ namespace InovaGed.Infrastructure.Security
             try
             {
                 await using var con = await _db.OpenAsync(ct);
+                var roleIds = await UserRoleReader.RoleIdsAsync(con, null, tenantId, userId, ct);
 
                 var sql = """
             SELECT 1
-            FROM ged.user_roles ur
-            JOIN ged.role_permission rp ON rp.tenant_id = ur.tenant_id AND rp.role_id = ur.role_id AND rp.reg_status='A'
-            WHERE ur.tenant_id=@TenantId AND ur.user_id=@UserId
+            FROM ged.role_permission rp
+            WHERE rp.tenant_id=@TenantId AND rp.role_id=any(@RoleIds) AND rp.reg_status='A'
               AND rp.permission_code=@Perm
             LIMIT 1;
             """;
 
-                ok = (await con.QueryFirstOrDefaultAsync<int?>(new CommandDefinition(sql, new { TenantId = tenantId, UserId = userId, Perm = permissionCode }, cancellationToken: ct))) == 1;
+                ok = (await con.QueryFirstOrDefaultAsync<int?>(new CommandDefinition(sql, new { TenantId = tenantId, RoleIds = roleIds, Perm = permissionCode }, cancellationToken: ct))) == 1;
 
                 _cache.Set(key, ok, TimeSpan.FromMinutes(5));
                 return ok;
